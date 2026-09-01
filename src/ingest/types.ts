@@ -126,6 +126,15 @@ export interface Candidate {
   issues: Issue[];
   /** Set when this candidate duplicates something already in the fact tables. */
   duplicateOf?: string;
+  /**
+   * Another candidate in the same batch that must be filed first.
+   *
+   * A workbook loaded into an empty book names holdings that do not exist yet.
+   * The row's valuation cannot be filed until the holding is, and the holding's
+   * id does not exist until it is created — so the valuation points at the
+   * candidate that will create it, and commit resolves the link.
+   */
+  dependsOn?: string;
   state: 'pending' | 'accepted' | 'rejected';
 }
 
@@ -193,6 +202,15 @@ export interface ExtractionInput {
    * named the file well, which is not something to depend on.
    */
   vehicleId?: string;
+  /**
+   * Create holdings the document names that the book does not have, instead of
+   * blocking those rows.
+   *
+   * Off by default, and deliberately so: a valuation filed against a holding
+   * invented from a typo is worse than a row that refused to load. It is for
+   * the first load of a book, when nothing exists to match against yet.
+   */
+  createMissing?: boolean;
 }
 
 export interface TableData {

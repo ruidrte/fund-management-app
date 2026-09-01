@@ -12,11 +12,12 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from 'react';
 import { analyse, availableKnowledgeDates, availablePeriods, type QuarterView } from '../engine';
-import { getRepository, type ClientSummary } from '../data';
+import type { ClientSummary } from '../data';
+import { useDataSource } from './DataSourceContext';
 import { useAuth } from './AuthContext';
 import { boundInvestorId, visibleClientIds } from '../auth/permissions';
 import type { CurrencyCode, DataSet, PositionKind, Scope, Vehicle } from '../domain/types';
-import type { PeriodId } from '../domain/period';
+import { periodForDate, type PeriodId } from '../domain/period';
 
 interface ScopeValue {
   loading: boolean;
@@ -57,7 +58,10 @@ interface ScopeValue {
 const ScopeContext = createContext<ScopeValue | undefined>(undefined);
 
 export function ScopeProvider({ children }: { children: ReactNode }) {
-  const repository = useMemo(() => getRepository(), []);
+  // The source can change while the application is running — connecting a
+  // folder replaces the sample data in place — so it is read from context
+  // rather than resolved once.
+  const { repository } = useDataSource();
   const { principal } = useAuth();
 
   const [clients, setClients] = useState<ClientSummary[]>([]);
@@ -112,9 +116,14 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
         setDataset(restrictToInvestor(loaded, boundInvestorId(principal, clientId)));
 
         // Default to the latest quarter that has any data at all, and to the
-        // client's single vehicle when there is only one.
+        // client's single vehicle when there is only one. A book with no facts
+        // yet falls back to the current quarter rather than to nothing —
+        // otherwise a new book has no scope, and no way to reach the screen
+        // that would load its first document.
         const available = availablePeriods(loaded, { clientId });
-        setPeriod((current) => (current && available.includes(current) ? current : available[0]));
+        setPeriod((current) => (current && available.includes(current)
+          ? current
+          : available[0] ?? periodForDate(new Date())));
         setVehicleId((current) => {
           if (current && loaded.vehicles.some((v) => v.id === current)) return current;
           return loaded.vehicles.length === 1 ? loaded.vehicles[0].id : undefined;
@@ -139,10 +148,11 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     setCurrency(undefined);
   }, []);
 
-  const periods = useMemo(
-    () => (dataset ? availablePeriods(dataset, { clientId, vehicleId }) : []),
-    [dataset, clientId, vehicleId],
-  );
+  const periods = useMemo(() => {
+    if (!dataset) return [];
+    const available = availablePeriods(dataset, { clientId, vehicleId });
+    return available.length > 0 ? available : [periodForDate(new Date())];
+  }, [dataset, clientId, vehicleId]);
 
   const knowledgeDates = useMemo(
     () => (dataset && period ? availableKnowledgeDates(dataset, period) : []),

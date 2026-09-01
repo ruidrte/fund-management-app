@@ -20,9 +20,10 @@ import { StatusPill } from '../components/common/Badges';
 import { DataTable } from '../components/common/DataTable';
 import { ManualEvent } from '../components/intake/ManualEvent';
 import {
-  DOCUMENT_KIND_LABEL, EXTRACTORS, MAX_FILE_BYTES, applyCandidates, canCommit, ingest,
+  DOCUMENT_KIND_LABEL, EXTRACTORS, MAX_FILE_BYTES, canCommit, ingest,
   type Candidate, type DocumentKind, type IngestOutcome,
 } from '../ingest';
+import { useFiling } from '../context/filing';
 
 const UPLOADABLE: DocumentKind[] = [
   'historical-workbook', 'transaction-notice', 'nav-pack',
@@ -30,11 +31,14 @@ const UPLOADABLE: DocumentKind[] = [
 ];
 
 export function Intake({ view }: { view: QuarterView }) {
-  const { dataset, clientId, vehicleId, refresh } = useScope();
+  const { dataset, clientId, vehicleId } = useScope();
+  const { file: fileFacts } = useFiling();
   const { user } = useAuth();
   const upload = useCan('documents.upload', { clientId, vehicleId });
   const commitRight = useCan('facts.commit', { clientId, vehicleId });
   const fileInput = useRef<HTMLInputElement>(null);
+  // Held so the file itself can be kept alongside the figures it produced.
+  const uploaded = useRef<File>();
 
   const [kind, setKind] = useState<DocumentKind>('historical-workbook');
   const [outcome, setOutcome] = useState<IngestOutcome>();
@@ -42,17 +46,22 @@ export function Intake({ view }: { view: QuarterView }) {
   const [error, setError] = useState<string>();
   const [committed, setCommitted] = useState<string>();
   const [manualOpen, setManualOpen] = useState(false);
+  const [createMissing, setCreateMissing] = useState(false);
 
   const extractor = EXTRACTORS.find((e) => e.kind === kind);
 
   const handleFile = useCallback(async (file: File) => {
     if (!dataset) return;
+    uploaded.current = file;
     setBusy(true);
     setError(undefined);
     setCommitted(undefined);
     try {
       const result = await ingest(
-        { file, kind, clientId, vehicleId, period: view.period, uploadedBy: user?.id },
+        {
+          file, kind, clientId, vehicleId, period: view.period,
+          createMissing, uploadedBy: user?.id,
+        },
         dataset,
       );
       // Anything clean is pre-accepted; anything with a warning or an error is
@@ -70,12 +79,42 @@ export function Intake({ view }: { view: QuarterView }) {
     } finally {
       setBusy(false);
     }
-  }, [dataset, kind, clientId, vehicleId, view.period, user]);
+  }, [dataset, kind, clientId, vehicleId, view.period, createMissing, user]);
 
+  /**
+   * Accepting or rejecting one candidate, carrying the decision to the ones
+   * tied to it. A valuation whose holding was rejected has nothing to be filed
+   * against; accepting it without the holding would drop it silently.
+   */
   const setState = (id: string, state: Candidate['state']) => {
+    setOutcome((current) => {
+      if (!current) return current;
+      const dependencies = new Set<string>();
+      const dependents = new Set<string>();
+      for (const c of current.candidates) {
+        if (c.id === id && c.dependsOn) dependencies.add(c.dependsOn);
+        if (c.dependsOn === id) dependents.add(c.id);
+      }
+      return {
+        ...current,
+        candidates: current.candidates.map((c) => {
+          if (c.id === id) return { ...c, state };
+          if (state === 'rejected' && dependents.has(c.id)) return { ...c, state };
+          if (state === 'accepted' && dependencies.has(c.id) && canCommit(c)) {
+            return { ...c, state };
+          }
+          return c;
+        }),
+      };
+    });
+  };
+
+  /** Everything without an error, in one go — the first load of a book is not 40 clicks. */
+  const acceptAll = () => {
     setOutcome((current) => current && {
       ...current,
-      candidates: current.candidates.map((c) => (c.id === id ? { ...c, state } : c)),
+      candidates: current.candidates.map((c) =>
+        (canCommit(c) && c.state !== 'rejected' ? { ...c, state: 'accepted' as const } : c)),
     });
   };
 
@@ -98,15 +137,24 @@ export function Intake({ view }: { view: QuarterView }) {
   const accepted = outcome?.candidates.filter((c) => c.state === 'accepted') ?? [];
   const blocked = outcome?.candidates.filter((c) => !canCommit(c)) ?? [];
 
-  const commit = () => {
+  const commit = async () => {
     if (!outcome || !dataset || accepted.length === 0 || !commitRight.allowed) return;
-    applyCandidates(dataset, accepted, outcome.document);
-    setCommitted(
-      `${accepted.length} record(s) filed against "${outcome.document.name}". `
-      + 'In the demo dataset this is not persisted; against a backend it is an insert per record.',
-    );
-    setOutcome(undefined);
-    refresh();
+    setBusy(true);
+    setError(undefined);
+    try {
+      // The file's own bytes go with it when there is a folder to keep them in,
+      // so a figure filed today can be traced to the document years from now.
+      const bytes = uploaded.current
+        ? new Uint8Array(await uploaded.current.arrayBuffer())
+        : undefined;
+      const result = await fileFacts(accepted, outcome.document, bytes);
+      setCommitted(result.message);
+      setOutcome(undefined);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -165,6 +213,24 @@ export function Intake({ view }: { view: QuarterView }) {
           <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
             CSV, XLSX or PDF, up to {MAX_FILE_BYTES / 1024 / 1024} MB
           </span>
+
+          {kind === 'historical-workbook' && (
+            <label className="flex items-start gap-2 text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox" className="mt-0.5"
+                checked={createMissing}
+                onChange={(event) => { setCreateMissing(event.target.checked); setOutcome(undefined); }}
+              />
+              <span className="max-w-[22rem]">
+                Create holdings this book does not have.
+                <span className="block" style={{ color: 'var(--text-muted)' }}>
+                  For the first load of a book, when there is nothing to match against yet. Leave it off
+                  afterwards: a name that matches nothing is then a typo, not a new fund, and each one is
+                  still shown for confirmation.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         {!upload.allowed && (
@@ -199,7 +265,7 @@ export function Intake({ view }: { view: QuarterView }) {
         <ManualEvent
           view={view}
           onClose={() => setManualOpen(false)}
-          onSubmitted={(message) => { setCommitted(message); setManualOpen(false); refresh(); }}
+          onSubmitted={(message) => { setCommitted(message); setManualOpen(false); }}
         />
       )}
 
@@ -241,7 +307,19 @@ export function Intake({ view }: { view: QuarterView }) {
           </Card>
 
           {outcome.candidates.length > 0 && (
-            <Card title="Review" subtitle="Nothing is filed until it is accepted here">
+            <Card
+              title="Review"
+              subtitle="Nothing is filed until it is accepted here"
+              actions={
+                <button
+                  type="button" onClick={acceptAll}
+                  className="rounded px-2.5 py-1.5 text-xs"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                >
+                  Accept everything without an error
+                </button>
+              }
+            >
               <ul className="m-0 flex list-none flex-col gap-2 p-0">
                 {outcome.candidates.map((candidate) => (
                   <li key={candidate.id}>

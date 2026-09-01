@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ScopeProvider, useScope } from './context/ScopeContext';
+import { DataSourceProvider } from './context/DataSourceContext';
 import { SignIn } from './components/auth/SignIn';
 import { Header } from './components/layout/Header';
 import { ScopeBar } from './components/layout/ScopeBar';
@@ -17,6 +18,7 @@ import { Esg } from './pages/Esg';
 import { Intake } from './pages/Intake';
 import { Export } from './pages/Export';
 import { Access } from './pages/Access';
+import { Storage } from './pages/Storage';
 
 export default function App() {
   return (
@@ -48,15 +50,21 @@ function Gate() {
   if (requiresAuth && !user) return <SignIn />;
 
   return (
-    <ScopeProvider>
-      <Shell />
-    </ScopeProvider>
+    <DataSourceProvider>
+      <ScopeProvider>
+        <Shell />
+      </ScopeProvider>
+    </DataSourceProvider>
   );
 }
+
+/** Screens that work with no data at all — and must, or an empty book traps you. */
+const WITHOUT_DATA: PageId[] = ['storage', 'access'];
 
 function Shell() {
   const [page, setPage] = useState<PageId>('dashboard');
   const { loading, error, view, clientId } = useScope();
+  const standalone = WITHOUT_DATA.includes(page);
 
   return (
     <div className="flex h-full flex-col">
@@ -66,15 +74,17 @@ function Shell() {
         <Navigation active={page} onChange={setPage} clientId={clientId} />
         <main className="min-w-0 flex-1 overflow-y-auto p-5">
           {error && <Notice tone="var(--status-critical)" title="Could not load this scope" body={error} />}
-          {!error && loading && <Notice tone="var(--text-muted)" title="Loading" body="Reading the client's data." />}
-          {!error && !loading && !view && (
+          {!error && loading && !standalone && (
+            <Notice tone="var(--text-muted)" title="Loading" body="Reading the client's data." />
+          )}
+          {!error && !loading && !view && !standalone && (
             <Notice
               tone="var(--status-warning)"
               title="Nothing to analyse"
-              body="This client has no vehicle with data for any quarter yet."
+              body="No client with data is loaded. Storage shows where the data is and how to connect a folder."
             />
           )}
-          {!error && view && <Page page={page} />}
+          {(standalone || (!error && view)) && <Page page={page} />}
         </main>
       </div>
     </div>
@@ -83,6 +93,8 @@ function Shell() {
 
 function Page({ page }: { page: PageId }) {
   const { view } = useScope();
+  if (page === 'storage') return <Storage />;
+  if (page === 'access') return <Access />;
   if (!view) return null;
 
   switch (page) {
@@ -93,7 +105,6 @@ function Page({ page }: { page: PageId }) {
     case 'quality': return <DataQuality view={view} />;
     case 'intake': return <Intake view={view} />;
     case 'export': return <Export view={view} />;
-    case 'access': return <Access />;
     case 'esg': return <Esg view={view} />;
     case 'dashboard':
     default: return <Dashboard view={view} />;

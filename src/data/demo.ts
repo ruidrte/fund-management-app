@@ -24,7 +24,7 @@
 
 import {
   DEFAULT_CONVENTIONS,
-  type Cashflow, type CurrencyCode, type DataSet, type FxRate,
+  type Cashflow, type Client, type CurrencyCode, type DataSet, type FxRate,
   type Investor, type Vehicle,
 } from '../domain/types';
 import { periodEndDate, periodRange, type PeriodId } from '../domain/period';
@@ -576,6 +576,18 @@ export const DEMO_CLIENTS = CLIENTS.map((client) => ({
   name: client.name,
   shortName: client.shortName,
 }));
+
+/**
+ * The real structure of a client and its vehicles, with none of the figures.
+ *
+ * What a new book starts from. The client and vehicle definitions are the real
+ * ones — that is why they are recognisable — and everything measured is left
+ * out, so an empty book cannot be mistaken for a populated one.
+ */
+export function buildClientStructure(clientId: string): { client: Client; vehicles: Vehicle[] } {
+  const demo = buildDemoDataSet(clientId);
+  return { client: demo.client, vehicles: demo.vehicles };
+}
 
 export function buildDemoDataSet(clientId: string): DataSet {
   sequence = 0;

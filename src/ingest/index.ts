@@ -36,6 +36,8 @@ export interface IngestRequest {
   vehicleId?: string;
   /** Sheet to read, for a multi-sheet workbook. */
   sheetName?: string;
+  /** Create holdings the document names but the book does not have. */
+  createMissing?: boolean;
   uploadedBy?: string;
 }
 
@@ -127,7 +129,9 @@ export async function ingest(
   }
 
   const result = await extractor.extract({
-    document, bytes, text, table, context, period, vehicleId: request.vehicleId,
+    document, bytes, text, table, context, period,
+    vehicleId: request.vehicleId,
+    createMissing: request.createMissing,
   });
 
   return {
@@ -172,37 +176,82 @@ export function buildMatchContext(dataset: DataSet): MatchContext {
 }
 
 /**
- * Applies accepted candidates to an in-memory dataset.
+ * The facts an accepted set of candidates becomes.
+ *
+ * Separated from applying them because they now have two destinations — an
+ * in-memory dataset and a book on disk — and a fact that differs between the
+ * two would be a defect nobody could see. Both callers use this.
  *
  * Facts are appended, never edited: a correction is a new observation with a
  * later `recordedAt`, which is what keeps an already-published quarter
  * reproducible. Against a real backend this is the same set of inserts.
  */
-export function applyCandidates(
+export interface CandidateFacts {
+  positionValuations: DataSet['positionValuations'];
+  cashflows: DataSet['cashflows'];
+  balanceSheets: DataSet['balanceSheets'];
+  fxRates: DataSet['fxRates'];
+  /** Holdings created by this batch, when the book did not have them. */
+  positions: DataSet['positions'];
+}
+
+export function factsFrom(
   dataset: DataSet,
   candidates: Candidate[],
   document: SourceDocument,
-): DataSet {
+): CandidateFacts {
   const recordedAt = new Date().toISOString();
-  const next: DataSet = {
-    ...dataset,
-    positionValuations: [...dataset.positionValuations],
-    cashflows: [...dataset.cashflows],
-    balanceSheets: [...dataset.balanceSheets],
-    fxRates: [...dataset.fxRates],
+  const next: CandidateFacts = {
+    positionValuations: [],
+    cashflows: [],
+    balanceSheets: [],
+    fxRates: [],
+    positions: [],
   };
 
   let sequence = 0;
   const id = (prefix: string) => `${prefix}-${document.id}-${(sequence += 1)}`;
 
+  // Holdings first: a valuation on the same row cannot be filed until the
+  // holding it belongs to has an id.
+  const created = new Map<string, string>();
   for (const candidate of candidates) {
-    if (candidate.state !== 'accepted') continue;
+    if (candidate.state !== 'accepted' || candidate.kind !== 'position') continue;
     const value = <T>(name: string): T | undefined => candidate.fields[name]?.value as T | undefined;
+    const vehicleId = value<string>('vehicleId') ?? dataset.vehicles[0]?.id;
+    if (!vehicleId) continue;
 
-    if (candidate.kind === 'position-valuation' && candidate.match?.id) {
+    const positionId = id('pos');
+    created.set(candidate.id, positionId);
+    next.positions.push({
+      id: positionId,
+      vehicleId,
+      // What the sheet did not say is left plainly unclassified rather than
+      // guessed: an invented asset class becomes an exposure chart nobody can
+      // account for.
+      kind: 'fund',
+      name: value<string>('name')!,
+      currency: (value<string>('currency') ?? 'EUR') as never,
+      vintage: value<number>('vintage') ?? new Date().getUTCFullYear(),
+      commitmentDate: value<string>('commitmentDate') ?? new Date().toISOString().slice(0, 10),
+      commitment: value<number>('commitment') ?? 0,
+      ownership: 1,
+      assetClass: value<string>('assetClass') ?? 'Unclassified',
+      region: value<string>('region') ?? 'Unclassified',
+      status: 'Investing',
+    });
+  }
+
+  for (const candidate of candidates) {
+    if (candidate.state !== 'accepted' || candidate.kind === 'position') continue;
+    const value = <T>(name: string): T | undefined => candidate.fields[name]?.value as T | undefined;
+    const madeHere = candidate.dependsOn ? created.get(candidate.dependsOn) : undefined;
+    const target = madeHere ?? candidate.match?.id;
+
+    if (candidate.kind === 'position-valuation' && target) {
       next.positionValuations.push({
         id: id('val'),
-        positionId: candidate.match.id,
+        positionId: target,
         period: value<string>('period')!,
         recordedAt,
         nav: value<number>('nav')!,
@@ -215,7 +264,7 @@ export function applyCandidates(
     }
 
     if (candidate.kind === 'cashflow') {
-      const positionId = candidate.match?.kind === 'position' ? candidate.match.id : undefined;
+      const positionId = candidate.match?.kind === 'position' ? candidate.match.id : madeHere;
       const investorId = candidate.match?.kind === 'investor' ? candidate.match.id : undefined;
       const vehicleId = positionId
         ? dataset.positions.find((p) => p.id === positionId)?.vehicleId
@@ -278,6 +327,23 @@ export function applyCandidates(
   }
 
   return next;
+}
+
+/** The same facts, folded into a copy of the dataset. */
+export function applyCandidates(
+  dataset: DataSet,
+  candidates: Candidate[],
+  document: SourceDocument,
+): DataSet {
+  const facts = factsFrom(dataset, candidates, document);
+  return {
+    ...dataset,
+    positions: [...dataset.positions, ...facts.positions],
+    positionValuations: [...dataset.positionValuations, ...facts.positionValuations],
+    cashflows: [...dataset.cashflows, ...facts.cashflows],
+    balanceSheets: [...dataset.balanceSheets, ...facts.balanceSheets],
+    fxRates: [...dataset.fxRates, ...facts.fxRates],
+  };
 }
 
 /* ------------------------------------------------------------------ *

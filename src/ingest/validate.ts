@@ -19,7 +19,7 @@
 import { comparePeriods, parsePeriodId, type PeriodId } from '../domain/period';
 import type { Cashflow, DataSet, PositionValuation } from '../domain/types';
 import { latestThrough } from '../engine/asof';
-import { CONFIDENT } from './match';
+import { CONFIDENT, similarity } from './match';
 import { REVIEW_THRESHOLD, type Candidate, type Issue } from './types';
 
 /** A period-on-period move beyond this is flagged for a human to confirm. */
@@ -32,6 +32,14 @@ const LARGE_MOVE = 0.4;
  * misplaced decimal or an inverted pair cannot pass.
  */
 const RATE_TOLERANCE = 0.02;
+
+/**
+ * Similarity above which a new holding is refused as a near-duplicate. Below
+ * the threshold the matcher itself would not have offered it, so anything above
+ * is a name the matcher saw and rejected — which is exactly the case worth
+ * stopping.
+ */
+const NEAR_DUPLICATE = 0.75;
 
 export interface ValidationContext {
   dataset: DataSet;
@@ -57,6 +65,9 @@ export function validate(candidate: Candidate, context: ValidationContext): Cand
       break;
     case 'fx-rate':
       checkFxRate(candidate, context, issues);
+      break;
+    case 'position':
+      checkNewPosition(candidate, context, issues);
       break;
     default:
       break;
@@ -369,6 +380,62 @@ function currenciesIn(dataset: DataSet): Set<string> {
     ...dataset.positions.map((p) => p.currency),
     ...dataset.fxRates.flatMap((r) => [r.base, r.quote]),
   ]);
+}
+
+
+/**
+ * A holding the book does not have yet.
+ *
+ * Creating one is how a book gets seeded from a workbook, and also how a typo
+ * becomes a second holding that quietly splits a fund's history in two. So the
+ * rule is: say plainly that it is being created, and refuse when something
+ * close already exists — at that point the row wanted matching, not creating.
+ */
+function checkNewPosition(candidate: Candidate, context: ValidationContext, issues: Issue[]): void {
+  const name = stringField(candidate, 'name');
+  if (!name || name.trim().length < 2) {
+    issues.push({ severity: 'error', field: 'name', message: 'A holding needs a name.' });
+    return;
+  }
+
+  const currency = stringField(candidate, 'currency');
+  if (!currency || !/^[A-Z]{3}$/.test(currency)) {
+    issues.push({
+      severity: 'error', field: 'currency',
+      message: 'A holding needs a three-letter currency. Everything it reports is measured in it.',
+    });
+  }
+
+  const vehicleId = stringField(candidate, 'vehicleId');
+  if (!vehicleId || !context.dataset.vehicles.some((v) => v.id === vehicleId)) {
+    issues.push({
+      severity: 'error', field: 'vehicleId',
+      message: 'A holding must belong to a vehicle in this client.',
+    });
+  }
+
+  const close = context.dataset.positions
+    .map((position) => ({ position, score: similarity(name, position.name) }))
+    .filter((entry) => entry.score >= NEAR_DUPLICATE)
+    .sort((a, b) => b.score - a.score)[0];
+
+  if (close) {
+    issues.push({
+      severity: 'error', field: 'name',
+      message:
+        `"${name}" is ${(close.score * 100).toFixed(0)}% the same as "${close.position.name}", which the book `
+        + 'already has. Creating it would split one holding\'s history across two. Match the row to the '
+        + 'existing holding instead, or correct the name if they really are different.',
+    });
+    return;
+  }
+
+  issues.push({
+    severity: 'warning',
+    message:
+      `This creates a new holding, "${name}". Nothing matched it, so check the spelling against the book `
+      + 'before filing — a holding created from a typo reports separately from then on.',
+  });
 }
 
 /* ------------------------------------------------------------------ *

@@ -8,7 +8,7 @@ import {
   parseDate, transactionNoticeExtractor,
 } from '../src/ingest/extractors';
 import { canCommit, validateAll } from '../src/ingest/validate';
-import { applyCandidates } from '../src/ingest';
+import { applyCandidates, factsFrom, REVIEW_THRESHOLD } from '../src/ingest';
 import { buildRateLookup } from '../src/engine/fx';
 import { toXlsx } from '../src/export/serialise';
 import { buildExtract } from '../src/export/extract';
@@ -448,6 +448,99 @@ describe('rates declared in the financials', () => {
     const [rate] = validateAll(rates(result), dataset);
     expect(rate.issues.some((i) => i.severity === 'error')).toBe(true);
     expect(canCommit(rate)).toBe(false);
+  });
+});
+
+describe('seeding a book from a workbook', () => {
+  const sheet = (rows: (string | number)[][]) => ({
+    sheetName: 'Positions',
+    rows: [['Fund', 'Currency', 'Commitment', 'Vintage', 'Region', 'NAV'], ...rows],
+  });
+
+  const read = (rows: (string | number)[][], createMissing: boolean) =>
+    historicalWorkbookExtractor.extract({
+      document: doc({ name: 'AbIF since inception.xlsx' }),
+      context,
+      period: '2026Q1',
+      vehicleId: 'veh-abif',
+      createMissing,
+      table: sheet(rows),
+    });
+
+  it('leaves an unknown name unmatched when it was not asked to create', async () => {
+    const result = await read([['Baltic Wind Partners II', 'EUR', 8000, 2022, 'Europe', 6400]], false);
+    expect(result.candidates.map((c) => c.kind)).toEqual(['position-valuation']);
+    expect(result.candidates[0].match?.id).toBeUndefined();
+  });
+
+  it('creates the holding and ties the row-s valuation to it', async () => {
+    const result = await read([['Baltic Wind Partners II', 'EUR', 8000, 2022, 'Europe', 6400]], true);
+    expect(result.candidates.map((c) => c.kind)).toEqual(['position', 'position-valuation']);
+
+    const [position, valuationCandidate] = result.candidates;
+    expect(position.fields.name.value).toBe('Baltic Wind Partners II');
+    expect(position.fields.currency.value).toBe('EUR');
+    expect(position.fields.commitment.value).toBe(8000);
+    expect(position.fields.vintage.value).toBe(2022);
+    expect(position.fields.vehicleId.value).toBe('veh-abif');
+    // The valuation cannot carry an id that does not exist yet, so it carries
+    // the dependency instead.
+    expect(valuationCandidate.dependsOn).toBe(position.id);
+    expect(valuationCandidate.match).toBeUndefined();
+  });
+
+  it('marks a currency it had to assume rather than presenting it as read', async () => {
+    const result = await historicalWorkbookExtractor.extract({
+      document: doc(), context, period: '2026Q1', vehicleId: 'veh-abif', createMissing: true,
+      table: { sheetName: 'P', rows: [['Fund', 'NAV'], ['Baltic Wind Partners II', 6400]] },
+    });
+    const position = result.candidates.find((c) => c.kind === 'position')!;
+    expect(position.fields.currency.confidence).toBeLessThan(REVIEW_THRESHOLD);
+    expect(position.fields.currency.locator).toMatch(/not stated/);
+  });
+
+  it('leaves an attribute the sheet does not carry unclassified rather than inventing it', async () => {
+    const result = await historicalWorkbookExtractor.extract({
+      document: doc(), context, period: '2026Q1', vehicleId: 'veh-abif', createMissing: true,
+      table: { sheetName: 'P', rows: [['Fund', 'NAV'], ['Baltic Wind Partners II', 6400]] },
+    });
+    const position = result.candidates.find((c) => c.kind === 'position')!;
+    expect(position.fields.assetClass).toBeUndefined();
+
+    const facts = factsFrom(dataset, result.candidates.map((c) => ({ ...c, state: 'accepted' as const })), doc());
+    expect(facts.positions[0].assetClass).toBe('Unclassified');
+    expect(facts.positions[0].region).toBe('Unclassified');
+  });
+
+  it('matches a name the book already has instead of creating it again', async () => {
+    const existing = dataset.positions[0].name;
+    const result = await read([[existing, 'EUR', 8000, 2022, 'Europe', 6400]], true);
+    expect(result.candidates.map((c) => c.kind)).toEqual(['position-valuation']);
+    expect(result.candidates[0].match?.id).toBe(dataset.positions[0].id);
+  });
+
+  it('blocks a holding whose name is near one already in the book', async () => {
+    // The matcher can leave a name unclaimed and still be close to something —
+    // an ambiguous name, or one just under the matching threshold. Creating it
+    // then splits one holding's history across two, so validation refuses.
+    const [checked] = validateAll([{
+      id: 'cand-dup', documentId: 'doc-1', kind: 'position', state: 'pending', issues: [],
+      fields: {
+        name: { value: dataset.positions[0].name, confidence: 1 },
+        vehicleId: { value: dataset.positions[0].vehicleId, confidence: 1 },
+        currency: { value: 'EUR', confidence: 1 },
+      },
+    }], dataset);
+
+    expect(canCommit(checked)).toBe(false);
+    expect(checked.issues.some((i) => /already has/.test(i.message))).toBe(true);
+  });
+
+  it('warns on every holding it does create, so a typo is seen before it is filed', async () => {
+    const result = await read([['Baltic Wind Partners II', 'EUR', 8000, 2022, 'Europe', 6400]], true);
+    const [position] = validateAll(result.candidates.filter((c) => c.kind === 'position'), dataset);
+    expect(canCommit(position)).toBe(true);
+    expect(position.issues.some((i) => i.severity === 'warning' && /new holding/.test(i.message))).toBe(true);
   });
 });
 

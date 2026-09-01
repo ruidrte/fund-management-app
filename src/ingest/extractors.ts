@@ -121,7 +121,7 @@ export const historicalWorkbookExtractor: Extractor = {
     + 'Column headers are recognised across common naming; anything unrecognised is reported rather than guessed at.',
 
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
-    const { document, table, context, period } = input;
+    const { document, table, context, period, vehicleId, createMissing } = input;
     if (!table) {
       return empty(document, 'No sheet was supplied to the workbook reader.');
     }
@@ -173,6 +173,16 @@ export const historicalWorkbookExtractor: Extractor = {
       }
 
       const match = matchEntity(name, 'position', context);
+
+      // Seeding a book: a name that matches nothing becomes the holding, and
+      // the row's valuation waits for it. Only when the person asked for it —
+      // otherwise an unmatched name stays an unmatched name.
+      let creates: Candidate | undefined;
+      if (createMissing && !match.id) {
+        const target = vehicleId ?? context.vehicles[0]?.id;
+        if (target) creates = holdingFrom(name, row, columns, i, document, target, context);
+      }
+
       const fields: Candidate['fields'] = {
         period: field<string>(rowPeriod, 1, `row ${i + 1}`),
         nav: field<number>(nav, 0.95, cellRef(i, columns.nav)),
@@ -186,12 +196,16 @@ export const historicalWorkbookExtractor: Extractor = {
       const recallable = numberAt(row, columns.recallable);
       if (recallable !== null) fields.recallableCumulative = field(recallable, 0.85, cellRef(i, columns.recallable));
 
+      if (creates) candidates.push(creates);
       candidates.push({
         id: nextId('cand'),
         documentId: document.id,
         kind: 'position-valuation',
         fields,
-        match,
+        // A holding about to be created has no id to match to yet, so the
+        // valuation carries the dependency instead of a match.
+        match: creates ? undefined : match,
+        dependsOn: creates?.id,
         issues: [],
         state: 'pending',
       });
@@ -214,6 +228,67 @@ export const historicalWorkbookExtractor: Extractor = {
 /* ------------------------------------------------------------------ *
  * Transaction notices -> cashflows
  * ------------------------------------------------------------------ */
+
+
+/**
+ * A holding, read from the same row as its valuation.
+ *
+ * Only what the sheet actually says. Everything absent stays absent rather than
+ * being defaulted to something plausible — an invented vintage or asset class
+ * would come back later as an exposure chart nobody can explain, and the
+ * screens already handle an unclassified holding.
+ */
+function holdingFrom(
+  name: string,
+  row: Cell[],
+  columns: ColumnMap['columns'],
+  rowIndex: number,
+  document: ExtractionInput['document'],
+  vehicleId: string,
+  context: MatchContext,
+): Candidate {
+  const fields: Candidate['fields'] = {
+    name: field<string>(name, 1, `row ${rowIndex + 1}`),
+    vehicleId: field<string>(vehicleId, 1),
+  };
+
+  const currency = columns.currency === undefined
+    ? undefined
+    : String(row[columns.currency] ?? '').trim().toUpperCase();
+  fields.currency = currency && /^[A-Z]{3}$/.test(currency)
+    ? field<string>(currency, 1, cellRef(rowIndex, columns.currency))
+    // The vehicle's own currency is the only defensible guess, and it is
+    // marked as a guess so the reviewer is asked rather than told.
+    : field<string>(
+      context.vehicles.find((v) => v.id === vehicleId)?.currency ?? 'EUR',
+      0.5,
+      'not stated in the sheet — the vehicle\'s currency',
+    );
+
+  const commitment = numberAt(row, columns.commitment);
+  if (commitment !== null) {
+    fields.commitment = field<number>(commitment, 0.9, cellRef(rowIndex, columns.commitment));
+  }
+  const vintage = numberAt(row, columns.vintage);
+  if (vintage !== null && vintage > 1900 && vintage < 2200) {
+    fields.vintage = field<number>(vintage, 0.9, cellRef(rowIndex, columns.vintage));
+  }
+  for (const attribute of ['region', 'assetClass'] as const) {
+    const index = columns[attribute];
+    if (index === undefined) continue;
+    const value = String(row[index] ?? '').trim();
+    if (value) fields[attribute] = field<string>(value, 0.85, cellRef(rowIndex, index));
+  }
+
+  return {
+    id: nextId('cand'),
+    documentId: document.id,
+    kind: 'position',
+    fields,
+    issues: [],
+    state: 'pending',
+  };
+}
 
 export const transactionNoticeExtractor: Extractor = {
   kind: 'transaction-notice',

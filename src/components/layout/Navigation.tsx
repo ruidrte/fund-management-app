@@ -1,11 +1,11 @@
 import {
-  Activity, DatabaseZap, Download, FileText, KeyRound, LayoutDashboard, PieChart,
-  ShieldCheck, Users, Wallet,
+  Activity, DatabaseZap, Download, FileText, HardDrive, KeyRound, LayoutDashboard,
+  PieChart, ShieldCheck, Users, Wallet,
 } from 'lucide-react';
 
 export type PageId =
   | 'dashboard' | 'portfolio' | 'exposure' | 'investors'
-  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'access';
+  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'storage' | 'access';
 
 import { useAuth } from '../../context/AuthContext';
 import type { Capability } from '../../auth/permissions';
@@ -29,6 +29,7 @@ const ITEMS: Item[] = [
   { id: 'intake', label: 'Data intake', icon: DatabaseZap, hint: 'Load documents and events', needs: 'documents.upload' },
   { id: 'export', label: 'Export', icon: Download, hint: 'Historical extract', needs: 'export' },
   { id: 'esg', label: 'ESG', icon: Activity, hint: 'Sustainability metrics', needs: 'esg.read' },
+  { id: 'storage', label: 'Storage', icon: HardDrive, hint: 'Where the data lives' },
   { id: 'access', label: 'Access', icon: KeyRound, hint: 'Roles and what they permit' },
 ];
 

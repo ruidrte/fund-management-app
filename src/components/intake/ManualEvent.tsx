@@ -19,9 +19,10 @@ import type { QuarterView } from '../../engine';
 import { formatPeriod, periodForDate, periodEndDate } from '../../domain/period';
 import { useScope } from '../../context/ScopeContext';
 import { useAuth } from '../../context/AuthContext';
+import { useFiling } from '../../context/filing';
 import { Card } from '../common/Card';
 import {
-  applyCandidates, canCommit, validateAll,
+  canCommit, validateAll,
   type Candidate, type CandidateKind, type SourceDocument,
 } from '../../ingest';
 
@@ -46,7 +47,8 @@ export function ManualEvent({
   onClose: () => void;
   onSubmitted: (message: string) => void;
 }) {
-  const { dataset, refresh } = useScope();
+  const { dataset } = useScope();
+  const { file } = useFiling();
   const { user } = useAuth();
 
   const [kind, setKind] = useState<EventKind>('valuation');
@@ -55,6 +57,7 @@ export function ManualEvent({
   const [values, setValues] = useState<Record<string, string>>({});
   const [reference, setReference] = useState('');
   const [preview, setPreview] = useState<Candidate>();
+  const [failure, setFailure] = useState<string>();
 
   const positions = useMemo(
     () => (dataset?.positions ?? []).filter(
@@ -158,12 +161,14 @@ export function ManualEvent({
       status: 'committed',
     };
 
-    applyCandidates(dataset, [{ ...preview, state: 'accepted' }], document);
-    refresh();
-    onSubmitted(
-      `${EVENT_LABEL[kind]} filed against "${document.name}". `
-      + 'In the demo dataset this is not persisted; against a backend it is one insert.',
-    );
+    void (async () => {
+      try {
+        const result = await file([{ ...preview, state: 'accepted' }], document);
+        onSubmitted(`${EVENT_LABEL[kind]} — ${result.message}`);
+      } catch (cause) {
+        setFailure(cause instanceof Error ? cause.message : String(cause));
+      }
+    })();
   };
 
   const errors = preview?.issues.filter((i) => i.severity === 'error') ?? [];
@@ -291,6 +296,13 @@ export function ManualEvent({
           )}
         </div>
       </form>
+
+      {failure && (
+        <p className="mt-3 mb-0 flex items-start gap-1.5 text-xs" style={{ color: 'var(--status-critical)' }}>
+          <XCircle size={12} className="mt-px shrink-0" aria-hidden />
+          Nothing was filed: {failure}
+        </p>
+      )}
 
       {preview && (
         <div className="mt-3">

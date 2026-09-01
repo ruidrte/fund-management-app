@@ -28,7 +28,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 157 tests over the engine, permissions, ingestion and export
+npm test               # 172 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -43,9 +43,12 @@ deliberately awkward in the ways real documents are awkward — four number
 conventions in one column, an ambiguous date, a fund that matches nothing, a
 total row — and `samples/README.md` says what each row should do.
 
-With no configuration it runs against a built-in sample dataset. Set
-`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to run against a database
-instead; the engine and the screens are the same either way.
+With no configuration it runs against a built-in sample dataset. From the
+**Storage** screen you can point it at a folder on your own disk instead — real
+data, no server, no account, and the files stay yours; `docs/STORAGE.md`
+describes what is written there and what a folder does not give you. Setting
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` runs it against a database. The
+engine and the screens are the same in all three.
 
 ### The sample dataset
 
@@ -173,6 +176,10 @@ investor login is bound to exactly one account by a check constraint.
 `docs/SHAREPOINT.md` separates the four different things "SharePoint
 compatibility" turns out to mean, and recommends two of them.
 
+`docs/STORAGE.md` sets out the three places a book can live — the sample data,
+a folder on the user's own disk, or Supabase — what each does and does not
+guarantee, and what is written where.
+
 ## Layout
 
 ```
@@ -240,8 +247,11 @@ baseline and prints a signed value; provenance carries an icon and a word.
   though the document were corrupt. The normal build reads PDFs.
 - **Scanned PDFs** — no OCR. A scan with no text layer is reported as such
   rather than appearing to succeed with nothing in it.
-- **Persistence of intake** — committed candidates are applied to the in-memory
-  dataset. Against Supabase they are inserts; the writes are not yet wired.
+- **Writing to Supabase** — reading from the database is implemented; the
+  inserts from the intake screen are not. Against a folder, intake writes: the
+  facts are appended and the document is kept beside them. Against the sample
+  data nothing is persisted, and the screen says so rather than reporting a
+  successful commit.
 - **Hedging** — currency exposure is shown before hedging. Hedge instruments are
   not modelled, so a hedged vehicle's reported exposure overstates what it
   actually carries.

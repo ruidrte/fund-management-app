@@ -189,6 +189,29 @@ includes a database-level compromise.
 
 ---
 
+## A folder instead of a database
+
+The application can keep its book in a folder on the user's own machine. Nothing
+is uploaded: spreadsheets and PDFs are parsed in the browser, and what is filed
+is written into that folder. For one person working alone that is a smaller
+attack surface than any hosted option — there is no server to reach, no account
+to phish, and no third party holding the data.
+
+What it does not give you is enforcement. The roles below still shape what the
+interface offers, but a folder cannot check them: anyone who can open the folder
+reads every file in it, including the source documents. So the folder is the
+control, and it should be one only the intended person can open — a synced
+folder shared with a team is, for this purpose, a shared database with no
+permissions at all.
+
+It is also one writer at a time. Two people with the folder synced and the
+application open will overwrite each other, and the sync client resolves that by
+keeping a conflicted copy rather than by merging.
+
+Use it for real data with one custodian. Move to the database before more than
+one person files figures, or before anyone outside the team can reach the
+folder.
+
 ## Before real data
 
 In order, because each depends on the last:
