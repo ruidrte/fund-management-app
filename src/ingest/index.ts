@@ -189,6 +189,7 @@ export function applyCandidates(
     positionValuations: [...dataset.positionValuations],
     cashflows: [...dataset.cashflows],
     balanceSheets: [...dataset.balanceSheets],
+    fxRates: [...dataset.fxRates],
   };
 
   let sequence = 0;
@@ -238,6 +239,26 @@ export function applyCandidates(
         recallable: value<boolean>('recallable'),
         description: value<string>('description'),
         status: 'Settled',
+      });
+      continue;
+    }
+
+    if (candidate.kind === 'fx-rate') {
+      // The whole point of reading a rate out of the financials: it is filed
+      // with the authority of the books, which outranks the published fixing
+      // for the same quarter however the two arrive.
+      next.fxRates.push({
+        id: id('fx'),
+        base: value<string>('base')! as never,
+        quote: value<string>('quote')! as never,
+        rate: value<number>('rate')!,
+        date: value<string>('date')!,
+        period: value<string>('period')!,
+        recordedAt,
+        kind: (value<string>('kind') ?? 'closing') as 'closing' | 'average',
+        source: value<string>('source') ?? document.name,
+        authority: 'administrator',
+        documentId: document.id,
       });
       continue;
     }

@@ -12,7 +12,7 @@
  */
 
 import { comparePeriods, type PeriodId } from '../domain/period';
-import type { CurrencyCode, FxRate, ReportingConventions } from '../domain/types';
+import type { CurrencyCode, FxAuthority, FxRate, ReportingConventions } from '../domain/types';
 import { visibleAt } from './asof';
 
 export class MissingRateError extends Error {
@@ -36,7 +36,51 @@ export interface RateLookup {
   /** Same, but returns undefined instead of throwing. */
   tryRate(from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number | undefined;
   convert(amount: number, from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number;
+  /**
+   * Which stored rate was used for a pair, and what it displaced.
+   *
+   * Reconciliation arguments are almost always about which rate somebody
+   * applied. Being able to answer that from the application, rather than by
+   * reading the rate table, is the difference between a five-minute question
+   * and an afternoon.
+   */
+  explain(from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): RateExplanation | undefined;
 }
+
+export interface RateExplanation {
+  pair: string;
+  rate: number;
+  /** True when the pair was inverted or crossed rather than stored directly. */
+  derived: boolean;
+  /** The row that won, for a directly stored pair. */
+  applied?: FxRate;
+  /** Same pair, period and kind, outranked by the applied row. */
+  superseded: FxRate[];
+  /** Set when the rate came from an earlier period than the one asked for. */
+  fallbackFrom?: PeriodId;
+}
+
+/**
+ * Precedence, worst to best. The administrator's books are what the reported
+ * net asset value must tie to, so a rate implied by the financials outranks a
+ * published fixing — and it does so on authority, not on arrival order, or a
+ * later backfill of ECB rates would silently displace it.
+ */
+const AUTHORITY_RANK: Record<FxAuthority, number> = {
+  market: 0,
+  manual: 1,
+  administrator: 2,
+};
+
+export function authorityOf(row: FxRate): FxAuthority {
+  return row.authority ?? 'market';
+}
+
+export const AUTHORITY_LABEL: Record<FxAuthority, string> = {
+  market: 'Market fixing',
+  manual: 'Entered by hand',
+  administrator: 'Administrator financials',
+};
 
 /**
  * Builds a lookup over the rate table, restricted to what was known at
@@ -61,13 +105,45 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     list.push(row);
     byKind.set(row.kind, list);
   }
+  // Sorted so the winner for a period is the last row at or before it: period
+  // ascending, then authority worst-to-best, then oldest-to-newest. Authority
+  // before recency is the whole point — an administrator rate must not be
+  // displaced by a market rate that happens to be loaded afterwards.
   for (const byKind of index.values()) {
     for (const list of byKind.values()) {
       list.sort((a, b) => {
         const byPeriod = comparePeriods(a.period, b.period);
-        return byPeriod !== 0 ? byPeriod : Date.parse(a.recordedAt) - Date.parse(b.recordedAt);
+        if (byPeriod !== 0) return byPeriod;
+        const byAuthority = AUTHORITY_RANK[authorityOf(a)] - AUTHORITY_RANK[authorityOf(b)];
+        if (byAuthority !== 0) return byAuthority;
+        return Date.parse(a.recordedAt) - Date.parse(b.recordedAt);
       });
     }
+  }
+
+  /** The winning row for a pair at a period, with what it outranked. */
+  function winner(
+    from: CurrencyCode, to: CurrencyCode, period: PeriodId,
+    rateKind: 'closing' | 'average',
+  ): { applied: FxRate; superseded: FxRate[] } | undefined {
+    const list = index.get(kind(from, to))?.get(rateKind);
+    if (!list) return undefined;
+
+    let applied: FxRate | undefined;
+    for (const row of list) {
+      if (comparePeriods(row.period, period) <= 0) applied = row;
+      else break;
+    }
+    if (!applied) return undefined;
+
+    return {
+      applied,
+      superseded: list.filter(
+        (row) => row !== applied
+          && row.period === applied!.period
+          && AUTHORITY_RANK[authorityOf(row)] <= AUTHORITY_RANK[authorityOf(applied!)],
+      ),
+    };
   }
 
   function directRate(
@@ -76,15 +152,35 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     period: PeriodId,
     rateKind: 'closing' | 'average',
   ): number | undefined {
-    const list = index.get(kind(from, to))?.get(rateKind);
-    if (!list) return undefined;
-    // Latest row at or before the requested period.
-    let found: FxRate | undefined;
-    for (const row of list) {
-      if (comparePeriods(row.period, period) <= 0) found = row;
-      else break;
+    return winner(from, to, period, rateKind)?.applied.rate;
+  }
+
+  function explain(
+    from: CurrencyCode, to: CurrencyCode, period: PeriodId,
+    rateKind: 'closing' | 'average' = 'closing',
+  ): RateExplanation | undefined {
+    const pair = kind(from, to);
+    if (from === to) return { pair, rate: 1, derived: false, superseded: [] };
+
+    const direct = winner(from, to, period, rateKind);
+    if (direct) {
+      return {
+        pair,
+        rate: direct.applied.rate,
+        derived: false,
+        applied: direct.applied,
+        superseded: direct.superseded,
+        fallbackFrom: direct.applied.period === period ? undefined : direct.applied.period,
+      };
     }
-    return found?.rate;
+
+    // Inverted or crossed: there is no single stored row to point at, so the
+    // explanation says the rate is derived rather than naming a source that
+    // was not consulted.
+    const value = tryRate(from, to, period, rateKind);
+    return value === undefined
+      ? undefined
+      : { pair, rate: value, derived: true, superseded: [] };
   }
 
   function tryRate(
@@ -139,6 +235,7 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
   return {
     rate,
     tryRate,
+    explain,
     convert: (amount, from, to, period, rateKind = 'closing') =>
       amount * rate(from, to, period, rateKind),
   };

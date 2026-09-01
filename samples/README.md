@@ -43,6 +43,19 @@ The two lines it should *not* classify — "Investments at fair value" and
 did make listed alongside them. A misreading has to be visible before it is
 committed, not after.
 
+The pack also declares the rates the administrator translated at, and those are
+read as candidates of their own:
+
+| Row | What should happen |
+|---|---|
+| `EUR/USD as at 31.03.2026, 1.1523` | Read as EUR/USD 1.1523. The date is stripped before anything looks for a number, or `31.03` would be the rate |
+| `EUR/CHF as at 31.03.2026, 0.9323` | Read as EUR/CHF 0.9323 |
+| `FX rate used for translation, 1.1523` | **Not read** — no pair is named, and which way round it goes is a guess. Listed under *Not read* with that reason |
+
+Accepting a rate candidate files it with the authority of the financials, which
+outranks the ECB fixing for that quarter — see *Data quality → Rates applied*,
+where the committed rate then shows the fixing it displaced.
+
 ## Testing the rest
 
 - **Historical view** — set *As at* to a date before a quarter's data arrived.

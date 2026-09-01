@@ -23,7 +23,7 @@ import {
   type Scope,
   type Vehicle,
 } from '../domain/types';
-import { buildRateLookup } from './fx';
+import { buildRateLookup, type RateLookup } from './fx';
 import { computeGross, type GrossResult } from './gross';
 import { computeNet, type NetResult } from './net';
 import { commitmentsBridge, describeQuarter, navBridge, productNavBridge, type Bridge } from './bridge';
@@ -65,6 +65,14 @@ export interface QuarterView {
   exposure: Record<string, ExposureBreakdown>;
   lookThrough: Record<string, ExposureBreakdown>;
   checks: CheckReport;
+  /**
+   * The rate table as it applied to this view, so a screen can answer "which
+   * rate did you use, and what did it displace" without rebuilding the lookup
+   * from the dataset and risking a different knowledge date.
+   */
+  rates: RateLookup;
+  /** Currencies translated into the presentation currency for this view. */
+  sourceCurrencies: CurrencyCode[];
 
   /** One sentence describing the quarter, generated from the NAV bridge. */
   summary: string;
@@ -196,6 +204,11 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     exposure,
     lookThrough,
     checks,
+    rates,
+    sourceCurrencies: [...new Set([
+      ...vehicles.map((v) => v.currency),
+      ...positions.map((p) => p.currency),
+    ])].filter((code) => code !== currency).sort(),
     summary: describeQuarter(bridges.portfolioNav, scope.period),
     provenance: gross.provenance,
     isFinal: gross.coverage.complete && checks.ok && qualifications.length === 0,

@@ -240,6 +240,21 @@ export interface VehicleBalanceSheet {
  * ------------------------------------------------------------------ */
 
 /**
+ * Where a rate came from, and therefore which one wins.
+ *
+ * The reported net asset value has to tie to the administrator's statement. If
+ * the administrator translated a position at 1.1520 and the ECB fixing was
+ * 1.1498, using the ECB rate creates a reconciliation difference against the
+ * books — so an administrator-derived rate supersedes a market one for the same
+ * pair, period and kind, whenever it arrives.
+ *
+ * Ranked, worst to best: `market` (ECB or another published fixing), `manual`
+ * (entered by hand where nothing else covers the pair), `administrator`
+ * (implied by the financials or the trial balance).
+ */
+export type FxAuthority = 'market' | 'manual' | 'administrator';
+
+/**
  * Quoted as `1 base = rate quote`. So EUR/USD 1.0850 means one euro buys
  * 1.0850 dollars, and a rise means the quote currency weakened.
  */
@@ -253,6 +268,14 @@ export interface FxRate {
   recordedAt: string; // ISO timestamp
   kind: 'closing' | 'average';
   source: string;
+  /**
+   * Defaults to `market`. Precedence is by authority first and only then by
+   * recency, so a later backfill of ECB rates cannot silently displace what the
+   * administrator's books say.
+   */
+  authority?: FxAuthority;
+  /** The document the rate was derived from, for an administrator rate. */
+  documentId?: string;
 }
 
 /* ------------------------------------------------------------------ *

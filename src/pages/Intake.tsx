@@ -337,7 +337,10 @@ function CandidateRow({
       <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="m-0 text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>
-            {candidate.match?.matchedName ?? candidate.match?.sourceName ?? candidate.kind}
+            {candidate.match?.matchedName
+              ?? candidate.match?.sourceName
+              ?? CANDIDATE_LABEL[candidate.kind]
+              ?? candidate.kind}
           </p>
           {candidate.match && candidate.match.matchedName !== candidate.match.sourceName && (
             <p className="m-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
@@ -380,7 +383,7 @@ function CandidateRow({
               {fieldLabel(name)}
             </dt>
             <dd className="m-0 tabular" style={{ color: 'var(--text-primary)' }}>
-              {formatValue(value.value)}
+              {formatValue(value.value, name)}
               {value.locator && (
                 <span className="ml-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                   {value.locator}
@@ -436,6 +439,16 @@ function CandidateRow({
 }
 
 /** Field names are stored camelCase; a reviewer should not have to read that. */
+/** What a candidate with no matched entity is called. */
+const CANDIDATE_LABEL: Record<string, string> = {
+  'fx-rate': 'Exchange rate declared in the pack',
+  'balance-sheet': 'Vehicle balance sheet',
+  'position-valuation': 'Holding valuation',
+  cashflow: 'Cash movement',
+  position: 'New holding',
+  'asset-valuation': 'Underlying asset valuation',
+};
+
 const FIELD_LABEL: Record<string, string> = {
   nav: 'NAV',
   drawnCumulative: 'Drawn to date',
@@ -445,6 +458,10 @@ const FIELD_LABEL: Record<string, string> = {
   currentLiabilities: 'Current liabilities',
   accruedExpenses: 'Accrued expenses',
   otherAssets: 'Other assets',
+  base: 'From',
+  quote: 'To',
+  rate: 'Rate',
+  kind: 'Basis',
 };
 
 function fieldLabel(name: string): string {
@@ -453,9 +470,15 @@ function fieldLabel(name: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function formatValue(value: string | number | boolean | null): string {
+function formatValue(value: string | number | boolean | null, name?: string): string {
   if (value === null) return '—';
   if (typeof value === 'boolean') return value ? 'yes' : 'no';
-  if (typeof value === 'number') return value.toLocaleString('en-GB', { maximumFractionDigits: 2 });
+  if (typeof value === 'number') {
+    // A rate rounded to two places is a different rate. Everything else here
+    // is an amount in thousands, where two places is already more than anyone
+    // reads.
+    const digits = name === 'rate' ? 6 : 2;
+    return value.toLocaleString('en-GB', { maximumFractionDigits: digits });
+  }
   return value;
 }

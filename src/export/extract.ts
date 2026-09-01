@@ -225,11 +225,15 @@ export function buildExtract(options: ExtractOptions): Extract {
     },
     {
       name: 'fx_rates',
-      description: 'Quoted as 1 base = rate quote. Stocks use closing rates, flows the rate of their own date.',
-      columns: ['base', 'quote', 'rate', 'kind', 'date', 'period', 'period_label', 'recorded_at', 'source'],
+      description:
+        'Quoted as 1 base = rate quote. Stocks use closing rates, flows the rate of their own date. '
+        + 'Several rows can exist for one pair and quarter; the one that applied is the highest authority '
+        + '(administrator over manual over market), and only then the most recent.',
+      columns: ['base', 'quote', 'rate', 'kind', 'date', 'period', 'period_label', 'recorded_at',
+        'authority', 'source', 'document_id'],
       rows: fxRates.sort(byPeriodThenRecorded).map((r) => [
         r.base, r.quote, r.rate, r.kind, r.date, r.period, formatPeriod(r.period),
-        r.recordedAt, r.source,
+        r.recordedAt, r.authority ?? 'market', r.source, r.documentId ?? null,
       ]),
     },
   ];

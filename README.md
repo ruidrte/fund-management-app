@@ -8,6 +8,8 @@ any date:
 
 - **What comes in?** Historical workbooks, transaction notices and administrator
   NAV packs are read, matched, validated and reviewed before anything is filed.
+  Exchange rates are taken from the ECB and replaced by the rates the
+  administrator's financials declare, once those arrive.
 - **What goes out?** Any quarter, range, or the whole history since inception,
   as an Excel workbook or a zipped CSV bundle.
 - **What is it worth, gross and net?** The portfolio measured on its own terms,
@@ -26,7 +28,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 135 tests over the engine, permissions, ingestion and export
+npm test               # 157 tests over the engine, permissions, ingestion and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```

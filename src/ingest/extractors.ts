@@ -17,7 +17,7 @@
  *                  so a typed figure is as traceable as a parsed one.
  */
 
-import { parsePeriodId, periodForDate, type PeriodId } from '../domain/period';
+import { parsePeriodId, periodEndDate, periodForDate, type PeriodId } from '../domain/period';
 import { matchEntity, CONFIDENT } from './match';
 import { findHeaderRow, parseNumber, type Cell } from './workbook';
 import type {
@@ -377,6 +377,98 @@ interface BalanceTotals {
   accruedExpenses: number;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * Rates declared in the financials
+ *
+ * The house rule: rates come from the ECB and are replaced by whatever the
+ * administrator's books used, once the trial balance for the quarter arrives.
+ * The pack is the only place that rate is written down, so the reader that
+ * opens the pack is the place to pick it up.
+ *
+ * Only an explicitly named pair is read. A line saying "USD 1.1523" could mean
+ * either direction, and inverting a rate by mistake is a five per cent error
+ * that ties to nothing — so an ambiguous line is reported unparsed rather than
+ * guessed at.
+ * ------------------------------------------------------------------ */
+
+const CURRENCY = String.raw`[A-Z]{3}`;
+
+/**
+ * Dates, removed before anything looks for a number.
+ *
+ * `31.03.2026` contains `31.03`, which is a perfectly good rate as far as a
+ * regular expression is concerned. Every rate misread I have seen in practice
+ * was a date.
+ */
+const DATE_LIKE = /\d{1,4}[./-]\d{1,2}[./-]\d{2,4}/g;
+
+/** A number that could be a rate. Rates are written with decimals; counts are not. */
+const RATE_NUMBER = /\d{1,6}[.,]\d{1,8}/;
+
+const PAIR_PATTERNS: RegExp[] = [
+  // EUR/USD · EUR / USD · (EUR/CHF)
+  new RegExp(String.raw`\b(${CURRENCY})\s*/\s*(${CURRENCY})\b`),
+  // EUR to USD · EUR into USD
+  new RegExp(String.raw`\b(${CURRENCY})\s+(?:to|into|->)\s+(${CURRENCY})\b`),
+];
+
+/** 1 EUR = 1.1523 USD — the one form that states the rate in the middle. */
+const EQUATION = new RegExp(
+  String.raw`\b1\s*(${CURRENCY})\s*=\s*(${RATE_NUMBER.source})\s*(${CURRENCY})\b`,
+);
+
+/** A line that talks about rates at all, so an unread one can be reported. */
+const RATE_CONTEXT = /(exchange|fx|foreign currency|umrechnung|kurs|taux|translation)/i;
+
+/**
+ * Outside this, the number is not a rate. Real crosses run from roughly 0.006
+ * (JPY against a major) to a few thousand; anything beyond is a balance that
+ * happened to sit next to a currency pair.
+ */
+const RATE_RANGE = { min: 0.0001, max: 100_000 };
+
+interface ReadRate {
+  base: string;
+  quote: string;
+  rate: number;
+  locator: string;
+  line: string;
+}
+
+function readRate(line: string, locator: string): ReadRate | undefined {
+  const cleaned = line.replace(DATE_LIKE, ' ');
+
+  const equation = EQUATION.exec(cleaned);
+  if (equation) {
+    return build(equation[1], equation[3], equation[2], locator, line);
+  }
+
+  for (const pattern of PAIR_PATTERNS) {
+    const pair = pattern.exec(cleaned);
+    if (!pair) continue;
+    // The rate follows the pair, not precedes it: "EUR/USD 1.1523", never
+    // "1.1523 EUR/USD". Reading backwards would pick up the previous column.
+    const after = cleaned.slice(pair.index + pair[0].length);
+    const value = RATE_NUMBER.exec(after);
+    if (!value) continue;
+    return build(pair[1], pair[2], value[0], locator, line);
+  }
+
+  return undefined;
+}
+
+function build(
+  base: string, quote: string, raw: string, locator: string, line: string,
+): ReadRate | undefined {
+  const rate = parseNumber(raw);
+  if (rate === null || rate < RATE_RANGE.min || rate > RATE_RANGE.max) return undefined;
+  const upperBase = base.toUpperCase();
+  const upperQuote = quote.toUpperCase();
+  if (upperBase === upperQuote) return undefined;
+  return { base: upperBase, quote: upperQuote, rate, locator, line: line.trim() };
+}
+
 export const navPackExtractor: Extractor = {
   kind: 'nav-pack',
   label: 'Administrator NAV pack',
@@ -389,6 +481,9 @@ export const navPackExtractor: Extractor = {
     const { document, table, text, context, period, vehicleId } = input;
 
     const lines: Array<{ label: string; amount: number; locator: string }> = [];
+    // Kept alongside the classified balance-sheet lines: a declared rate is not
+    // a balance-sheet line and would otherwise be discarded as noise.
+    const raw: Array<{ text: string; locator: string }> = [];
 
     if (table) {
       const headerIndex = findHeaderRow(table.rows) ?? -1;
@@ -401,8 +496,14 @@ export const navPackExtractor: Extractor = {
           lines.push({ label, amount, locator: `row ${i + 1}` });
         }
       }
+      // Every row, not just the classified ones — a declared rate often sits in
+      // a header block above the balance-sheet lines.
+      table.rows.forEach((row, index) => {
+        raw.push({ text: row.map((cell) => String(cell ?? '')).join('  '), locator: `row ${index + 1}` });
+      });
     } else if (text) {
       text.split('\n').forEach((line, index) => {
+        raw.push({ text: line, locator: `line ${index + 1}` });
         const match = /^(.{3,60}?)\s{2,}([-(]?[\d.,'’ ]+\)?)$/.exec(line.trim());
         if (!match) return;
         const amount = parseNumber(match[2]);
@@ -415,12 +516,15 @@ export const navPackExtractor: Extractor = {
 
     const totals: BalanceTotals = { cash: 0, otherAssets: 0, currentLiabilities: 0, accruedExpenses: 0 };
     const classified: string[] = [];
-    const ignored: string[] = [];
+    const ignored: Array<{ locator: string; text: string }> = [];
 
     for (const line of lines) {
       const rule = BALANCE_LINES.find((entry) => entry.patterns.some((pattern) => pattern.test(line.label)));
       if (!rule) {
-        ignored.push(`${line.label} (${line.amount}) — not a balance-sheet line this reader recognises`);
+        ignored.push({
+          locator: line.locator,
+          text: `${line.label} (${line.amount}) — not a balance-sheet line this reader recognises`,
+        });
         continue;
       }
       // Liabilities are stored positive and subtracted by the engine, so a
@@ -432,7 +536,7 @@ export const navPackExtractor: Extractor = {
     const resolved = period ?? document.period;
     if (!resolved) {
       return {
-        document, candidates: [], unparsed: ignored,
+        document, candidates: [], unparsed: ignored.map((entry) => entry.text),
         summary: 'The pack has no period, and none was given. A balance sheet without a period cannot be filed.',
       };
     }
@@ -473,13 +577,82 @@ export const navPackExtractor: Extractor = {
       state: 'pending',
     };
 
+    // Rates the pack declares, which outrank the published fixing for this
+    // quarter once committed.
+    const seen = new Set<string>();
+    const rateCandidates: Candidate[] = [];
+    const unreadableRateLines: string[] = [];
+    // Locators a rate was read from, so the same line is not also reported as
+    // an unrecognised balance-sheet line.
+    const rateLocators = new Set<string>();
+
+    for (const entry of raw) {
+      const read = readRate(entry.text, entry.locator);
+      if (!read) {
+        if (RATE_CONTEXT.test(entry.text) && /\d/.test(entry.text)) {
+          rateLocators.add(entry.locator);
+          unreadableRateLines.push(
+            `${entry.text.trim()} (${entry.locator}) — reads as a rate but names no currency pair, `
+            + 'so which way round it goes is a guess. File it by hand if it matters.',
+          );
+        }
+        continue;
+      }
+      rateLocators.add(read.locator);
+      const key = `${read.base}/${read.quote}`;
+      // A pack usually repeats the rate in every section. The first sighting is
+      // the one kept; a genuinely different second rate is reported instead of
+      // silently dropped.
+      if (seen.has(key)) {
+        const kept = rateCandidates.find((c) => c.fields.base.value === read.base
+          && c.fields.quote.value === read.quote);
+        if (kept && Math.abs(Number(kept.fields.rate.value) - read.rate) > 1e-9) {
+          unreadableRateLines.push(
+            `${key} appears again as ${read.rate} at ${read.locator}, against ${kept.fields.rate.value} `
+            + 'already read. Only the first was kept — check which the books actually used.',
+          );
+        }
+        continue;
+      }
+      seen.add(key);
+
+      rateCandidates.push({
+        id: nextId('cand'),
+        documentId: document.id,
+        kind: 'fx-rate',
+        fields: {
+          base: field<string>(read.base, 1, read.locator),
+          quote: field<string>(read.quote, 1, read.locator),
+          rate: field<number>(read.rate, 0.9, read.locator),
+          period: field<string>(resolved, 1),
+          date: field<string>(periodEndDate(resolved), 0.9),
+          kind: field<string>('closing', 0.8),
+          source: field<string>(document.name, 1),
+        },
+        issues: [],
+        state: 'pending',
+      });
+    }
+
+    const rateNote = rateCandidates.length > 0
+      ? ` Read ${rateCandidates.length} exchange rate(s) declared in the pack; committing them makes `
+        + 'them override the published fixing for this quarter.'
+      : '';
+
     return {
       document,
-      candidates: lines.length > 0 ? [candidate] : [],
-      unparsed: [...classified.map((line) => `Classified: ${line}`), ...ignored],
+      candidates: [...(lines.length > 0 ? [candidate] : []), ...rateCandidates],
+      unparsed: [
+        ...classified.map((line) => `Classified: ${line}`),
+        ...ignored.filter((entry) => !rateLocators.has(entry.locator)).map((entry) => entry.text),
+        ...unreadableRateLines,
+      ],
       summary:
-        `Classified ${classified.length} of ${lines.length} line(s) into the four balance-sheet buckets. `
-        + 'Every classification is listed above so a misreading is visible before it is committed.',
+        `Classified ${classified.length} of `
+        + `${lines.filter((line) => !rateLocators.has(line.locator)).length} line(s) `
+        + 'into the four balance-sheet buckets. '
+        + 'Every classification is listed above so a misreading is visible before it is committed.'
+        + rateNote,
     };
   },
 };

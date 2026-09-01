@@ -51,6 +51,39 @@ Translating flows at the closing rate would fold currency movement into the
 value change and make the NAV bridge lie about where the quarter's return came
 from.
 
+### Where a rate comes from
+
+Rates arrive from the ECB, and are replaced by the rate the administrator's
+financials imply once the trial balance for the quarter is received. So a pair
+usually carries more than one row for the same quarter, and the table records
+which kind of source each came from:
+
+| Authority | Meaning |
+| --- | --- |
+| `market` | A published fixing — the ECB reference rate. The default when nothing says otherwise. |
+| `manual` | Entered by hand, for a pair or a date no feed covers. |
+| `administrator` | Implied by the administrator's financials for that period. |
+
+**Precedence is by authority first, and only then by recency.** Within a
+quarter, an administrator rate beats a manual one, which beats a market fixing,
+whatever order the rows were filed in.
+
+Recency alone would be wrong, and quietly so. Fixings get corrected and
+backfilled; if the newest row simply won, a correction to the ECB series filed
+weeks after the financials would move a NAV that had already been signed, and
+the reported figure would stop tying to the administrator's statement it was
+reconciled against. Authority first means the books hold until better books
+arrive.
+
+Rates never expire: a quarter with nothing filed falls back to the most recent
+earlier one, which is what happens in practice before a quarter's fixing lands.
+The fallback is reported rather than assumed — *Data quality → Rates applied*
+names, for every currency in the view, the rate used, its authority and source,
+what it displaced, and whether it was actually filed for that quarter. Almost
+every reconciliation argument is about which rate somebody applied; answering
+that from a screen rather than from the rate table is the difference between a
+five-minute question and an afternoon.
+
 **A consequence worth stating**: a multiple is *not* currency-invariant. TVPI in
 EUR and TVPI in USD differ, because the numerator carries today's rate and the
 denominator carries the rates that applied when the capital was drawn. That is

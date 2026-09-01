@@ -8,6 +8,8 @@ import {
   parseDate, transactionNoticeExtractor,
 } from '../src/ingest/extractors';
 import { canCommit, validateAll } from '../src/ingest/validate';
+import { applyCandidates } from '../src/ingest';
+import { buildRateLookup } from '../src/engine/fx';
 import { toXlsx } from '../src/export/serialise';
 import { buildExtract } from '../src/export/extract';
 import { buildDemoDataSet } from '../src/data/demo';
@@ -366,6 +368,86 @@ describe('vehicle-level documents target the scoped vehicle', () => {
     });
     expect(result.candidates[0].match?.id).toBe('veh-abif');
     expect(result.candidates[0].match?.confidence).toBe(1);
+  });
+});
+
+describe('rates declared in the financials', () => {
+  const pack = (rows: (string | number)[][]) => navPackExtractor.extract({
+    document: doc({ kind: 'nav-pack', name: 'Q1 2026 trial balance.xlsx' }),
+    context,
+    period: '2026Q1',
+    vehicleId: 'veh-abif',
+    table: { sheetName: 'TB', rows: [['Account', 'Balance'], ['Cash at bank', 1800], ...rows] },
+  });
+
+  const rates = (result: Awaited<ReturnType<typeof pack>>) =>
+    result.candidates.filter((c) => c.kind === 'fx-rate');
+
+  it('reads a pair written the way a pack writes it', async () => {
+    const result = await pack([
+      ['EUR/USD as at 31.03.2026', 1.1523],
+      ['EUR / CHF', 0.9323],
+      ['1 EUR = 0.8626 GBP', ''],
+    ]);
+    expect(rates(result).map((c) => [c.fields.base.value, c.fields.quote.value, c.fields.rate.value]))
+      .toEqual([['EUR', 'USD', 1.1523], ['EUR', 'CHF', 0.9323], ['EUR', 'GBP', 0.8626]]);
+  });
+
+  it('does not read a date as a rate', async () => {
+    // "31.03.2026" contains 31.03, which is a perfectly good rate as far as a
+    // regular expression is concerned.
+    const result = await pack([['EUR/USD as at 31.03.2026', 1.1523]]);
+    expect(rates(result)[0].fields.rate.value).toBe(1.1523);
+  });
+
+  it('refuses a rate whose direction is a guess, and says why', async () => {
+    const result = await pack([['FX rate used for translation', 1.1523]]);
+    expect(rates(result)).toHaveLength(0);
+    expect(result.unparsed.join(' ')).toMatch(/names no currency pair/);
+  });
+
+  it('keeps the first sighting and reports a second that disagrees', async () => {
+    const result = await pack([
+      ['EUR/USD', 1.1523],
+      ['Portfolio translated at EUR/USD', 1.1498],
+    ]);
+    expect(rates(result)).toHaveLength(1);
+    expect(rates(result)[0].fields.rate.value).toBe(1.1523);
+    expect(result.unparsed.join(' ')).toMatch(/appears again as 1.1498/);
+  });
+
+  it('leaves an ordinary balance sheet alone', async () => {
+    const result = await pack([['Accrued management fee', -200], ['Investments at fair value', 58700]]);
+    expect(rates(result)).toHaveLength(0);
+  });
+
+  it('files an accepted rate with the authority of the books', async () => {
+    const result = await pack([['EUR/USD as at 31.03.2026', 1.1523]]);
+    const accepted = result.candidates.map((c) => ({ ...c, state: 'accepted' as const }));
+    const next = applyCandidates(dataset, accepted, result.document);
+
+    const filed = next.fxRates.filter((r) => r.authority === 'administrator' && r.documentId === 'doc-1');
+    expect(filed).toHaveLength(1);
+    expect(filed[0]).toMatchObject({ base: 'EUR', quote: 'USD', rate: 1.1523, period: '2026Q1', kind: 'closing' });
+
+    // And it wins, which is the entire reason for reading it.
+    expect(buildRateLookup(next.fxRates).rate('EUR', 'USD', '2026Q1')).toBe(1.1523);
+  });
+
+  it('warns when a declared rate contradicts what is already on file', async () => {
+    const result = await pack([['EUR/USD as at 31.03.2026', 1.4]]);
+    const [rate] = validateAll(rates(result), dataset).filter((c) => c.kind === 'fx-rate');
+    expect(rate.issues.some((i) => /already on file/.test(i.message))).toBe(true);
+    // A warning, not a block: the administrator's books can legitimately differ.
+    expect(canCommit(rate)).toBe(true);
+  });
+
+  it('blocks a pair that names no currency this client uses', async () => {
+    // Three capital letters separated by a slash is not proof of a rate.
+    const result = await pack([['VAT/TAX', 1.05]]);
+    const [rate] = validateAll(rates(result), dataset);
+    expect(rate.issues.some((i) => i.severity === 'error')).toBe(true);
+    expect(canCommit(rate)).toBe(false);
   });
 });
 

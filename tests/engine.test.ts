@@ -3,7 +3,7 @@ import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engin
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
 import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
-import type { Scope } from '../src/domain/types';
+import type { FxRate, Scope } from '../src/domain/types';
 
 const meridian = buildDemoDataSet('client-ebg');
 const aurora = buildDemoDataSet('client-ut');
@@ -86,6 +86,71 @@ describe('currency treatment', () => {
     const a = attributeFx(1_000, 1_100, 0.90, 0.95);
     expect(a.local + a.translation).toBeCloseTo(a.total, 10);
     expect(a.translation).toBeCloseTo(1_000 * 0.05, 10);
+  });
+});
+
+describe('the administrator overrides the market fixing', () => {
+  const row = (over: Partial<FxRate> & { rate: number; recordedAt: string }): FxRate => ({
+    id: `fx-${over.rate}-${over.recordedAt}`,
+    base: 'EUR',
+    quote: 'USD',
+    date: '2026-03-31',
+    period: '2026Q1',
+    kind: 'closing',
+    source: 'test',
+    ...over,
+  });
+
+  const ecb = row({ rate: 1.1498, recordedAt: '2026-04-02T00:00:00Z', authority: 'market', source: 'ECB reference rate' });
+  const administrator = row({ rate: 1.1523, recordedAt: '2026-04-20T00:00:00Z', authority: 'administrator', source: 'Administrator trial balance' });
+  // The dangerous one: a correction to the published fixing, filed after the
+  // financials arrived. Recency alone would let it win.
+  const ecbBackfill = row({ rate: 1.1501, recordedAt: '2026-05-10T00:00:00Z', authority: 'market', source: 'ECB reference rate (corrected)' });
+
+  it('applies the trial balance rate whatever order the rows are loaded in', () => {
+    const orders = [
+      [ecb, administrator],
+      [administrator, ecb],
+      [ecb, administrator, ecbBackfill],
+      [ecbBackfill, administrator, ecb],
+    ];
+    for (const rows of orders) {
+      expect(buildRateLookup(rows).rate('EUR', 'USD', '2026Q1')).toBe(administrator.rate);
+    }
+  });
+
+  it('names what was applied and what it displaced', () => {
+    const explained = buildRateLookup([ecb, administrator, ecbBackfill]).explain('EUR', 'USD', '2026Q1');
+    expect(explained!.applied!.source).toBe('Administrator trial balance');
+    expect(explained!.derived).toBe(false);
+    expect(explained!.superseded.map((r) => r.rate).sort()).toEqual([1.1498, 1.1501]);
+  });
+
+  it('leaves the market fixing in charge where no financials have arrived', () => {
+    const explained = buildRateLookup([ecb, ecbBackfill]).explain('EUR', 'USD', '2026Q1');
+    expect(explained!.rate).toBe(ecbBackfill.rate);
+    expect(explained!.superseded).toHaveLength(1);
+  });
+
+  it('does not carry an administrator rate across into a later quarter that has its own', () => {
+    const q2 = row({ rate: 1.1600, recordedAt: '2026-07-02T00:00:00Z', authority: 'market', period: '2026Q2', date: '2026-06-30' });
+    const lookup = buildRateLookup([administrator, q2]);
+    expect(lookup.rate('EUR', 'USD', '2026Q2')).toBe(q2.rate);
+    // But an unpublished quarter still falls back to the last rate known, and
+    // says so rather than pretending the period was filed.
+    const gap = buildRateLookup([administrator]).explain('EUR', 'USD', '2026Q2');
+    expect(gap!.fallbackFrom).toBe('2026Q1');
+  });
+
+  it('treats an unlabelled rate as a market fixing', () => {
+    const unlabelled = row({ rate: 1.14, recordedAt: '2026-06-01T00:00:00Z' });
+    expect(buildRateLookup([administrator, unlabelled]).rate('EUR', 'USD', '2026Q1')).toBe(administrator.rate);
+  });
+
+  it('carries the override into the demo dataset the screens read', () => {
+    const explained = buildRateLookup(meridian.fxRates).explain('EUR', 'CHF', '2026Q1');
+    expect(explained!.applied!.authority).toBe('administrator');
+    expect(explained!.superseded.some((r) => r.source.includes('ECB'))).toBe(true);
   });
 });
 

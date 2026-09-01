@@ -25,6 +25,14 @@ import { REVIEW_THRESHOLD, type Candidate, type Issue } from './types';
 /** A period-on-period move beyond this is flagged for a human to confirm. */
 const LARGE_MOVE = 0.4;
 
+/**
+ * How far a declared rate may sit from what is already on file before somebody
+ * is asked to look. Wide enough to absorb the ordinary gap between a month-end
+ * fixing and the rate an administrator actually booked at; narrow enough that a
+ * misplaced decimal or an inverted pair cannot pass.
+ */
+const RATE_TOLERANCE = 0.02;
+
 export interface ValidationContext {
   dataset: DataSet;
   /** Candidates being committed together, so duplicates within a batch are caught. */
@@ -46,6 +54,9 @@ export function validate(candidate: Candidate, context: ValidationContext): Cand
       break;
     case 'balance-sheet':
       checkBalanceSheet(candidate, issues);
+      break;
+    case 'fx-rate':
+      checkFxRate(candidate, context, issues);
       break;
     default:
       break;
@@ -274,6 +285,92 @@ function checkBalanceSheet(candidate: Candidate, issues: Issue[]): void {
   }
 }
 
+
+/**
+ * A rate read out of the financials.
+ *
+ * This one is worth being strict about. A committed administrator rate
+ * outranks the published fixing for its quarter, so a misread here does not
+ * sit in a corner of the data — it moves every translated figure in the
+ * quarter, and it does so quietly, because an override is exactly what it is
+ * supposed to be.
+ */
+function checkFxRate(candidate: Candidate, context: ValidationContext, issues: Issue[]): void {
+  const base = stringField(candidate, 'base');
+  const quote = stringField(candidate, 'quote');
+  const rate = numberField(candidate, 'rate');
+  const period = stringField(candidate, 'period');
+
+  if (!base || !quote || base === quote) {
+    issues.push({
+      severity: 'error', field: 'base',
+      message: 'A rate needs two different currencies. Which way round it goes cannot be inferred.',
+    });
+    return;
+  }
+  if (rate === undefined || rate <= 0) {
+    issues.push({ severity: 'error', field: 'rate', message: 'A rate must be a positive number.' });
+    return;
+  }
+  if (!period || !isPeriod(period)) {
+    issues.push({ severity: 'error', field: 'period', message: 'A valid quarter is required.' });
+    return;
+  }
+
+  // Three capital letters are not proof of a currency. If neither side is one
+  // this book actually uses, the line was almost certainly something else.
+  const known = currenciesIn(context.dataset);
+  const unknown = [base, quote].filter((code) => !known.has(code));
+  if (unknown.length === 2) {
+    issues.push({
+      severity: 'error', field: 'base',
+      message: `Neither ${base} nor ${quote} appears anywhere in this client's data. This is unlikely to be a rate.`,
+    });
+    return;
+  }
+  if (unknown.length === 1) {
+    issues.push({
+      severity: 'warning', field: unknown[0] === base ? 'base' : 'quote',
+      message: `${unknown[0]} is not a currency this client reports in. Confirm the pair before filing it.`,
+    });
+  }
+
+  // Against what is already on file, in either direction. An inverted rate is
+  // the classic misread and looks perfectly reasonable on its own.
+  const existing = context.dataset.fxRates.filter(
+    (row) => row.period === period && row.kind === (stringField(candidate, 'kind') ?? 'closing'),
+  );
+  const same = existing.find((row) => row.base === base && row.quote === quote);
+  const inverse = existing.find((row) => row.base === quote && row.quote === base);
+
+  if (same && Math.abs(rate - same.rate) / same.rate > RATE_TOLERANCE) {
+    issues.push({
+      severity: 'warning', field: 'rate',
+      message:
+        `${base}/${quote} is already on file at ${same.rate} for ${period} (${same.source}). `
+        + `This reads ${rate}, a ${((rate - same.rate) / same.rate * 100).toFixed(1)}% difference. `
+        + 'Committing it will override the existing rate for every figure in the quarter.',
+    });
+  } else if (inverse && Math.abs(rate - 1 / inverse.rate) / (1 / inverse.rate) > RATE_TOLERANCE) {
+    issues.push({
+      severity: 'warning', field: 'rate',
+      message:
+        `The book holds ${quote}/${base} at ${inverse.rate} for ${period}, which implies `
+        + `${base}/${quote} near ${(1 / inverse.rate).toFixed(4)}. This reads ${rate}. Check the direction.`,
+    });
+  }
+}
+
+/** Currencies this client actually reports in or holds. */
+function currenciesIn(dataset: DataSet): Set<string> {
+  return new Set<string>([
+    dataset.client.reportingCurrency,
+    ...dataset.vehicles.map((v) => v.currency),
+    ...dataset.positions.map((p) => p.currency),
+    ...dataset.fxRates.flatMap((r) => [r.base, r.quote]),
+  ]);
+}
+
 /* ------------------------------------------------------------------ *
  * Duplicates
  * ------------------------------------------------------------------ */
@@ -290,6 +387,23 @@ function findDuplicate(candidate: Candidate, context: ValidationContext): string
     const existing = context.dataset.positionValuations.find(
       (v: PositionValuation) =>
         v.positionId === positionId && v.period === period && closeEnough(v.nav, nav),
+    );
+    return existing?.id;
+  }
+
+  if (candidate.kind === 'fx-rate') {
+    const base = stringField(candidate, 'base');
+    const quote = stringField(candidate, 'quote');
+    const period = stringField(candidate, 'period');
+    const rate = numberField(candidate, 'rate');
+    if (!base || !quote || !period || rate === undefined) return undefined;
+
+    // Only an identical rate is a duplicate. A different one is the override
+    // doing its job, and stopping it would defeat the point.
+    const existing = context.dataset.fxRates.find(
+      (row) => row.base === base && row.quote === quote && row.period === period
+        && row.kind === (stringField(candidate, 'kind') ?? 'closing')
+        && closeEnough(row.rate, rate),
     );
     return existing?.id;
   }

@@ -71,23 +71,54 @@ const CLOSING: Record<string, Record<string, number>> = {
   },
 };
 
+/**
+ * Quarters where the administrator's financials imply a rate that differs from
+ * the published fixing, and by how much in basis points.
+ *
+ * This is not an error on either side. An administrator translates at the rate
+ * its own systems carry, and the reported net asset value has to tie to their
+ * statement — so once the trial balance arrives, its rate supersedes the ECB's.
+ */
+const ADMINISTRATOR_DRIFT: Record<string, Partial<Record<string, number>>> = {
+  USD: { '2025Q4': 18, '2026Q1': 22 },
+  CHF: { '2025Q4': -9, '2026Q1': 14 },
+  GBP: { '2026Q1': -11 },
+};
+
 function fxRates(): FxRate[] {
   const rows: FxRate[] = [];
   for (const period of PERIODS) {
     const recordedAt = recordedFor(period);
     const date = periodEndDate(period);
+
     for (const [quote, table] of Object.entries(CLOSING)) {
       rows.push({
         id: id('fx'), base: 'EUR', quote, rate: table[period], date, period,
-        recordedAt, kind: 'closing', source: 'ECB',
+        recordedAt, kind: 'closing', source: 'ECB reference rate',
+        authority: 'market',
       });
       // The average sits between this quarter's close and the last one.
       const index = PERIODS.indexOf(period);
       const previous = index > 0 ? table[PERIODS[index - 1]] : table[period];
       rows.push({
         id: id('fx'), base: 'EUR', quote, rate: (table[period] + previous) / 2,
-        date, period, recordedAt, kind: 'average', source: 'ECB',
+        date, period, recordedAt, kind: 'average', source: 'ECB reference rate',
+        authority: 'market',
       });
+
+      // The administrator's rate arrives with the trial balance, weeks after
+      // the fixing, and supersedes it.
+      const drift = ADMINISTRATOR_DRIFT[quote]?.[period];
+      if (drift !== undefined) {
+        rows.push({
+          id: id('fx'), base: 'EUR', quote,
+          rate: Math.round(table[period] * (1 + drift / 10_000) * 10_000) / 10_000,
+          date, period,
+          recordedAt: period === LATEST ? DRAFT_CUT : recordedFor(period),
+          kind: 'closing', source: 'Administrator trial balance',
+          authority: 'administrator',
+        });
+      }
     }
   }
   return rows;
