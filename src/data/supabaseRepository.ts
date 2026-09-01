@@ -262,6 +262,11 @@ function toFxRate(row: Row): FxRate {
     recordedAt: str(row.recorded_at),
     kind: str(row.kind, 'closing') as FxRate['kind'],
     source: str(row.source),
+    // Without these two the override is lost on the way out of the database:
+    // every rate would read as a market fixing and the administrator's rate
+    // would win or lose on arrival order again.
+    authority: str(row.authority, 'market') as FxRate['authority'],
+    documentId: opt<string>(row.document_id),
   };
 }
 
