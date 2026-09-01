@@ -1,13 +1,18 @@
 /**
  * The scope bar.
  *
- * Client, vehicle, holding, quarter, as-at date and presentation currency —
- * the six selections that define every figure on screen, in one row, always
- * visible. A user who cannot see what they are looking at will eventually
- * mistake one quarter's report for another's.
+ * Six selections define every figure on screen. The two that change most often —
+ * which client and which product — are tabs, because there are few of each and
+ * a person moves between them constantly; the rest are dropdowns.
+ *
+ * The client row appears only for someone who can reach more than one client. A
+ * client's own team sees their products and no indication that other clients
+ * exist, which is what their membership already entitles them to; showing a
+ * disabled row of other people's names would leak the client list.
  */
 
-import { History, Layers, Building2, Coins, CalendarDays, Boxes } from 'lucide-react';
+import { useMemo } from 'react';
+import { CalendarDays, Boxes, Coins, History } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import { useScope, usePositions } from '../../context/ScopeContext';
 import { formatTimestamp } from '../common/format';
@@ -24,79 +29,177 @@ export function ScopeBar() {
 
   const positions = usePositions();
   const viewingPast = knowledgeDate !== undefined;
+  const showClients = clients.length > 1;
+
+  const vehicleTabs = useMemo(
+    () => vehicles.map((vehicle) => ({
+      id: vehicle.id,
+      label: vehicle.shortName,
+      title: `${vehicle.name} · ${vehicle.kind === 'fund-of-funds' ? 'Fund of funds' : 'Direct fund'} · ${vehicle.currency}`,
+      kind: vehicle.kind,
+    })),
+    [vehicles],
+  );
+
+  return (
+    <div style={{ background: 'var(--surface-1)', borderBottom: '1px solid var(--border)' }}>
+      {showClients && (
+        <TabRow
+          label="Client"
+          tabs={clients.map((client) => ({
+            id: client.id,
+            label: client.shortName,
+            title: client.name,
+          }))}
+          selected={clientId}
+          onSelect={setClientId}
+          emphasis
+        />
+      )}
+
+      {vehicleTabs.length > 0 && (
+        <TabRow
+          label="Product"
+          tabs={[
+            // Consolidation is a product view of its own, not the absence of one.
+            ...(vehicleTabs.length > 1
+              ? [{ id: '', label: 'All', title: `All ${vehicleTabs.length} products, consolidated` }]
+              : []),
+            ...vehicleTabs,
+          ]}
+          selected={vehicleId ?? ''}
+          onSelect={(id) => setVehicleId(id || undefined)}
+        />
+      )}
+
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 px-6 py-3">
+        <Selector
+          icon={<Boxes size={13} aria-hidden />}
+          label="Holding"
+          value={positionId ?? ''}
+          onChange={(value) => setPositionId(value || undefined)}
+        >
+          <option value="">Whole portfolio</option>
+          {positions.map((position) => (
+            <option key={position.id} value={position.id}>{position.name}</option>
+          ))}
+        </Selector>
+
+        <Selector
+          icon={<CalendarDays size={13} aria-hidden />}
+          label="Quarter"
+          value={period}
+          onChange={setPeriod}
+        >
+          {periods.map((id) => (
+            <option key={id} value={id}>{formatPeriod(id)}</option>
+          ))}
+        </Selector>
+
+        <Selector
+          icon={<History size={13} aria-hidden />}
+          label="As at"
+          value={knowledgeDate ?? ''}
+          onChange={(value) => setKnowledgeDate(value || undefined)}
+          highlighted={viewingPast}
+        >
+          <option value="">Today — everything known</option>
+          {knowledgeDates.map((date) => (
+            <option key={date} value={date}>{formatTimestamp(date)}</option>
+          ))}
+        </Selector>
+
+        <Selector
+          icon={<Coins size={13} aria-hidden />}
+          label="Currency"
+          value={currency ?? ''}
+          onChange={(value) => setCurrency(value || undefined)}
+        >
+          <option value="">Vehicle currency</option>
+          {currencies.map((code) => (
+            <option key={code} value={code}>{code}</option>
+          ))}
+        </Selector>
+      </div>
+    </div>
+  );
+}
+
+interface Tab {
+  id: string;
+  label: string;
+  title?: string;
+}
+
+/**
+ * A row of tabs.
+ *
+ * Selection is carried by weight and an underline as well as colour, and the
+ * row is a real tablist so arrow keys move between tabs — with this many of
+ * them, reaching for the mouse each time is the difference between a tool and a
+ * form.
+ */
+function TabRow({
+  label, tabs, selected, onSelect, emphasis = false,
+}: {
+  label: string;
+  tabs: Tab[];
+  selected: string;
+  onSelect: (id: string) => void;
+  emphasis?: boolean;
+}) {
+  const move = (event: React.KeyboardEvent, index: number) => {
+    const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    if (delta === 0) return;
+    event.preventDefault();
+    const next = (index + delta + tabs.length) % tabs.length;
+    onSelect(tabs[next].id);
+    // Move focus with the selection, or the next arrow press starts over.
+    const row = event.currentTarget.parentElement;
+    (row?.children[next] as HTMLElement | undefined)?.focus();
+  };
 
   return (
     <div
-      className="flex flex-wrap items-end gap-x-4 gap-y-3 border-b px-6 py-3"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}
+      className="flex items-center gap-3 px-6"
+      style={{
+        borderBottom: '1px solid var(--border)',
+        background: emphasis ? 'var(--surface-2)' : 'transparent',
+      }}
     >
-      <Selector icon={<Building2 size={13} aria-hidden />} label="Client" value={clientId} onChange={setClientId}>
-        {clients.map((client) => (
-          <option key={client.id} value={client.id}>{client.name}</option>
-        ))}
-      </Selector>
-
-      <Selector
-        icon={<Layers size={13} aria-hidden />}
-        label="Vehicle"
-        value={vehicleId ?? ''}
-        onChange={(value) => setVehicleId(value || undefined)}
+      <span
+        className="shrink-0 text-[10px] font-medium uppercase tracking-wide"
+        style={{ color: 'var(--text-muted)' }}
       >
-        <option value="">All vehicles (consolidated)</option>
-        {vehicles.map((vehicle) => (
-          <option key={vehicle.id} value={vehicle.id}>
-            {vehicle.name} · {vehicle.kind === 'fund-of-funds' ? 'FoF' : 'Direct'}
-          </option>
-        ))}
-      </Selector>
+        {label}
+      </span>
 
-      <Selector
-        icon={<Boxes size={13} aria-hidden />}
-        label="Holding"
-        value={positionId ?? ''}
-        onChange={(value) => setPositionId(value || undefined)}
-      >
-        <option value="">Whole portfolio</option>
-        {positions.map((position) => (
-          <option key={position.id} value={position.id}>{position.name}</option>
-        ))}
-      </Selector>
-
-      <Selector
-        icon={<CalendarDays size={13} aria-hidden />}
-        label="Quarter"
-        value={period}
-        onChange={setPeriod}
-      >
-        {periods.map((id) => (
-          <option key={id} value={id}>{formatPeriod(id)}</option>
-        ))}
-      </Selector>
-
-      <Selector
-        icon={<History size={13} aria-hidden />}
-        label="As at"
-        value={knowledgeDate ?? ''}
-        onChange={(value) => setKnowledgeDate(value || undefined)}
-        highlighted={viewingPast}
-      >
-        <option value="">Today — everything known</option>
-        {knowledgeDates.map((date) => (
-          <option key={date} value={date}>{formatTimestamp(date)}</option>
-        ))}
-      </Selector>
-
-      <Selector
-        icon={<Coins size={13} aria-hidden />}
-        label="Currency"
-        value={currency ?? ''}
-        onChange={(value) => setCurrency(value || undefined)}
-      >
-        <option value="">Vehicle currency</option>
-        {currencies.map((code) => (
-          <option key={code} value={code}>{code}</option>
-        ))}
-      </Selector>
+      <div className="scroll-x flex" role="tablist" aria-label={label}>
+        {tabs.map((tab, index) => {
+          const active = tab.id === selected;
+          return (
+            <button
+              key={tab.id || '__all'}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              title={tab.title}
+              onClick={() => onSelect(tab.id)}
+              onKeyDown={(event) => move(event, index)}
+              className="whitespace-nowrap px-3 py-2 text-xs transition-colors"
+              style={{
+                color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: active ? 600 : 400,
+                // The underline is what carries selection where colour cannot.
+                boxShadow: active ? 'inset 0 -2px 0 0 var(--series-1)' : 'none',
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

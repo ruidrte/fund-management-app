@@ -43,8 +43,14 @@ interface AuthValue {
   principal: Principal;
   /** True when a role is being simulated rather than actually held. */
   simulating: boolean;
-  /** Demo mode only: view the application as another role. */
-  simulateRole(role: Role | undefined, investorId?: string): void;
+  /**
+   * Demo mode only: view the application as another role, on one client.
+   *
+   * The client matters. A real EBG analyst holds one membership and sees EBG's
+   * products and no sign that other clients exist; simulating the role across
+   * every client would show the opposite and prove nothing.
+   */
+  simulateRole(role: Role | undefined, on?: { clientId: string; investorId?: string }): void;
 
   /** The role held on a client, or undefined for no access. */
   roleOn(clientId: string | undefined): Role | undefined;
@@ -65,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser>();
   const [error, setError] = useState<string>();
   const [real, setReal] = useState<Principal>(DEMO_PRINCIPAL);
-  const [simulated, setSimulated] = useState<{ role: Role; investorId?: string }>();
+  const [simulated, setSimulated] = useState<{ role: Role; clientId: string; investorId?: string }>();
 
   useEffect(() => {
     if (!requiresAuth) return;
@@ -114,30 +120,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSimulated(undefined);
   }, []);
 
-  const simulateRole = useCallback((role: Role | undefined, investorId?: string) => {
+  const simulateRole = useCallback((
+    role: Role | undefined,
+    on?: { clientId: string; investorId?: string },
+  ) => {
     // Simulation is a demo-mode affordance only. Against a backend it would be
     // a lie: the database would keep answering for the real principal, and the
     // screen would show one thing while every query returned another.
     if (requiresAuth) return;
-    setSimulated(role && role !== 'superuser' ? { role, investorId } : undefined);
+    if (!role || role === 'superuser' || !on?.clientId) {
+      setSimulated(undefined);
+      return;
+    }
+    setSimulated({ role, clientId: on.clientId, investorId: on.investorId });
   }, [requiresAuth]);
 
   /**
-   * The acting principal. A simulated role produces a principal holding that
-   * role on every client the real one can see, so the whole application —
-   * navigation, buttons, data — answers as it would for that role.
+   * The acting principal. A simulated role produces a principal holding exactly
+   * one membership, so the whole application — navigation, tabs, buttons, data —
+   * answers as it would for someone who belongs to that one client.
    */
   const principal = useMemo<Principal>(() => {
     if (!simulated) return real;
+    const membership: Membership = {
+      clientId: simulated.clientId,
+      role: simulated.role,
+      investorId: simulated.investorId,
+    };
     return {
       ...real,
       displayName: `Simulating ${simulated.role}`,
       isSuperuser: false,
-      memberships: SIMULATED_CLIENT_IDS.map((clientId): Membership => ({
-        clientId,
-        role: simulated.role,
-        investorId: simulated.investorId,
-      })),
+      memberships: [membership],
     };
   }, [real, simulated]);
 
@@ -174,12 +188,6 @@ export function useCan(capability: Capability, scope?: Scope): {
   const { can: check, why } = useAuth();
   return { allowed: check(capability, scope), reason: why(capability, scope) };
 }
-
-/**
- * The demo dataset's client ids. Simulation needs a membership per client, and
- * the demo repository is the only place these exist.
- */
-const SIMULATED_CLIENT_IDS = ['client-pam', 'client-ebg', 'client-ut'];
 
 /**
  * Reads the principal's platform role and memberships.

@@ -74,6 +74,20 @@ ownership is taken on commitment against that total. `NetResult.restricted`
 marks the condition, and the screens report the investor's own account rather
 than presenting fund-level figures as theirs.
 
+## What a role sees on screen
+
+A membership is per client, so a PAM analyst reaches PAM's products and an EBG
+analyst reaches EBG's. Nothing further is needed to separate them.
+
+The client tab row is rendered only when the principal can reach more than one
+client — in practice, only a superuser. Everyone else lands directly on their own
+client's products, with no sign that others exist. That is not decoration: a
+disabled row of other clients' names would disclose the client list to every
+user of every client.
+
+Sections disappear rather than showing as permanently disabled. A dead item in a
+sidebar is noise; the Access page carries the full list and the reason.
+
 ## Granting access
 
 Today this is a SQL insert:

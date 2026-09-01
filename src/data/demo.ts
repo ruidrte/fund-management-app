@@ -182,6 +182,14 @@ function fund(
   };
 }
 
+/**
+ * A holding the vehicle owns a piece of directly — a co-investment beside a
+ * sponsor, or an asset held outright. A fund-of-funds holds these alongside its
+ * fund commitments; they are not the preserve of a direct fund.
+ *
+ * It opens at zero and is established by its funding call. An opening NAV on
+ * top of a full call would double-count the investment.
+ */
 function direct(
   key: string, name: string, currency: CurrencyCode, vintage: number,
   commitment: number, subAssetClass: string, region: string,
@@ -189,14 +197,35 @@ function direct(
   extra: Partial<PositionSeed> = {},
 ): PositionSeed {
   return {
-    key, name, manager: 'Managed directly', currency, vintage, commitment,
-    // A direct holding opens at zero and is established by its funding call;
-    // an opening NAV on top would double-count the investment.
+    key, name, manager: 'Held directly', currency, vintage, commitment,
     ownership: 0.4, assetClass: assetClassFor(subAssetClass), subAssetClass, region,
     kind: 'direct-investment', openingNav: 0, quarterlyGrowth: growth,
     callSchedule: calls, distributionSchedule: distributions,
     ...extra,
   };
+}
+
+/** A co-investment beside a sponsor, alongside the fund commitment to them. */
+function coinvest(
+  key: string, name: string, sponsor: string, currency: CurrencyCode, vintage: number,
+  commitment: number, subAssetClass: string, region: string,
+  growth: number, calls: Sched, distributions?: Sched,
+  extra: Partial<PositionSeed> = {},
+): PositionSeed {
+  return direct(key, name, currency, vintage, commitment, subAssetClass, region,
+    growth, calls, distributions,
+    { kind: 'co-investment', manager: sponsor, ownership: 0.18, ...extra });
+}
+
+/** A fund interest bought on the secondary market. */
+function secondary(
+  key: string, name: string, manager: string, currency: CurrencyCode,
+  vintage: number, commitment: number, subAssetClass: string, region: string,
+  openingNav: number, growth: number, calls: Sched, distributions?: Sched,
+  extra: Partial<PositionSeed> = {},
+): PositionSeed {
+  return fund(key, name, manager, currency, vintage, commitment, subAssetClass,
+    region, openingNav, growth, calls, distributions, { kind: 'secondary', ...extra });
 }
 
 function assetClassFor(sub: string): string {
@@ -247,9 +276,11 @@ const CLIENTS: ClientSeed[] = [
           fund('circular', 'Circular Economy Infrastructure I', 'Circular Capital', 'EUR', 2023, 18_000, 'Infrastructure', 'Europe', 4_100, 0.019,
             { '2024Q4': 1_900, '2025Q2': 2_100, '2025Q4': 1_700, '2026Q1': 900 },
             undefined, { sfdr: 'Article 9', silentPeriods: [LATEST] }),
-          fund('transatlantic', 'Transatlantic Clean Power Fund', 'Meridian Energy', 'USD', 2022, 22_000, 'Energy Transition', 'North America', 9_800, 0.023,
+          secondary('transatlantic', 'Transatlantic Clean Power Fund (secondary)', 'Meridian Energy', 'USD', 2022, 22_000, 'Energy Transition', 'North America', 9_800, 0.023,
             { '2024Q1': 1_800, '2024Q3': 1_600, '2025Q1': 1_900, '2025Q3': 1_400, '2026Q1': 1_100 },
             { '2026Q1': 800 }, { sfdr: 'Article 8' }),
+          coinvest('onshore-wind-co', 'Onshore Wind Portfolio (co-investment)', 'Nordic Grid Partners', 'EUR', 2023, 14_000, 'Energy Transition', 'Europe', 0.020,
+            { '2024Q2': 8_000, '2025Q2': 4_000 }, { '2026Q1': 600 }, { sfdr: 'Article 9' }),
         ],
         investors: [
           { name: 'Swiss Pension Collective A', type: 'Institution', country: 'Switzerland', commitment: 65_000, entryDate: '2021-06-30' },
@@ -280,6 +311,8 @@ const CLIENTS: ClientSeed[] = [
           fund('green-hydrogen', 'Green Hydrogen Opportunities I', 'H2 Ventures', 'EUR', 2025, 22_000, 'Energy Transition', 'Europe', 0, 0.012,
             { '2025Q3': 2_200, '2026Q1': 1_900 },
             undefined, { sfdr: 'Article 9', silentPeriods: [LATEST] }),
+          coinvest('battery-storage-co', 'Grid Battery Storage (co-investment)', 'Thermal Partners', 'EUR', 2025, 12_000, 'Energy Transition', 'Europe', 0.016,
+            { '2025Q4': 6_000, '2026Q1': 3_000 }, undefined, { sfdr: 'Article 9' }),
         ],
         investors: [
           { name: 'Swiss Pension Collective A', type: 'Institution', country: 'Switzerland', commitment: 55_000, entryDate: '2024-09-30' },
@@ -291,7 +324,7 @@ const CLIENTS: ClientSeed[] = [
         key: 'pas-infra',
         name: 'PAS Infra',
         shortName: 'PAS Infra',
-        kind: 'direct-fund',
+        kind: 'fund-of-funds',
         currency: 'CHF',
         inception: '2019-12-31',
         investorCommitment: 250_000,
@@ -300,13 +333,15 @@ const CLIENTS: ClientSeed[] = [
         administrator: 'Helvetia Fund Administration',
         cash: 5_400,
         positions: [
+          fund('swiss-infra-fund', 'Swiss Infrastructure Partners III', 'Helvetia Infra', 'CHF', 2019, 62_000, 'Infrastructure', 'Europe', 38_400, 0.013,
+            { '2024Q2': 2_600, '2025Q2': 2_100 }, { '2024Q4': 4_200, '2025Q4': 3_800 }),
+          fund('euro-transport', 'European Transport Infrastructure IV', 'Corridor Capital', 'EUR', 2020, 48_000, 'Infrastructure', 'Europe', 29_100, 0.015,
+            { '2024Q1': 2_200, '2025Q1': 1_800 }, { '2025Q2': 3_400 }),
           direct('rail-terminal', 'Regional Rail Terminal Holding', 'CHF', 2020, 62_000, 'Infrastructure', 'Europe', 0.014,
             { '2024Q1': 62_000 }, { '2025Q2': 3_400, '2026Q1': 2_800 }),
-          direct('district-heat', 'Municipal District Heating Network', 'CHF', 2020, 54_000, 'Infrastructure', 'Europe', 0.012,
-            { '2024Q1': 54_000 }, { '2025Q4': 4_100 }),
           direct('fibre', 'Regional Fibre Backbone', 'CHF', 2021, 48_000, 'Infrastructure', 'Europe', 0.018,
             { '2024Q1': 48_000 }, { '2026Q1': 2_200 }),
-          direct('hydro', 'Alpine Small Hydro Portfolio', 'CHF', 2022, 44_000, 'Energy Transition', 'Europe', 0.011,
+          coinvest('hydro-co', 'Alpine Small Hydro Portfolio (co-investment)', 'Helvetia Infra', 'CHF', 2022, 44_000, 'Energy Transition', 'Europe', 0.011,
             { '2024Q2': 30_000, '2025Q1': 14_000 }),
           direct('water', 'Water Treatment Concession', 'EUR', 2023, 32_000, 'Infrastructure', 'Europe', 0.013,
             { '2024Q3': 20_000, '2025Q2': 12_000 }, undefined, { silentPeriods: [LATEST] }),
@@ -349,7 +384,7 @@ const CLIENTS: ClientSeed[] = [
           fund('sustainable-forestry', 'Sustainable Forestry Fund I', 'Verdant Land', 'EUR', 2022, 20_000, 'Nature-based', 'Global', 8_600, 0.016,
             { '2024Q3': 1_800, '2025Q1': 2_000, '2025Q3': 1_700, '2026Q1': 1_200 },
             undefined, { sfdr: 'Article 9' }),
-          fund('affordable-housing', 'Affordable Housing Fund CH', 'Wohnbau Partners', 'CHF', 2021, 28_000, 'Real Estate', 'Europe', 15_800, 0.014,
+          secondary('affordable-housing', 'Affordable Housing Fund CH (secondary)', 'Wohnbau Partners', 'CHF', 2021, 28_000, 'Real Estate', 'Europe', 15_800, 0.014,
             { '2024Q2': 1_700, '2024Q4': 1_500, '2025Q2': 1_600, '2025Q4': 1_200 },
             { '2025Q2': 1_100 }, { sfdr: 'Article 8' }),
           fund('microfinance', 'Global Microfinance Debt Fund', 'Inclusion Capital', 'USD', 2022, 18_000, 'Growth', 'Global', 9_200, 0.013,
@@ -361,6 +396,8 @@ const CLIENTS: ClientSeed[] = [
           fund('clean-mobility', 'Clean Mobility Infrastructure', 'Mobility Infra', 'EUR', 2023, 18_000, 'Infrastructure', 'Europe', 5_400, 0.020,
             { '2024Q3': 1_500, '2025Q1': 1_700, '2025Q3': 1_500, '2026Q1': 1_000 },
             undefined, { sfdr: 'Article 9' }),
+          coinvest('care-homes-co', 'Regional Care Homes (co-investment)', 'Civic Capital', 'CHF', 2023, 12_000, 'Real Estate', 'Europe', 0.013,
+            { '2024Q4': 7_000, '2025Q4': 3_500 }, undefined, { sfdr: 'Article 9' }),
         ],
         investors: [
           { name: 'Pension Foundation Abendrot', type: 'Institution', country: 'Switzerland', commitment: 90_000, entryDate: '2020-03-31' },
@@ -397,6 +434,8 @@ const CLIENTS: ClientSeed[] = [
           fund('health-access', 'Health Access Fund II', 'Access Capital', 'EUR', 2024, 14_000, 'Growth', 'Global', 2_100, 0.020,
             { '2025Q1': 1_700, '2025Q3': 1_500, '2026Q1': 1_100 },
             undefined, { sfdr: 'Article 9', silentPeriods: [LATEST] }),
+          coinvest('diagnostics-co', 'Rural Diagnostics Network (co-investment)', 'Access Capital', 'EUR', 2024, 9_000, 'Growth', 'Global', 0.021,
+            { '2025Q2': 5_000, '2026Q1': 2_500 }, undefined, { sfdr: 'Article 9' }),
         ],
         investors: [
           { name: 'Nordic Health Foundation', type: 'Institution', country: 'Denmark', commitment: 38_000, entryDate: '2022-06-30' },

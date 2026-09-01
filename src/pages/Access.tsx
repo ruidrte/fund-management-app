@@ -100,9 +100,13 @@ export function Access() {
       {!requiresAuth && (
         <Card
           title="View as another role"
-          subtitle="Demo only — checks what a role sees before anyone is granted it"
-          note="Against a backend this is not offered. It would be a lie: the database keeps answering for
-                the real login, so the screen would show one thing while every query returned another."
+          subtitle={client
+            ? `Demo only — see the application as this role on ${client.name}`
+            : 'Demo only'}
+          note="A simulated role holds one membership, on this client, like a real user would. The client
+                row disappears, because someone who belongs to one client should see no sign that others
+                exist. Against a backend this is not offered: the database keeps answering for the real
+                login, so the screen would show one thing while every query returned another."
         >
           <div className="flex flex-wrap gap-1.5">
             <button
@@ -122,13 +126,13 @@ export function Access() {
               <button
                 key={option}
                 type="button"
-                onClick={() => simulateRole(
-                  option,
+                onClick={() => simulateRole(option, {
+                  clientId,
                   // An investor login is bound to exactly one account; without
                   // one the role grants nothing, which is the safe failure.
-                  option === 'investor' ? dataset?.investors[0]?.id : undefined,
-                )}
-                disabled={option === 'investor' && !dataset?.investors[0]}
+                  investorId: option === 'investor' ? dataset?.investors[0]?.id : undefined,
+                })}
+                disabled={!clientId || (option === 'investor' && !dataset?.investors[0])}
                 aria-pressed={simulating && roleOn(clientId) === option}
                 className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs disabled:opacity-40"
                 style={{

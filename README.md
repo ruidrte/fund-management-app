@@ -56,15 +56,20 @@ make it impossible for a screenshot to be mistaken for a report.
 |---|---|---|---|---|---|
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund I | fund-of-funds | EUR | 2021-06-30 | Investing |
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund II | fund-of-funds | EUR | 2024-09-30 | Fundraising |
-| PAM | PAS Infra | direct-fund | CHF | 2019-12-31 | Harvesting |
+| PAM | PAS Infra | fund-of-funds | CHF | 2019-12-31 | Harvesting |
 | EBG | Abendrot Impulse Fund | fund-of-funds | CHF | 2020-03-31 | Investing |
 | EBG | Planetary Health Fund I | fund-of-funds | EUR | 2022-06-30 | Investing |
 | EBG | PK TG | fund-of-funds | CHF | 2018-09-30 | Harvesting |
 | UT | Una Terra Early Growth Fund | direct-fund | EUR | 2022-03-31 | Investing |
 
-**Kind, currency, inception and status are assumptions**, inferred from each
-vehicle's strategy rather than supplied. Correcting them means editing the one
-table at the top of `src/data/demo.ts`.
+Only Una Terra Early Growth Fund is a direct fund. The other six are
+fund-of-funds structures, and each holds a mix: fund commitments, secondaries,
+co-investments and assets held outright. That mix is a property of the holding,
+not of the vehicle — the `positionKind` exposure breakdown shows it.
+
+**Currency, inception and status are assumptions**, inferred from each vehicle's
+strategy rather than supplied. Correcting them means editing the one table at the
+top of `src/data/demo.ts`.
 
 The dataset is deliberately awkward in the ways real data is awkward: four
 currencies, vehicles at different stages of life, a latest quarter where part of
@@ -79,11 +84,21 @@ PostgreSQL 16 and its constraints and row-level-security policies verified.
 
 ### Scope is explicit
 
-Every figure is derived from six selections — client, vehicle, holding,
-quarter, as-at date and presentation currency. They are arguments to
-`analyse(dataset, scope)`, never ambient state, and they are visible in the bar
-at the top of every screen. A client is the tenant boundary; changing it clears
-every narrower selection.
+Every figure is derived from six selections — client, product, holding, quarter,
+as-at date and presentation currency. They are arguments to
+`analyse(dataset, scope)`, never ambient state, and they are visible at the top
+of every screen. A client is the tenant boundary; changing it clears every
+narrower selection.
+
+Client and product are tabs, because there are few of each and people move
+between them constantly. **The client row appears only for someone who can reach
+more than one client**: a client's own team sees their products and no
+indication that other clients exist, which is what their membership already
+entitles them to — showing a disabled row of other people's names would leak the
+client list.
+
+A consolidated view across a client's products is a product view of its own, not
+the absence of one, and its totals equal the sum of the products exactly.
 
 ### Facts are bitemporal
 
