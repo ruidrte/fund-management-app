@@ -32,20 +32,39 @@ export interface PdfText {
   needsOcr: boolean;
 }
 
+/**
+ * Raised when the PDF worker cannot be loaded, which is a property of how the
+ * application was built rather than of the document.
+ */
+export class PdfWorkerUnavailable extends Error {
+  constructor() {
+    super(
+      'PDF reading is not available in this build — it needs the pdf.js worker, '
+      + 'which a single-file review build cannot load. Spreadsheets and manual entry '
+      + 'work normally; run the app with `npm run dev` to read PDFs.',
+    );
+    this.name = 'PdfWorkerUnavailable';
+  }
+}
+
 /** Below this many characters per page, treat the document as an image. */
 const TEXT_PER_PAGE_FLOOR = 40;
 
 export async function extractPdfText(bytes: Uint8Array): Promise<PdfText> {
   const pdfjs = await import('pdfjs-dist');
 
-  // The worker is bundled alongside the library; pointing at it explicitly
-  // avoids a same-origin fetch that fails wherever the app is not served from
-  // its own root.
-  const workerUrl = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs',
-    import.meta.url,
-  ).toString();
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  // The worker is a separate file that pdf.js fetches at run time. It resolves
+  // in a normal build; in a single-file review build there is nothing to fetch,
+  // so the failure is caught below and reported as a limitation of that build
+  // rather than as a corrupt document.
+  try {
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+      'pdfjs-dist/build/pdf.worker.min.mjs',
+      import.meta.url,
+    ).toString();
+  } catch {
+    throw new PdfWorkerUnavailable();
+  }
 
   // These documents are not trusted input, and nothing in a statement needs to
   // load a font from elsewhere, render an embedded form, or reach the network.
@@ -57,7 +76,17 @@ export async function extractPdfText(bytes: Uint8Array): Promise<PdfText> {
     disableFontFace: true,
     enableXfa: false,
   });
-  const document = await task.promise;
+  let document;
+  try {
+    document = await task.promise;
+  } catch (cause) {
+    // A missing worker and a malformed file fail the same way here, so the
+    // message has to distinguish them or the user chases the wrong problem.
+    if (String(cause).includes('worker') || String(cause).includes('Worker')) {
+      throw new PdfWorkerUnavailable();
+    }
+    throw cause;
+  }
 
   const pages: string[] = [];
 

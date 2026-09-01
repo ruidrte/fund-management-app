@@ -186,6 +186,13 @@ export interface ExtractionInput {
   context: MatchContext;
   /** Period the user says the document describes, when they have told us. */
   period?: PeriodId;
+  /**
+   * Vehicle the user is currently scoped to. A vehicle-level document — a NAV
+   * pack, a balance sheet — belongs to whichever vehicle the person loading it
+   * is looking at. Inferring it from the filename works only when somebody
+   * named the file well, which is not something to depend on.
+   */
+  vehicleId?: string;
 }
 
 export interface TableData {

@@ -32,6 +32,8 @@ export interface IngestRequest {
   clientId: string;
   /** Period the user says the document describes, when they know. */
   period?: PeriodId;
+  /** Vehicle currently in scope, used as the target for vehicle-level documents. */
+  vehicleId?: string;
   /** Sheet to read, for a multi-sheet workbook. */
   sheetName?: string;
   uploadedBy?: string;
@@ -124,7 +126,9 @@ export async function ingest(
     table = { sheetName: file.name, rows };
   }
 
-  const result = await extractor.extract({ document, bytes, text, table, context, period });
+  const result = await extractor.extract({
+    document, bytes, text, table, context, period, vehicleId: request.vehicleId,
+  });
 
   return {
     ...result,

@@ -103,8 +103,16 @@ function checkMatch(candidate: Candidate, issues: Issue[]): void {
   }
 }
 
+/**
+ * Fields whose confidence is not worth a warning. A label or a derived flag is
+ * not a figure anybody will check, and warning about them buries the warnings
+ * that matter — which is how a review step stops being read.
+ */
+const IMMATERIAL_FIELDS = new Set(['description', 'source', 'affectsCommitment']);
+
 function checkFieldConfidence(candidate: Candidate, issues: Issue[]): void {
   for (const [name, value] of Object.entries(candidate.fields)) {
+    if (IMMATERIAL_FIELDS.has(name)) continue;
     if (value.confidence < REVIEW_THRESHOLD) {
       issues.push({
         severity: 'warning',

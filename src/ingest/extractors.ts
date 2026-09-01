@@ -386,7 +386,7 @@ export const navPackExtractor: Extractor = {
     + 'cash, receivables, payables and accrued fees. Every line it classified is listed, so a misclassification is visible.',
 
   async extract(input: ExtractionInput): Promise<ExtractionResult> {
-    const { document, table, text, context, period } = input;
+    const { document, table, text, context, period, vehicleId } = input;
 
     const lines: Array<{ label: string; amount: number; locator: string }> = [];
 
@@ -437,9 +437,22 @@ export const navPackExtractor: Extractor = {
       };
     }
 
-    const vehicleMatch = matchEntity(
-      document.name, 'vehicle', context,
-    );
+    // The scoped vehicle, when there is one; otherwise fall back to reading the
+    // filename, which is a guess and is scored as one.
+    const scoped = vehicleId
+      ? context.vehicles.find((v) => v.id === vehicleId)
+      : context.vehicles.length === 1 ? context.vehicles[0] : undefined;
+
+    const vehicleMatch = scoped
+      ? {
+        kind: 'vehicle' as const,
+        id: scoped.id,
+        sourceName: document.name,
+        matchedName: scoped.name,
+        confidence: 1,
+        alternatives: context.vehicles.map((v) => ({ id: v.id, name: v.name, score: 1 })),
+      }
+      : matchEntity(document.name, 'vehicle', context);
 
     const candidate: Candidate = {
       id: nextId('cand'),

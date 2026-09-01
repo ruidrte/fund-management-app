@@ -25,10 +25,21 @@ any date:
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
-npm test         # 107 tests over the engine, ingestion and export
-npm run build
+npm run dev            # http://localhost:5173
+npm test               # 109 tests over the engine, ingestion and export
+npm run build          # dist/ — deploy anywhere static (netlify.toml included)
+npm run build:single   # dist-single/index.html — the whole app in one file
 ```
+
+`build:single` inlines every asset into one HTML document, so the application
+opens from a link, an email attachment or a local disk with no server at all.
+Everything works in that build except reading PDFs, which needs the pdf.js
+worker as a separate file; it says so rather than failing obscurely.
+
+`samples/` holds documents for exercising the intake pipeline. They are
+deliberately awkward in the ways real documents are awkward — four number
+conventions in one column, an ambiguous date, a fund that matches nothing, a
+total row — and `samples/README.md` says what each row should do.
 
 With no configuration it runs against a built-in demo dataset — two clients, a
 EUR fund-of-funds and a USD direct fund, three currencies, an incomplete latest

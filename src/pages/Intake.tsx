@@ -30,7 +30,7 @@ const UPLOADABLE: DocumentKind[] = [
 ];
 
 export function Intake({ view }: { view: QuarterView }) {
-  const { dataset, clientId, refresh } = useScope();
+  const { dataset, clientId, vehicleId, refresh } = useScope();
   const { user } = useAuth();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -50,7 +50,7 @@ export function Intake({ view }: { view: QuarterView }) {
     setCommitted(undefined);
     try {
       const result = await ingest(
-        { file, kind, clientId, period: view.period, uploadedBy: user?.id },
+        { file, kind, clientId, vehicleId, period: view.period, uploadedBy: user?.id },
         dataset,
       );
       // Anything clean is pre-accepted; anything with a warning or an error is
@@ -68,7 +68,7 @@ export function Intake({ view }: { view: QuarterView }) {
     } finally {
       setBusy(false);
     }
-  }, [dataset, kind, clientId, view.period, user]);
+  }, [dataset, kind, clientId, vehicleId, view.period, user]);
 
   const setState = (id: string, state: Candidate['state']) => {
     setOutcome((current) => current && {

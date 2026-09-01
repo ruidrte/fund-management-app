@@ -304,7 +304,45 @@ describe('administrator NAV pack', () => {
   });
 });
 
+describe('vehicle-level documents target the scoped vehicle', () => {
+  it('uses the vehicle in scope rather than reading the filename', async () => {
+    const result = await navPackExtractor.extract({
+      // A filename that names nothing, which is the normal case.
+      document: doc({ kind: 'nav-pack', name: 'TB_export_final_v3.xlsx' }),
+      context,
+      period: '2026Q1',
+      vehicleId: 'veh-meridian-pf-ii',
+      table: {
+        sheetName: 'TB',
+        rows: [['Account', 'Balance'], ['Cash at bank', 1800]],
+      },
+    });
+    expect(result.candidates[0].match?.id).toBe('veh-meridian-pf-ii');
+    expect(result.candidates[0].match?.confidence).toBe(1);
+  });
+});
+
 describe('validation', () => {
+  it('does not warn about fields nobody would check', () => {
+    // Warning on a description or a derived flag buries the warnings that
+    // matter, which is how a review step stops being read.
+    const [candidate] = validateAll([{
+      id: 'c0', documentId: 'doc-1', kind: 'cashflow',
+      fields: {
+        amount: { value: -100, confidence: 1 },
+        date: { value: '2026-03-31', confidence: 1 },
+        period: { value: '2026Q1', confidence: 1 },
+        currency: { value: 'EUR', confidence: 1 },
+        description: { value: 'Notice', confidence: 0.4 },
+        affectsCommitment: { value: true, confidence: 0.5 },
+        source: { value: 'file.pdf', confidence: 0.3 },
+      },
+      issues: [], state: 'pending',
+    }], dataset);
+
+    expect(candidate.issues.filter((i) => /confidence/.test(i.message))).toEqual([]);
+  });
+
   it('blocks a candidate whose holding did not match', () => {
     const [candidate] = validateAll([{
       id: 'c1', documentId: 'doc-1', kind: 'position-valuation',
