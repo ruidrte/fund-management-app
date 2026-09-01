@@ -11,6 +11,7 @@ import { useCallback } from 'react';
 import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
 import { factsFrom, type Candidate, type SourceDocument } from '../ingest';
+import { NO_PROFILE, type ReportingProfile } from '../domain/report';
 
 export interface FilingResult {
   /** How many facts were written, or would have been. */
@@ -19,6 +20,44 @@ export interface FilingResult {
   message: string;
   /** False when the facts went nowhere but memory. */
   persisted: boolean;
+}
+
+/**
+ * Saving a client's reporting profile.
+ *
+ * Layouts and branding belong to the client, so they live in the client's book
+ * beside the figures — a new client is a new profile rather than a new build.
+ * There is nowhere to put them without a book, and the interface says so rather
+ * than accepting an edit that will not survive the reload.
+ */
+export function useReportingProfile() {
+  const { kind, book, folderName } = useDataSource();
+  const { clientId, dataset, refresh } = useScope();
+
+  const profile = dataset?.reporting ?? NO_PROFILE;
+  const canSave = kind === 'folder' && Boolean(book);
+
+  const save = useCallback(async (next: ReportingProfile) => {
+    if (!book || kind !== 'folder') {
+      throw new Error(
+        kind === 'supabase'
+          ? 'Writing to the database is not built yet, so a profile cannot be saved.'
+          : 'The sample dataset is not persisted. Connect a folder under Storage to keep a profile.',
+      );
+    }
+    await book.commit(clientId, { reference: { reporting: next } });
+    refresh();
+  }, [book, kind, clientId, refresh]);
+
+  return {
+    profile,
+    save,
+    canSave,
+    destination: folderName,
+    reason: canSave ? undefined : kind === 'supabase'
+      ? 'Writing to the database is not built yet.'
+      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+  };
 }
 
 export function useFiling() {

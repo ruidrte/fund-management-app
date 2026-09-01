@@ -28,6 +28,7 @@ import {
   type Investor, type Vehicle,
 } from '../domain/types';
 import { periodEndDate, periodRange, type PeriodId } from '../domain/period';
+import type { ReportingProfile } from '../domain/report';
 
 const PERIODS: PeriodId[] = periodRange('2024Q1', '2026Q1');
 const LATEST: PeriodId = '2026Q1';
@@ -665,6 +666,83 @@ export function buildDemoDataSet(clientId: string): DataSet {
     balanceSheets,
     fxRates: fxRates(),
     esgMetrics: [],
+    reporting: reportingFor(seed, clientKey),
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Reporting profiles
+ *
+ * The engine is the same for every product; the pack that reaches a limited
+ * partner is not. These three differ in the ways real ones differ — what leads,
+ * how much prose, whether the controls are shown to the investor or kept for
+ * the desk — so the difference is visible before anybody's real layout is
+ * built. The wording is generic on purpose: nothing here is any firm's actual
+ * disclaimer.
+ * ------------------------------------------------------------------ */
+
+const PROFILE_STYLE: Record<string, { accent: string; coverNote: string }> = {
+  pam: {
+    accent: '#1f5c3d',
+    coverNote: 'Quarterly report to limited partners. Figures are unaudited unless stated.',
+  },
+  ebg: {
+    accent: '#2a4f8f',
+    coverNote: 'Prepared for the exclusive use of the fund\u2019s limited partners.',
+  },
+  ut: {
+    accent: '#7a4b1e',
+    coverNote: 'Quarterly report. Portfolio figures are stated before fund-level fees.',
+  },
+};
+
+function reportingFor(seed: ClientSeed, clientKey: string): ReportingProfile {
+  const style = PROFILE_STYLE[seed.key] ?? PROFILE_STYLE.pam;
+  const direct = seed.vehicles.every((vehicle) => vehicle.kind === 'direct-fund');
+  const id = `${clientKey}-lp`;
+
+  return {
+    branding: {
+      house: seed.name,
+      accent: style.accent,
+      coverNote: style.coverNote,
+      footerNote:
+        'This report is prepared for the recipient named above and may not be redistributed. '
+        + 'It is not an offer to sell or a solicitation to buy any interest.',
+    },
+    defaultLayoutId: id,
+    layouts: [{
+      id,
+      clientId: clientKey,
+      name: `${seed.shortName} limited partner report`,
+      description: 'The pack that goes to this client\u2019s investors.',
+      appliesTo: [],
+      sections: direct
+        // A direct fund's investors read the assets first; there is no undrawn
+        // commitment layer between them and the portfolio.
+        ? [
+          { id: 'cover' },
+          { id: 'summary', title: 'The quarter' },
+          { id: 'kpi-net', title: 'Your position' },
+          { id: 'product-bridge', title: 'Movement in net asset value' },
+          { id: 'portfolio-register', title: 'Investments' },
+          { id: 'look-through', title: 'Where the capital is working' },
+          { id: 'currency', title: 'Currency' },
+          { id: 'conventions', title: 'Basis of preparation' },
+        ]
+        : [
+          { id: 'cover' },
+          { id: 'summary', title: 'The quarter' },
+          { id: 'kpi-net', title: 'Your position in the fund' },
+          { id: 'product-bridge', title: 'Movement in net asset value' },
+          { id: 'nav-components', title: 'What the net asset value is made of' },
+          { id: 'kpi-gross', title: 'The underlying portfolio' },
+          { id: 'allocation', title: 'Allocation' },
+          { id: 'portfolio-register', title: 'Portfolio' },
+          { id: 'coverage', title: 'What has reported' },
+          { id: 'conventions', title: 'Basis of preparation' },
+        ],
+    }],
   };
 }
 

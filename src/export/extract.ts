@@ -22,6 +22,7 @@ import {
   comparePeriods, formatPeriod, periodEndDate, sortPeriods, type PeriodId,
 } from '../domain/period';
 import type { CurrencyCode, DataSet, Scope } from '../domain/types';
+import type { ReportingProfile } from '../domain/report';
 import { analyse } from '../engine';
 import { throughPeriod, visibleAt } from '../engine/asof';
 
@@ -61,6 +62,15 @@ export interface Extract {
   /** Base filename, without an extension. */
   filename: string;
   periods: PeriodId[];
+  /**
+   * The client's report layouts and branding, verbatim.
+   *
+   * Not a sheet: it is nested configuration, and flattening it into rows would
+   * make it unreadable and unrestorable. It travels in the CSV bundle as its
+   * own file so that an export is a complete backup of the book — losing the
+   * folder should not mean rebuilding every client's pack by hand.
+   */
+  reporting?: ReportingProfile;
 }
 
 export function buildExtract(options: ExtractOptions): Extract {
@@ -257,6 +267,7 @@ export function buildExtract(options: ExtractOptions): Extract {
   }
 
   return {
+    reporting: dataset.reporting,
     sheets,
     manifest: buildManifest(options, sheets, periods, vehicles.map((v) => v.name)),
     filename: buildFilename(options, vehicles.map((v) => v.shortName)),

@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendFacts, clientsIn, createClient, initialiseBook, readClient, readDocuments,
-  readManifest, slugFor, storeDocument, summarise, vaultFor, writeManifest,
+  readManifest, replaceReference, slugFor, storeDocument, summarise, vaultFor, writeManifest,
 } from '../src/data/workspace/store';
 import { unlock, WrongPassphrase } from '../src/data/workspace/crypto';
 import { openBook } from '../src/data/workspace/repository';
@@ -280,6 +280,32 @@ describe('a book encrypted with a passphrase', () => {
     const read = await readClient(vault, slug);
     expect(read!.dataset.positionValuations).toHaveLength(0);
     expect(read!.problems.join(' ')).toMatch(/did not decrypt/);
+  });
+});
+
+describe('a client\u2019s report layouts live in its own book', () => {
+  it('round-trips a profile with the figures', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    const profile = {
+      branding: { house: 'EBG Investment Solutions', accent: '#2a4f8f' },
+      defaultLayoutId: 'ebg-lp',
+      layouts: [{
+        id: 'ebg-lp', clientId: 'client-ebg', name: 'EBG limited partner report',
+        description: 'The pack that goes out', appliesTo: [],
+        sections: [{ id: 'cover' as const }, { id: 'kpi-net' as const, title: 'Your position' }],
+      }],
+    };
+
+    await replaceReference(vault, slug, { reporting: profile });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.reporting).toEqual(profile);
+  });
+
+  it('leaves a client without one exactly as it was', async () => {
+    const { vault, slug } = await bookWith('client-ut');
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.reporting).toBeUndefined();
   });
 });
 

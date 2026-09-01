@@ -14,7 +14,7 @@ import type { QuarterView } from '../engine';
 import type { ExposureBreakdown } from '../engine/exposure';
 import type { Bridge } from '../engine/bridge';
 import { formatPeriod } from '../domain/period';
-import type { ReportLayout, Section } from './layouts';
+import type { Branding, ReportLayout, Section } from './layouts';
 import {
   money, multiple, percent, signedMoney,
   PROVENANCE_LABEL, formatTimestamp, formatDate,
@@ -26,13 +26,17 @@ export interface RenderOptions {
   /** Shown in the footer so a reader can tell where the numbers came from. */
   sourceLabel: string;
   preparedBy?: string;
+  /** The client's own presentation. Absent renders the house-neutral default. */
+  branding?: Branding;
 }
 
-export function renderReport({ layout, view, sourceLabel, preparedBy }: RenderOptions): string {
+export function renderReport({
+  layout, view, sourceLabel, preparedBy, branding,
+}: RenderOptions): string {
   const vehicle = view.vehicles[0];
   const title = `${vehicle?.shortName ?? view.scope.clientId} — ${formatPeriod(view.period)}`;
 
-  const body = layout.sections.map((section) => renderSection(section, view)).join('\n');
+  const body = layout.sections.map((section) => renderSection(section, view, branding)).join('\n');
 
   return `<!doctype html>
 <html lang="en">
@@ -40,12 +44,13 @@ export function renderReport({ layout, view, sourceLabel, preparedBy }: RenderOp
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} · ${esc(layout.name)}</title>
-<style>${STYLES}</style>
+<style>${STYLES}${accentStyle(branding?.accent)}</style>
 </head>
 <body>
 <main class="page">
 ${body}
 <footer class="foot">
+  ${branding?.footerNote ? `<p class="standing">${esc(branding.footerNote)}</p>` : ''}
   <p>${esc(layout.name)} · ${esc(vehicle?.name ?? '')} · ${esc(formatPeriod(view.period))} · presented in ${esc(view.currency)}</p>
   <p>Generated ${esc(formatTimestamp(new Date().toISOString()))} from ${esc(sourceLabel)}${preparedBy ? ` by ${esc(preparedBy)}` : ''}.
      ${view.scope.knowledgeDate
@@ -58,18 +63,18 @@ ${body}
 </html>`;
 }
 
-function renderSection(section: Section, view: QuarterView): string {
+function renderSection(section: Section, view: QuarterView, branding?: Branding): string {
   const heading = section.title ? `<h2>${esc(section.title)}</h2>` : '';
   const intro = section.intro ? `<p class="intro">${esc(section.intro)}</p>` : '';
-  const content = sectionContent(section, view);
+  const content = sectionContent(section, view, branding);
   if (!content) return '';
   if (section.id === 'cover') return content;
   return `<section class="block">${heading}${intro}${content}</section>`;
 }
 
-function sectionContent(section: Section, view: QuarterView): string {
+function sectionContent(section: Section, view: QuarterView, branding?: Branding): string {
   switch (section.id) {
-    case 'cover': return cover(view);
+    case 'cover': return cover(view, branding);
     case 'summary': return summary(view);
     case 'kpi-gross': return grossKpis(view);
     case 'kpi-net': return netKpis(view);
@@ -96,7 +101,7 @@ function sectionContent(section: Section, view: QuarterView): string {
 
 /* ---------------------------------------------------------------- sections */
 
-function cover(view: QuarterView): string {
+function cover(view: QuarterView, branding?: Branding): string {
   const vehicle = view.vehicles[0];
   const status = view.isFinal
     ? '<span class="flag flag-good">Final</span>'
@@ -105,9 +110,10 @@ function cover(view: QuarterView): string {
       : '<span class="flag flag-stop">Below coverage floor — do not issue</span>';
 
   return `<header class="cover">
-  <p class="eyebrow">${esc(vehicle?.manager ?? '')}</p>
+  <p class="eyebrow">${esc(branding?.house ?? vehicle?.manager ?? '')}</p>
   <h1>${esc(vehicle?.name ?? 'Consolidated')}</h1>
   <p class="lede">${esc(formatPeriod(view.period))} · ${esc(vehicle ? formatDate(periodEnd(view)) : '')} · presented in ${esc(view.currency)}</p>
+  ${branding?.coverNote ? `<p class="cover-note">${esc(branding.coverNote)}</p>` : ''}
   <p>${status}</p>
   ${view.scope.knowledgeDate
     ? `<p class="asat">Historical view — reproduces the position as known at ${esc(formatTimestamp(view.scope.knowledgeDate))}.</p>`
@@ -537,11 +543,26 @@ function esc(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * The client's accent, applied as a variable override rather than by rewriting
+ * the stylesheet. Anything that is not a plain hex colour is ignored: this
+ * string is interpolated into a stylesheet, and a report carries names that
+ * came out of documents nobody here wrote.
+ */
+function accentStyle(accent?: string): string {
+  if (!accent || !/^#[0-9a-fA-F]{6}$/.test(accent)) return '';
+  return `:root{--accent:${accent}}`;
+}
+
 const STYLES = `
 :root{color-scheme:light;--surface:#fcfcfb;--surface-2:#f0efec;--border:#e2e1dc;--ink:#0b0b0b;--ink-2:#52514e;--ink-3:#7a7973;
 --series-1:#2a78d6;--series-2:#eb6834;--series-3:#1baf7a;--series-4:#eda100;--series-5:#e87ba4;--series-6:#008300;--series-7:#4a3aa7;--series-8:#e34948;
---up:#2a78d6;--down:#d03b3b;--good:#0ca30c;--warning:#fab219;--serious:#ec835a;--stop:#d03b3b;--grid:#e9e8e4}
-@media (prefers-color-scheme:dark){:root{color-scheme:dark;--surface:#1a1a19;--surface-2:#242422;--border:#34342f;--ink:#fff;--ink-2:#c3c2b7;--ink-3:#8f8e85;
+--up:#2a78d6;--down:#d03b3b;--good:#0ca30c;--warning:#fab219;--serious:#ec835a;--stop:#d03b3b;--grid:#e9e8e4;
+/* The client's colour, and it goes nowhere near a data mark: the categorical
+   palette is chosen for separation and contrast, and a brand colour dropped
+   into it makes two series that no longer read apart. */
+--accent:#52514e}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--accent:#c3c2b7;--surface:#1a1a19;--surface-2:#242422;--border:#34342f;--ink:#fff;--ink-2:#c3c2b7;--ink-3:#8f8e85;
 --series-1:#3987e5;--series-2:#d95926;--series-3:#199e70;--series-4:#c98500;--series-5:#d55181;--series-6:#008300;--series-7:#9085e9;--series-8:#e66767;--up:#3987e5;--grid:#2c2c29}}
 *{box-sizing:border-box}
 body{margin:0;background:var(--surface);color:var(--ink);font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
@@ -551,8 +572,10 @@ h1{font-size:1.75rem;margin:.2em 0 .1em;letter-spacing:-.01em}
 h2{font-size:1.05rem;margin:0 0 .35em;letter-spacing:-.005em}
 h3{font-size:.9rem;margin:1.5em 0 .5em;color:var(--ink-2)}
 p{margin:.5em 0}
-.cover{border-bottom:2px solid var(--border);padding-bottom:20px;margin-bottom:28px}
-.eyebrow{margin:0;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.cover{border-bottom:2px solid var(--accent);padding-bottom:20px;margin-bottom:28px}
+.eyebrow{margin:0;font-size:.75rem;text-transform:uppercase;letter-spacing:.08em;color:var(--accent);font-weight:600}
+.cover-note{color:var(--ink-2);font-size:.8125rem;max-width:62ch;margin:.4em 0 .6em}
+.standing{color:var(--ink-2);max-width:78ch;margin-bottom:8px}
 .lede{color:var(--ink-2);margin:.25em 0 .75em}
 .asat{color:var(--ink-2);font-size:.8125rem}
 .block{margin:32px 0;padding-top:20px;border-top:1px solid var(--border)}

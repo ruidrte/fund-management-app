@@ -7,43 +7,13 @@
  * is a new section type here, not a special case in the renderer.
  */
 
-import type { QuarterView } from '../engine';
+import type { VehicleKind } from '../domain/types';
+import { NO_PROFILE, type ReportLayout, type ReportingProfile } from '../domain/report';
 
-export type SectionId =
-  | 'cover'
-  | 'summary'
-  | 'kpi-gross'
-  | 'kpi-net'
-  | 'nav-bridge'
-  | 'commitments-bridge'
-  | 'product-bridge'
-  | 'nav-components'
-  | 'portfolio-register'
-  | 'drivers'
-  | 'allocation'
-  | 'currency'
-  | 'look-through'
-  | 'capital-accounts'
-  | 'coverage'
-  | 'checks'
-  | 'conventions';
-
-export interface Section {
-  id: SectionId;
-  /** Overrides the section's default heading. */
-  title?: string;
-  /** Prose placed above the section's content. */
-  intro?: string;
-}
-
-export interface ReportLayout {
-  id: string;
-  name: string;
-  description: string;
-  /** Vehicle kinds the layout is meant for; empty means any. */
-  appliesTo: Array<'fund-of-funds' | 'direct-fund'>;
-  sections: Section[];
-}
+export type {
+  Branding, ReportLayout, ReportingProfile, Section, SectionId,
+} from '../domain/report';
+export { NO_PROFILE, SECTION_LABEL, SECTION_ORDER } from '../domain/report';
 
 export const LAYOUTS: ReportLayout[] = [
   {
@@ -127,12 +97,25 @@ export const LAYOUTS: ReportLayout[] = [
   },
 ];
 
-export function layoutsFor(view: QuarterView | undefined): ReportLayout[] {
+/**
+ * The layouts offered for a scope: the client's own first, then the built-ins.
+ *
+ * A client's own pack is what actually goes out, so it leads. The built-ins
+ * stay available because the monitoring pack is for the desk rather than for
+ * the client, and it should not have to be recreated per client.
+ */
+export function layoutsFor(
+  view: { vehicles: Array<{ kind: VehicleKind }> } | undefined,
+  profile: ReportingProfile = NO_PROFILE,
+): ReportLayout[] {
   const kind = view?.vehicles[0]?.kind;
-  if (!kind) return LAYOUTS;
-  return LAYOUTS.filter((layout) => layout.appliesTo.length === 0 || layout.appliesTo.includes(kind));
+  const applies = (layout: ReportLayout) =>
+    !kind || layout.appliesTo.length === 0 || layout.appliesTo.includes(kind);
+  return [...profile.layouts, ...LAYOUTS].filter(applies);
 }
 
-export function findLayout(id: string): ReportLayout | undefined {
-  return LAYOUTS.find((layout) => layout.id === id);
+export function findLayout(
+  id: string, profile: ReportingProfile = NO_PROFILE,
+): ReportLayout | undefined {
+  return [...profile.layouts, ...LAYOUTS].find((layout) => layout.id === id);
 }

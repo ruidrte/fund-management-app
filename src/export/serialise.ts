@@ -68,6 +68,11 @@ export function toCsvBundle(extract: Extract): Uint8Array {
   for (const sheet of extract.sheets) {
     files[`${sheet.name}.csv`] = strToU8(toCsv(sheet));
   }
+  // Nested configuration rather than rows, so it travels as itself. Without it
+  // an export would restore every figure and none of the packs they go into.
+  if (extract.reporting) {
+    files['reporting.json'] = strToU8(`${JSON.stringify(extract.reporting, null, 2)}\n`);
+  }
   return zipSync(files, { level: 6 });
 }
 

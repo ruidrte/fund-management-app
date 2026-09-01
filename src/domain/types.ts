@@ -1,4 +1,5 @@
 import type { PeriodId } from './period';
+import type { ReportingProfile } from './report';
 
 /* ------------------------------------------------------------------ *
  * Scope: client -> vehicle -> position -> asset
@@ -374,6 +375,11 @@ export interface Scope {
 /** Everything the engine needs, already narrowed to one client. */
 export interface DataSet {
   client: Client;
+  /**
+   * How this client's reports look and read. Absent for a client that has not
+   * been given one, which behaves exactly like an empty one.
+   */
+  reporting?: ReportingProfile;
   vehicles: Vehicle[];
   positions: Position[];
   assets: Asset[];

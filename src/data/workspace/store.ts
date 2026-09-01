@@ -7,6 +7,7 @@
  *   book.json                     what this folder is, and how it is protected
  *   clients/<slug>/
  *     client.json                 the client and its conventions
+ *     reporting.json              this client's report layouts and branding
  *     vehicles.json               reference data — rewritten when it changes
  *     positions.json
  *     assets.json
@@ -36,6 +37,7 @@ import type {
   Asset, AssetValuation, Cashflow, Client, DataSet, EsgMetric, FxRate, Investor,
   Position, PositionValuation, Vehicle, VehicleBalanceSheet,
 } from '../../domain/types';
+import type { ReportingProfile } from '../../domain/report';
 import type { SourceDocument } from '../../ingest/types';
 import {
   appendLines, listFiles, readBytes as readFileBytes, readText as readFileText, writeFile,
@@ -109,7 +111,11 @@ export type ReferenceUpdate = Partial<{
   positions: Position[];
   assets: Asset[];
   investors: Investor[];
+  /** How this client's reports look and read. */
+  reporting: ReportingProfile;
 }>;
+
+const REPORTING_FILE = 'reporting.json';
 
 /* ------------------------------------------------------------------ *
  * The vault
@@ -395,6 +401,8 @@ export async function readClient(
     reference[key] = text === undefined ? [] : (JSON.parse(text) as unknown[]);
   }
 
+  const reportingText = await vault.readText(`${dir}/${REPORTING_FILE}`);
+
   const facts = {} as Record<FactKey, unknown[]>;
   for (const [key, file] of Object.entries(FACT_FILES) as [FactKey, string][]) {
     const read = await vault.readLines(`${dir}/facts/${file}`);
@@ -405,6 +413,9 @@ export async function readClient(
   return {
     dataset: {
       client,
+      reporting: reportingText === undefined
+        ? undefined
+        : (JSON.parse(reportingText) as ReportingProfile),
       vehicles: reference.vehicles as Vehicle[],
       positions: reference.positions as Position[],
       assets: reference.assets as Asset[],
@@ -455,6 +466,9 @@ export async function replaceReference(
   const dir = clientDir(slug);
   if (update.client) {
     await vault.writeText(`${dir}/client.json`, JSON.stringify(update.client, null, 2));
+  }
+  if (update.reporting) {
+    await vault.writeText(`${dir}/${REPORTING_FILE}`, JSON.stringify(update.reporting, null, 2));
   }
   for (const [key, file] of Object.entries(REFERENCE_FILES) as [ReferenceKey, string][]) {
     const rows = update[key];

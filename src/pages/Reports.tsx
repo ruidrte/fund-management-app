@@ -7,11 +7,13 @@
  */
 
 import { useMemo, useState } from 'react';
-import { Download, Eye, Printer } from 'lucide-react';
+import { Download, Eye, Printer, Settings2 } from 'lucide-react';
 import type { QuarterView } from '../engine';
 import { Card } from '../components/common/Card';
 import { StatusPill } from '../components/common/Badges';
 import { layoutsFor, type ReportLayout } from '../reports/layouts';
+import { LayoutEditor } from '../components/reports/LayoutEditor';
+import { useReportingProfile } from '../context/filing';
 import { renderReport } from '../reports/render';
 import { useScope } from '../context/ScopeContext';
 import { formatPeriod } from '../domain/period';
@@ -19,15 +21,23 @@ import { formatTimestamp } from '../components/common/format';
 
 export function Reports({ view }: { view: QuarterView }) {
   const { sourceLabel } = useScope();
-  const layouts = useMemo(() => layoutsFor(view), [view]);
-  const [layoutId, setLayoutId] = useState(layouts[0]?.id ?? '');
-  const [previewing, setPreviewing] = useState(false);
+  const { profile } = useReportingProfile();
 
-  const layout = layouts.find((l) => l.id === layoutId) ?? layouts[0];
+  const layouts = useMemo(() => layoutsFor(view, profile), [view, profile]);
+  // The client's own default leads, because it is the one that goes out.
+  const [layoutId, setLayoutId] = useState('');
+  const [previewing, setPreviewing] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const layout = layouts.find((l) => l.id === layoutId)
+    ?? layouts.find((l) => l.id === profile.defaultLayoutId)
+    ?? layouts[0];
 
   const html = useMemo(
-    () => (layout ? renderReport({ layout, view, sourceLabel }) : ''),
-    [layout, view, sourceLabel],
+    () => (layout
+      ? renderReport({ layout, view, sourceLabel, branding: profile.branding })
+      : ''),
+    [layout, view, sourceLabel, profile.branding],
   );
 
   const filename = useMemo(() => {
@@ -67,6 +77,13 @@ export function Reports({ view }: { view: QuarterView }) {
             <StatusPill tone={view.isFinal ? 'good' : view.gross.coverage.publishable ? 'serious' : 'critical'}>
               {view.isFinal ? 'Final' : view.gross.coverage.publishable ? 'Draft' : 'Not publishable'}
             </StatusPill>
+            <button
+              type="button" onClick={() => setEditing((v) => !v)}
+              className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+            >
+              <Settings2 size={13} aria-hidden /> {editing ? 'Close' : 'Layouts for this client'}
+            </button>
             <button
               type="button" onClick={() => setPreviewing((v) => !v)}
               className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs"
@@ -117,6 +134,15 @@ export function Reports({ view }: { view: QuarterView }) {
           </p>
         )}
       </Card>
+
+      {editing && (
+        <LayoutEditor
+          view={view}
+          selectedId={layout.id}
+          onSelect={setLayoutId}
+          onClose={() => setEditing(false)}
+        />
+      )}
 
       {previewing && (
         <Card title="Preview" subtitle={filename}>
