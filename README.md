@@ -26,7 +26,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 109 tests over the engine, ingestion and export
+npm test               # 135 tests over the engine, permissions, ingestion and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -122,6 +122,11 @@ injection defences, a hardened PDF parser, zero dependency advisories — and wh
 is not: data residency, `created_by`, MFA, document storage, export auditing.
 Those are decisions to take before real investor data goes in, and the document
 lists them in the order they depend on each other.
+
+`docs/PERMISSIONS.md` sets out the seven roles and what each permits. The
+distinction that matters: one investor must never see another's commitment, so
+that restriction is a database policy rather than a filtered screen, and an
+investor login is bound to exactly one account by a check constraint.
 
 `docs/SHAREPOINT.md` separates the four different things "SharePoint
 compatibility" turns out to mean, and recommends two of them.

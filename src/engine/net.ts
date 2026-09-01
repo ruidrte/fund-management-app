@@ -18,6 +18,7 @@ import type {
   Investor,
   Provenance,
   ReportingConventions,
+  Vehicle,
   VehicleBalanceSheet,
 } from '../domain/types';
 import { forPeriod, latestThrough, throughPeriod } from './asof';
@@ -78,6 +79,12 @@ export interface InvestorNetResult {
 export interface NetInputs {
   gross: GrossResult;
   investors: Investor[];
+  /**
+   * The vehicle being reported. Its `investorCommitment` is the authoritative
+   * total; deriving that total by summing the investor rows breaks the moment
+   * the list is incomplete, which is exactly what happens for an investor login.
+   */
+  vehicle?: Vehicle;
   cashflows: Cashflow[];
   balanceSheets: VehicleBalanceSheet[];
   vehicleId: string;
@@ -91,12 +98,47 @@ export interface NetInputs {
 export interface NetResult {
   product: ProductNetResult;
   investors: InvestorNetResult[];
+  /**
+   * True when the investor list is incomplete — an investor login sees only its
+   * own account. Ownership is then taken on commitment against the vehicle's
+   * stated total, and the product-level called and distributed figures are that
+   * investor's, not the fund's. Screens must say so rather than presenting them
+   * as fund totals.
+   */
+  restricted: boolean;
 }
 
 export function computeNet(inputs: NetInputs): NetResult {
   const product = computeProductNet(inputs);
   const investors = computeInvestorNet(inputs, product);
-  return { product, investors };
+  return { product, investors, restricted: isRestricted(inputs) };
+}
+
+/**
+ * The fund's total investor commitment, in presentation currency.
+ *
+ * Prefers the vehicle's own figure over the sum of the rows on screen. A fund's
+ * size is a property of the fund, not an artefact of who is allowed to see the
+ * register — and treating it as the latter inflates every multiple built on it
+ * the moment one investor is looking.
+ */
+function totalCommitmentOf(
+  inputs: NetInputs,
+  convert: (amount: number, currency: CurrencyCode, period: PeriodId) => number,
+): number {
+  const visible = sum(inputs.investors.map((i) => convert(i.commitment, i.currency, inputs.period)));
+  const stated = inputs.vehicle
+    ? convert(inputs.vehicle.investorCommitment, inputs.vehicle.currency, inputs.period)
+    : 0;
+  return Math.max(visible, stated);
+}
+
+/** True when the visible investors do not account for the vehicle's commitment. */
+function isRestricted(inputs: NetInputs): boolean {
+  if (!inputs.vehicle || inputs.vehicle.investorCommitment <= 0) return false;
+  const visible = sum(inputs.investors.map((i) => i.commitment));
+  // A small tolerance: rounding in the register should not read as a restriction.
+  return visible < inputs.vehicle.investorCommitment * 0.999;
 }
 
 function computeProductNet(inputs: NetInputs): ProductNetResult {
@@ -147,9 +189,7 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
       .map((c) => convert(Math.abs(c.amount), c.currency, c.period)),
   );
 
-  const commitment = sum(
-    inputs.investors.map((i) => convert(i.commitment, i.currency, period)),
-  );
+  const commitment = totalCommitmentOf(inputs, convert);
 
   const flows: DatedFlow[] = toDate
     .filter((c) => isInvestorCall(c) || isInvestorDistribution(c))
@@ -224,7 +264,10 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   const convert = (amount: number, currency: CurrencyCode, p: PeriodId) =>
     amount * (rates.tryRate(currency, presentationCurrency, p, flowKind) ?? 1);
 
-  const totalCommitment = sum(investors.map((i) => convert(i.commitment, i.currency, period)));
+  const totalCommitment = totalCommitmentOf(inputs, convert);
+  // With an incomplete register the net-contributed denominator is unknowable,
+  // so ownership falls back to commitment against the vehicle's stated total.
+  const restricted = isRestricted(inputs);
 
   // Net capital contributed per investor drives the NAV split. Commitment alone
   // would misallocate whenever investors entered at different times.
@@ -266,12 +309,14 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   return accounts.map((account) => {
     const allocated = !account.hasOwnFlows;
 
-    const share = allocated || totalNetContributed <= 0
-      ? (totalCommitment > 0 ? account.commitment / totalCommitment : 0)
+    const byCommitment = totalCommitment > 0 ? account.commitment / totalCommitment : 0;
+
+    const share = restricted || allocated || totalNetContributed <= 0
+      ? byCommitment
       : account.netContributed / totalNetContributed;
 
-    const sharePrior = allocated || totalNetContributedPrior <= 0
-      ? (totalCommitment > 0 ? account.commitment / totalCommitment : 0)
+    const sharePrior = restricted || allocated || totalNetContributedPrior <= 0
+      ? byCommitment
       : account.netContributedPrior / totalNetContributedPrior;
 
     const nav = product.components.vehicleNav * share;

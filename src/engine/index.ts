@@ -135,6 +135,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
   const net = computeNet({
     gross,
     investors,
+    vehicle: vehicles[0],
     cashflows,
     balanceSheets,
     // A consolidated view across several vehicles has no single balance sheet;

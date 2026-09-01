@@ -213,6 +213,55 @@ describe('an over-called position', () => {
   });
 });
 
+describe('a restricted investor register', () => {
+  // An investor login receives only its own capital account, either because
+  // row-level security filtered the others or because the scope did. The
+  // vehicle's size must not then be inferred from the one row that survived.
+  const restricted = {
+    ...meridian,
+    investors: meridian.investors.slice(0, 1),
+    cashflows: meridian.cashflows.filter(
+      (c) => c.investorId === undefined || c.investorId === meridian.investors[0].id,
+    ),
+  };
+
+  const full = analyse(meridian, scope());
+  const partial = analyse(restricted, scope());
+
+  it('says the register is restricted', () => {
+    expect(full.net.restricted).toBe(false);
+    expect(partial.net.restricted).toBe(true);
+  });
+
+  it('keeps the fund-level commitment whole rather than collapsing to one investor', () => {
+    // Summing the visible rows would give this investor's own commitment, and
+    // every multiple built on it would be several times the real one.
+    expect(partial.net.product.commitment).toBeCloseTo(full.net.product.commitment, 6);
+  });
+
+  it('gives the investor the ownership share they actually hold', () => {
+    const own = partial.net.investors[0];
+    expect(own.ownership).toBeGreaterThan(0);
+    expect(own.ownership).toBeLessThan(1);
+    // Their share of a EUR 72m fund on a EUR 30m commitment.
+    expect(own.ownership).toBeCloseTo(
+      meridian.investors[0].commitment / meridian.vehicles[0].investorCommitment, 6,
+    );
+  });
+
+  it('does not hand the whole fund’s net asset value to one investor', () => {
+    const own = partial.net.investors[0];
+    expect(own.nav).toBeLessThan(partial.net.product.components.vehicleNav);
+    expect(own.multiples.tvpi).toBeLessThan(2);
+  });
+
+  it('leaves the fund-level composition untouched', () => {
+    // Portfolio, cash and accruals are the vehicle's and are not confidential.
+    expect(partial.net.product.components.vehicleNav)
+      .toBeCloseTo(full.net.product.components.vehicleNav, 6);
+  });
+});
+
 describe('exposure and allocation', () => {
   const view = analyse(meridian, scope());
 

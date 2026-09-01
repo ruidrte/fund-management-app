@@ -15,30 +15,68 @@ import { ProvenanceBadge, StatusPill } from '../components/common/Badges';
 import { Waterfall } from '../components/charts/Waterfall';
 import { money, multiple, percent, signedMoney } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
+import { useCan } from '../context/AuthContext';
+import { useScope } from '../context/ScopeContext';
 
 export function Investors({ view }: { view: QuarterView }) {
+  const { clientId } = useScope();
+  const seesAll = useCan('investors.read.all', { clientId });
   const net = view.net.product;
   const components = net.components;
+  const restricted = view.net.restricted;
+  const own = view.net.investors[0];
+
+  // With a restricted register the product tier's called and distributed are
+  // this investor's, not the fund's. Showing the fund's whole net asset value
+  // against one investor's paid-in capital produces a multiple several times
+  // the real one — so the tiles report the account, and say so.
+  const headline = restricted && own
+    ? {
+      nav: own.nav, navPrior: own.navPrior,
+      tvpi: own.multiples.tvpi, dpi: own.multiples.dpi, rvpi: own.multiples.rvpi,
+      irr: own.irr, called: own.called, commitment: own.commitment,
+      percentCalled: own.commitment > 0 ? own.called / own.commitment : 0,
+    }
+    : {
+      nav: components.vehicleNav, navPrior: view.net.product.componentsPrior.vehicleNav,
+      tvpi: net.multiples.tvpi, dpi: net.multiples.dpi, rvpi: net.multiples.rvpi,
+      irr: net.irr, called: net.called, commitment: net.commitment,
+      percentCalled: net.percentCalled,
+    };
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <KpiTile
-          label="Net asset value" value={money(components.vehicleNav, view.currency)}
-          comparison={`${signedMoney(components.vehicleNav - view.net.product.componentsPrior.vehicleNav, view.currency)} on the quarter`}
+          label={restricted ? 'Your net asset value' : 'Net asset value'}
+          value={money(headline.nav, view.currency)}
+          comparison={`${signedMoney(headline.nav - headline.navPrior, view.currency)} on the quarter`}
           provenance={net.provenance}
         />
         <KpiTile
-          label="Net TVPI" value={multiple(net.multiples.tvpi)}
-          comparison={`DPI ${multiple(net.multiples.dpi)} · RVPI ${multiple(net.multiples.rvpi)}`}
+          label={restricted ? 'Your net TVPI' : 'Net TVPI'} value={multiple(headline.tvpi)}
+          comparison={`DPI ${multiple(headline.dpi)} · RVPI ${multiple(headline.rvpi)}`}
           provenance={net.provenance}
         />
-        <KpiTile label="Net IRR" value={percent(net.irr)} comparison="After fees and expenses" provenance={net.provenance} />
         <KpiTile
-          label="Fees since inception" value={money(net.feesCumulative, view.currency)}
-          comparison={`${money(net.feesInPeriod, view.currency)} this quarter`}
+          label={restricted ? 'Your net IRR' : 'Net IRR'} value={percent(headline.irr)}
+          comparison="After fees and expenses" provenance={net.provenance}
+        />
+        <KpiTile
+          label={restricted ? 'Your commitment' : 'Fees since inception'}
+          value={money(restricted ? headline.commitment : net.feesCumulative, view.currency)}
+          comparison={restricted
+            ? `${percent(headline.percentCalled)} called`
+            : `${money(net.feesInPeriod, view.currency)} this quarter`}
         />
       </div>
+
+      {restricted && (
+        <p className="m-0 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          Figures above are your capital account. The fund-level composition and movement below are the
+          vehicle&rsquo;s, which is what your quarterly report also shows.
+        </p>
+      )}
 
       <Card
         title="From portfolio to net asset value"
@@ -100,9 +138,12 @@ export function Investors({ view }: { view: QuarterView }) {
 
       <Card
         title="Capital accounts"
-        subtitle={`${view.net.investors.length} investors at ${formatPeriod(view.period)}`}
-        note="Ownership is the share of net capital contributed, not of commitment — the two differ
-              whenever investors entered at different times."
+        subtitle={seesAll.allowed
+          ? `${view.net.investors.length} investors at ${formatPeriod(view.period)}`
+          : `Your capital account at ${formatPeriod(view.period)}`}
+        note={seesAll.allowed
+          ? `Ownership is the share of net capital contributed, not of commitment — the two differ whenever investors entered at different times.`
+          : `${seesAll.reason} Ownership is your share of net capital contributed, not of commitment.`}
       >
         <DataTable
           rows={view.net.investors}

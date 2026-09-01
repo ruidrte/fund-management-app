@@ -43,9 +43,22 @@ declared explicitly rather than inherited from default privileges, so a schema
 deployed differently from how it was tested fails loudly rather than returning
 an empty result that looks like an empty portfolio.
 
-Roles are `viewer`, `editor`, `owner`. Writes require `editor` or above. Fact
-tables accept `INSERT` only — no policy grants `UPDATE` or `DELETE` on a
-valuation, a cashflow past draft, a balance sheet, an FX rate or an ESG metric.
+Seven roles: `superuser`, `owner`, `editor`, `analyst`, `auditor`, `viewer`,
+`investor`. Writes require `owner` or `editor`; membership changes require
+`owner`. Fact tables accept `INSERT` only — no policy grants `UPDATE` or
+`DELETE` on a valuation, a cashflow past draft, a balance sheet, an FX rate or
+an ESG metric. `docs/PERMISSIONS.md` sets out what each role permits and why.
+
+**Investor scoping.** A login bound to the `investor` role reads exactly one row
+of `investors` and only the cashflows attached to it. This is a policy, not a
+screen: an investor who reaches the API directly gets the same answer. A
+membership with role `investor` and no `investor_id` is rejected by a check
+constraint, because such a row would otherwise fall through the filter into
+seeing everyone.
+
+**Superusers** live in `platform_admins`, separate from client membership, and
+that table is readable but not writable by anyone signed in to the application.
+A role that can promote itself is not a role.
 
 ### Authentication
 
@@ -103,12 +116,15 @@ activity that may not be sufficient, and self-hosting Supabase — or running
 plain Postgres — in Switzerland is the alternative. **This is the first question
 to settle**, because it constrains everything below it.
 
-### Audit trail
+### Audit trail — partly closed
 
-The schema records what changed and when (`recorded_at` on every fact) but not
-who. `created_by` columns and a trigger-written audit table are a small change
-and should be made before the system holds anything a regulator would ask about.
-Without it, "who filed this valuation" has no answer.
+`created_by` now sits on every fact table, defaulted to `auth.uid()` so it is
+stamped by the database rather than supplied by the client and cannot be forged
+by an application that forgets to set it. `source_documents` records the file a
+figure was read from, with its SHA-256, and fact rows carry a `document_id`.
+
+What remains: no history of *reads*, and no record of who exported what. A
+figure's origin is answerable; an access log is not.
 
 ### Document storage
 
@@ -167,7 +183,9 @@ includes a database-level compromise.
 | Stolen session token | Not addressed — no idle timeout, no MFA |
 | Insider exporting everything | Not addressed — no export audit or approval |
 | Database-level compromise | Not addressed — no column encryption |
-| Who filed a given figure | Not addressed — no `created_by` |
+| Who filed a given figure | Addressed — `created_by`, stamped by the database |
+| One investor reading another's commitment | Addressed — policy-enforced, verified |
+| A user promoting themselves to superuser | Addressed — `platform_admins` is not writable from the app |
 
 ---
 
@@ -176,9 +194,14 @@ includes a database-level compromise.
 In order, because each depends on the last:
 
 1. Decide data residency. It constrains the hosting choice.
-2. Add `created_by` and an audit table. Cheap now, invasive later.
-3. Enforce MFA for `editor` and `owner`, and set an idle timeout.
+2. Enforce MFA for `owner` and `editor` — the roles that change figures and
+   grant access — and set an idle timeout.
+3. Build the membership screen. The policies and grants exist; adding a person
+   is still a SQL insert, which is how the wrong role gets granted.
 4. Decide where documents live and how their permissions track row permissions.
 5. Set the security headers in the hosting configuration.
-6. Have someone who did not write it review the RLS policies. Policies are easy
+6. Enforce `vehicle_ids` in the database. The permission check honours a
+   membership narrowed to certain vehicles; no policy does yet, so treat it as
+   an interface convenience rather than a boundary.
+7. Have someone who did not write it review the RLS policies. Policies are easy
    to write and easy to get subtly wrong, and the failure is silent.

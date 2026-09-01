@@ -13,6 +13,8 @@ import {
 } from 'react';
 import { analyse, availableKnowledgeDates, availablePeriods, type QuarterView } from '../engine';
 import { getRepository, type ClientSummary } from '../data';
+import { useAuth } from './AuthContext';
+import { boundInvestorId, visibleClientIds } from '../auth/permissions';
 import type { CurrencyCode, DataSet, PositionKind, Scope, Vehicle } from '../domain/types';
 import type { PeriodId } from '../domain/period';
 
@@ -56,6 +58,7 @@ const ScopeContext = createContext<ScopeValue | undefined>(undefined);
 
 export function ScopeProvider({ children }: { children: ReactNode }) {
   const repository = useMemo(() => getRepository(), []);
+  const { principal } = useAuth();
 
   const [clients, setClients] = useState<ClientSummary[]>([]);
   const [clientId, setClientIdState] = useState<string>('');
@@ -78,8 +81,13 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
         setError(undefined);
         const list = await repository.listClients();
         if (cancelled) return;
-        setClients(list);
-        setClientIdState((current) => current || list[0]?.id || '');
+        // The database returns only what the principal may read; this narrows
+        // the picker to match, so a client never appears and then opens empty.
+        const allowed = visibleClientIds(principal);
+        const visible = allowed ? list.filter((c) => allowed.includes(c.id)) : list;
+        setClients(visible);
+        setClientIdState((current) =>
+          (current && visible.some((c) => c.id === current) ? current : visible[0]?.id || ''));
       } catch (cause) {
         if (!cancelled) setError(describe(cause));
       } finally {
@@ -87,7 +95,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [repository]);
+  }, [repository, principal]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -98,7 +106,10 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
         setError(undefined);
         const loaded = await repository.loadClient(clientId);
         if (cancelled) return;
-        setDataset(loaded);
+        // An investor login must not have other accounts reach the engine at
+        // all. Filtering here rather than in a component means no screen, chart
+        // or export can reintroduce them by reading the dataset directly.
+        setDataset(restrictToInvestor(loaded, boundInvestorId(principal, clientId)));
 
         // Default to the latest quarter that has any data at all, and to the
         // client's single vehicle when there is only one.
@@ -116,7 +127,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [repository, clientId, reloadToken]);
+  }, [repository, clientId, reloadToken, principal]);
 
   const setClientId = useCallback((id: string) => {
     // A new client invalidates every narrower selection; carrying a vehicle id
@@ -213,6 +224,25 @@ export function usePositions(): Array<{ id: string; name: string; kind: Position
       .map((p) => ({ id: p.id, name: p.name, kind: p.kind }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [dataset, vehicleId]);
+}
+
+/**
+ * Reduces a dataset to one investor's view.
+ *
+ * The vehicle's own commitment stays whole — an investor is entitled to know
+ * the size of the fund they are in — but every other investor and their
+ * cashflows are removed. Portfolio flows carry no investor and are kept, since
+ * they are the reporting the investor receives.
+ */
+function restrictToInvestor(dataset: DataSet, investorId: string | undefined): DataSet {
+  if (!investorId) return dataset;
+  return {
+    ...dataset,
+    investors: dataset.investors.filter((i) => i.id === investorId),
+    cashflows: dataset.cashflows.filter(
+      (c) => c.investorId === undefined || c.investorId === investorId,
+    ),
+  };
 }
 
 function describe(cause: unknown): string {

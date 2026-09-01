@@ -12,6 +12,7 @@ import { Download, FileSpreadsheet, FileArchive } from 'lucide-react';
 import type { QuarterView } from '../engine';
 import { formatPeriod, sortPeriods, type PeriodId } from '../domain/period';
 import { useScope } from '../context/ScopeContext';
+import { useCan } from '../context/AuthContext';
 import { Card } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { StatusPill } from '../components/common/Badges';
@@ -22,7 +23,8 @@ import { toCsvBundle, toXlsx, download } from '../export/serialise';
 type WindowKind = 'since-inception' | 'period' | 'range';
 
 export function Export({ view }: { view: QuarterView }) {
-  const { dataset, vehicleId, periods, knowledgeDate, currency, sourceLabel } = useScope();
+  const { dataset, clientId, vehicleId, periods, knowledgeDate, currency, sourceLabel } = useScope();
+  const allowed = useCan('export', { clientId, vehicleId });
 
   const ascending = useMemo(() => sortPeriods(periods, 'asc'), [periods]);
   const [kind, setKind] = useState<WindowKind>('since-inception');
@@ -45,7 +47,7 @@ export function Export({ view }: { view: QuarterView }) {
   }, [dataset, window, vehicleId, knowledgeDate, currency, includeDerived]);
 
   const emit = (format: 'xlsx' | 'csv') => {
-    if (!extract) return;
+    if (!extract || !allowed.allowed) return;
     setBusy(true);
     try {
       if (format === 'xlsx') {
@@ -72,14 +74,16 @@ export function Export({ view }: { view: QuarterView }) {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <button
-              type="button" onClick={() => emit('csv')} disabled={busy || !extract}
+              type="button" onClick={() => emit('csv')} disabled={busy || !extract || !allowed.allowed}
+              title={allowed.reason}
               className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs disabled:opacity-50"
               style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
             >
               <FileArchive size={13} aria-hidden /> CSV bundle
             </button>
             <button
-              type="button" onClick={() => emit('xlsx')} disabled={busy || !extract}
+              type="button" onClick={() => emit('xlsx')} disabled={busy || !extract || !allowed.allowed}
+              title={allowed.reason}
               className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-50"
               style={{ background: 'var(--series-1)', color: '#fff' }}
             >

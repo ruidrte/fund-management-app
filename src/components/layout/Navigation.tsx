@@ -1,17 +1,22 @@
 import {
-  Activity, DatabaseZap, Download, FileText, LayoutDashboard, PieChart,
+  Activity, DatabaseZap, Download, FileText, KeyRound, LayoutDashboard, PieChart,
   ShieldCheck, Users, Wallet,
 } from 'lucide-react';
 
 export type PageId =
   | 'dashboard' | 'portfolio' | 'exposure' | 'investors'
-  | 'reports' | 'quality' | 'esg' | 'intake' | 'export';
+  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'access';
+
+import { useAuth } from '../../context/AuthContext';
+import type { Capability } from '../../auth/permissions';
 
 interface Item {
   id: PageId;
   label: string;
   icon: typeof LayoutDashboard;
   hint: string;
+  /** The capability that opens this section. Absent means everyone. */
+  needs?: Capability;
 }
 
 const ITEMS: Item[] = [
@@ -19,16 +24,24 @@ const ITEMS: Item[] = [
   { id: 'portfolio', label: 'Portfolio', icon: Wallet, hint: 'Holdings, gross of fees' },
   { id: 'exposure', label: 'Exposure', icon: PieChart, hint: 'Allocation and currency' },
   { id: 'investors', label: 'Investors', icon: Users, hint: 'Net, at product and LP level' },
-  { id: 'reports', label: 'Reports', icon: FileText, hint: 'Predefined report layouts' },
-  { id: 'quality', label: 'Data quality', icon: ShieldCheck, hint: 'Coverage and identity checks' },
-  { id: 'intake', label: 'Data intake', icon: DatabaseZap, hint: 'Load documents and events' },
-  { id: 'export', label: 'Export', icon: Download, hint: 'Historical extract' },
-  { id: 'esg', label: 'ESG', icon: Activity, hint: 'Sustainability metrics' },
+  { id: 'reports', label: 'Reports', icon: FileText, hint: 'Predefined report layouts', needs: 'reports.generate' },
+  { id: 'quality', label: 'Data quality', icon: ShieldCheck, hint: 'Coverage and identity checks', needs: 'audit.read' },
+  { id: 'intake', label: 'Data intake', icon: DatabaseZap, hint: 'Load documents and events', needs: 'documents.upload' },
+  { id: 'export', label: 'Export', icon: Download, hint: 'Historical extract', needs: 'export' },
+  { id: 'esg', label: 'ESG', icon: Activity, hint: 'Sustainability metrics', needs: 'esg.read' },
+  { id: 'access', label: 'Access', icon: KeyRound, hint: 'Roles and what they permit' },
 ];
 
 export function Navigation({
-  active, onChange,
-}: { active: PageId; onChange: (page: PageId) => void }) {
+  active, onChange, clientId,
+}: { active: PageId; onChange: (page: PageId) => void; clientId?: string }) {
+  const { can } = useAuth();
+
+  // A section the role cannot open is removed rather than shown disabled. A
+  // permanently dead item in a sidebar is noise; the Access page is where the
+  // full list and the reason live.
+  const items = ITEMS.filter((item) => !item.needs || can(item.needs, { clientId }));
+
   return (
     <nav
       className="w-56 shrink-0 border-r p-3"
@@ -36,7 +49,7 @@ export function Navigation({
       aria-label="Sections"
     >
       <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           const selected = item.id === active;
           return (

@@ -14,7 +14,7 @@ import {
 import type { QuarterView } from '../engine';
 import { formatPeriod } from '../domain/period';
 import { useScope } from '../context/ScopeContext';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, useCan } from '../context/AuthContext';
 import { Card } from '../components/common/Card';
 import { StatusPill } from '../components/common/Badges';
 import { DataTable } from '../components/common/DataTable';
@@ -32,6 +32,8 @@ const UPLOADABLE: DocumentKind[] = [
 export function Intake({ view }: { view: QuarterView }) {
   const { dataset, clientId, vehicleId, refresh } = useScope();
   const { user } = useAuth();
+  const upload = useCan('documents.upload', { clientId, vehicleId });
+  const commitRight = useCan('facts.commit', { clientId, vehicleId });
   const fileInput = useRef<HTMLInputElement>(null);
 
   const [kind, setKind] = useState<DocumentKind>('historical-workbook');
@@ -97,7 +99,7 @@ export function Intake({ view }: { view: QuarterView }) {
   const blocked = outcome?.candidates.filter((c) => !canCommit(c)) ?? [];
 
   const commit = () => {
-    if (!outcome || !dataset || accepted.length === 0) return;
+    if (!outcome || !dataset || accepted.length === 0 || !commitRight.allowed) return;
     applyCandidates(dataset, accepted, outcome.document);
     setCommitted(
       `${accepted.length} record(s) filed against "${outcome.document.name}". `
@@ -150,7 +152,9 @@ export function Intake({ view }: { view: QuarterView }) {
             }}
           />
           <button
-            type="button" onClick={() => fileInput.current?.click()} disabled={busy}
+            type="button" onClick={() => fileInput.current?.click()}
+            disabled={busy || !upload.allowed}
+            title={upload.reason}
             className="inline-flex items-center gap-2 rounded px-3 py-2 text-xs font-medium disabled:opacity-60"
             style={{ background: 'var(--series-1)', color: '#fff' }}
           >
@@ -163,7 +167,13 @@ export function Intake({ view }: { view: QuarterView }) {
           </span>
         </div>
 
-        {!extractor && (
+        {!upload.allowed && (
+          <p className="mt-3 mb-0 text-xs" style={{ color: 'var(--status-warning)' }} role="status">
+            {upload.reason}
+          </p>
+        )}
+
+        {!extractor && upload.allowed && (
           <p className="mt-3 mb-0 text-xs" style={{ color: 'var(--status-warning)' }}>
             No reader is registered for {DOCUMENT_KIND_LABEL[kind]} yet. Use <em>New event</em> to enter the
             figures manually — they stay just as traceable, because a manual entry is recorded as a document too.
@@ -204,7 +214,9 @@ export function Intake({ view }: { view: QuarterView }) {
                   {accepted.length} of {outcome.candidates.length} accepted
                 </StatusPill>
                 <button
-                  type="button" onClick={commit} disabled={accepted.length === 0}
+                  type="button" onClick={commit}
+                  disabled={accepted.length === 0 || !commitRight.allowed}
+                  title={commitRight.reason}
                   className="rounded px-2.5 py-1.5 text-xs font-medium disabled:opacity-50"
                   style={{ background: 'var(--series-1)', color: '#fff' }}
                 >
@@ -212,7 +224,9 @@ export function Intake({ view }: { view: QuarterView }) {
                 </button>
               </div>
             }
-            note={`Content hash ${outcome.document.contentHash.slice(0, 16)}… — every figure filed from this document carries it, so any number on any report traces back to the file it came from.`}
+            note={commitRight.allowed
+              ? `Content hash ${outcome.document.contentHash.slice(0, 16)}… — every figure filed from this document carries it, so any number on any report traces back to the file it came from.`
+              : `${commitRight.reason} You can still review what was read and pass it on.`}
           >
             <p className="m-0 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               {outcome.summary}

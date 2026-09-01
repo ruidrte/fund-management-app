@@ -16,6 +16,7 @@ import { DataQuality } from './pages/DataQuality';
 import { Esg } from './pages/Esg';
 import { Intake } from './pages/Intake';
 import { Export } from './pages/Export';
+import { Access } from './pages/Access';
 
 export default function App() {
   return (
@@ -55,14 +56,14 @@ function Gate() {
 
 function Shell() {
   const [page, setPage] = useState<PageId>('dashboard');
-  const { loading, error, view } = useScope();
+  const { loading, error, view, clientId } = useScope();
 
   return (
     <div className="flex h-full flex-col">
       <Header />
       <ScopeBar />
       <div className="flex min-h-0 flex-1">
-        <Navigation active={page} onChange={setPage} />
+        <Navigation active={page} onChange={setPage} clientId={clientId} />
         <main className="min-w-0 flex-1 overflow-y-auto p-5">
           {error && <Notice tone="var(--status-critical)" title="Could not load this scope" body={error} />}
           {!error && loading && <Notice tone="var(--text-muted)" title="Loading" body="Reading the client's data." />}
@@ -92,6 +93,7 @@ function Page({ page }: { page: PageId }) {
     case 'quality': return <DataQuality view={view} />;
     case 'intake': return <Intake view={view} />;
     case 'export': return <Export view={view} />;
+    case 'access': return <Access />;
     case 'esg': return <Esg view={view} />;
     case 'dashboard':
     default: return <Dashboard view={view} />;
