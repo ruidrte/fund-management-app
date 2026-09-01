@@ -8,7 +8,7 @@
  * never be presented as though they do.
  */
 
-import { periodEndDate, previousPeriod, type PeriodId } from '../domain/period';
+import { comparePeriods, periodEndDate, previousPeriod, type PeriodId } from '../domain/period';
 import type {
   Cashflow,
   CurrencyCode,
@@ -44,6 +44,13 @@ export interface PositionResult {
   multiples: Multiples;
   irr?: number;
   provenance: Provenance;
+  /**
+   * What the cashflow ledger alone says, and what the statement said, kept
+   * apart so the identity check can compare them. `drawn` above is whichever
+   * of the two the engine took.
+   */
+  ledger: { drawn: number; distributed: number };
+  stated?: { drawn?: number; distributed?: number };
 }
 
 export interface GrossResult {
@@ -128,11 +135,51 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       c.amount * (rates.tryRate(c.currency, presentationCurrency, c.period, flowKind) ?? 1);
 
     // Calls are negative from the vehicle's perspective; report them positive.
-    const drawn = -sum(toDate.filter(isCall).map(convertFlow));
-    const distributed = sum(toDate.filter(isDistribution).map(convertFlow));
-    const recallable = sum(
+    const ledgerDrawn = -sum(toDate.filter(isCall).map(convertFlow));
+    const ledgerDistributed = sum(toDate.filter(isDistribution).map(convertFlow));
+    const ledgerRecallable = sum(
       toDate.filter((c) => isDistribution(c) && c.recallable).map(convertFlow),
     );
+
+    /**
+     * Cumulative amounts, taking the statement as the authority for the stock
+     * and the ledger for anything that moved after it.
+     *
+     * A book loaded from a historical workbook has cumulative drawn and
+     * distributed per holding and no cashflow ledger at all. Deriving these
+     * from flows alone reported nothing drawn, the whole commitment undrawn,
+     * and no multiple — for a portfolio whose statements say otherwise.
+     *
+     * Where both exist they should agree, and an identity check says so when
+     * they do not. This is not the place to reconcile them silently.
+     */
+    const reportedPeriod = state.reported?.period;
+    const after = reportedPeriod
+      ? toDate.filter((c) => comparePeriods(c.period, reportedPeriod) > 0)
+      : [];
+    // Calls are stored negative; both of these are reported positive.
+    const callsSince = -sum(after.filter(isCall).map(convertFlow));
+    const distributionsSince = sum(after.filter(isDistribution).map(convertFlow));
+    const recallableSince = sum(
+      after.filter((c) => isDistribution(c) && c.recallable).map(convertFlow),
+    );
+
+    /** A reported cumulative, translated, or undefined when the source gave none. */
+    const stated = (value: number | undefined): number | undefined => (
+      value === undefined ? undefined : value * closingRate
+    );
+
+    const statedDrawn = stated(state.reported?.drawn);
+    const statedDistributed = stated(state.reported?.distributed);
+    const statedRecallable = stated(state.reported?.recallable);
+
+    const drawn = statedDrawn === undefined ? ledgerDrawn : statedDrawn + callsSince;
+    const distributed = statedDistributed === undefined
+      ? ledgerDistributed
+      : statedDistributed + distributionsSince;
+    const recallable = statedRecallable === undefined
+      ? ledgerRecallable
+      : statedRecallable + recallableSince;
     const callsInPeriod = -sum(inPeriod.filter(isCall).map(convertFlow));
     const distributionsInPeriod = sum(inPeriod.filter(isDistribution).map(convertFlow));
 
@@ -176,6 +223,10 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       valueChange,
       fxEffect,
       multiples: multiples({ paidIn: drawn, distributed, nav }),
+      ledger: { drawn: ledgerDrawn, distributed: ledgerDistributed },
+      stated: state.reported
+        ? { drawn: statedDrawn, distributed: statedDistributed }
+        : undefined,
       irr: irrWithTerminalValue(flows, nav, new Date(periodEndDate(period))),
       provenance: state.provenance,
     };

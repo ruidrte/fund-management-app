@@ -72,6 +72,46 @@ readable in any text editor, and a corrupted line costs one fact rather than the
 book — a line that will not parse is skipped, counted, and reported on the
 Storage screen rather than swallowed.
 
+### Encrypting it
+
+A folder is usually inside a synced drive, so the files exist on at least one
+machine that is not the user's and in whatever version history the sync service
+keeps. Encrypting the book moves its confidentiality onto a passphrase the user
+holds, rather than onto the account the drive belongs to.
+
+AES-GCM, with a 256-bit key derived from the passphrase by PBKDF2-SHA256 at
+600,000 iterations. GCM authenticates as well as encrypts, so an altered file
+fails to decrypt rather than decrypting to something plausible — the failure is
+reported against the line, and the rest of the book still reads.
+
+| | |
+|---|---|
+| Encrypted | every fact, every reference file, every stored document, and the list of which clients the book holds |
+| Not encrypted | `book.json`: the schema version, and the algorithm, iteration count and salt used to derive the key |
+| Client folders | named with a random id, because a folder called `ebg` would say who this is |
+| The passphrase | held in memory only — never in the folder, never in browser storage. Asked for again after every reload |
+
+There is **no recovery**. A lost passphrase is a lost book, which is why the
+export exists and why the interface says so before anyone chooses one.
+
+It can only be chosen when the book is created. Encrypting an existing book
+would leave its plaintext in the folder's history and in the sync service's, so
+"encrypt it now" would be a claim the files do not support.
+
+What it does not protect against: anyone who has both the folder and the
+passphrase, and anything that reads the book while it is open on screen.
+
+### Tamper-evidence
+
+Each fact line carries the hash of the line before it. Editing, deleting or
+reordering history in a text editor is otherwise invisible — the file still
+parses and the quarter is simply short. With the chain it is reported, named
+down to the line, and the surviving facts still load.
+
+It costs one hash per fact. It is not a defence against someone who can rewrite
+the whole file, and is not meant to be: it makes an accident — a half-synced
+file, a conflicted copy, a well-meant edit — impossible to miss.
+
 ### What a folder is not
 
 - **It has no permissions.** The roles still shape what the interface offers,
@@ -102,6 +142,12 @@ across two records.
 Only what the sheet says is used. An attribute the workbook does not carry is
 left `Unclassified` rather than guessed at: an invented asset class comes back
 later as an exposure chart nobody can account for.
+
+A workbook gives cumulative drawn and distributed per holding, and no cashflow
+ledger. The engine uses them: see *Drawn and distributed* in
+`METHODOLOGY.md` for which source wins when a book has both. What a workbook
+cannot give is an IRR — that needs dated flows — so the register shows the
+multiple and leaves the IRR blank rather than inventing dates for it.
 
 Turn the switch off once the book is seeded. From then on, a name that matches
 nothing is a typo, not a new fund.

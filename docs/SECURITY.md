@@ -191,6 +191,8 @@ includes a database-level compromise.
 | Stolen session token | Not addressed — no idle timeout, no MFA |
 | Insider exporting everything | Not addressed — no export audit or approval |
 | Database-level compromise | Not addressed — no column encryption |
+| A synced copy of the folder, or the drive account | Addressed for a folder — encrypted at rest under a passphrase held only in memory |
+| History edited outside the application | Partly — the fact chain reports it; it does not prevent it |
 | Who filed a given figure | Addressed — `created_by`, stamped by the database |
 | One investor reading another's commitment | Addressed — policy-enforced, verified |
 | A user promoting themselves to superuser | Addressed — `platform_admins` is not writable from the app |
@@ -205,7 +207,22 @@ is written into that folder. For one person working alone that is a smaller
 attack surface than any hosted option — there is no server to reach, no account
 to phish, and no third party holding the data.
 
-What it does not give you is enforcement. The roles below still shape what the
+**The folder can be encrypted.** AES-GCM under a key derived from a passphrase
+by PBKDF2-SHA256 at 600,000 iterations, chosen when the book is created. Every
+fact, every reference file, every stored document and the list of clients are
+ciphertext; what stays readable is the schema version and the key-derivation
+parameters, which say nothing about the contents. The client folders are named
+with random ids, because a folder called `ebg` would say who this is. The
+passphrase is held in memory only — never in the folder, never in browser
+storage — so a reload asks again, and a tab left open overnight is the exposure
+rather than the disk. There is no recovery: a lost passphrase is a lost book.
+
+Each fact line also carries the hash of the line before it, so history edited,
+reordered or deleted outside the application is reported rather than silently
+short. That is tamper-evidence against accidents, not against someone who can
+rewrite the whole file.
+
+What encryption does not change is enforcement. The roles below still shape what the
 interface offers, but a folder cannot check them: anyone who can open the folder
 reads every file in it, including the source documents. So the folder is the
 control, and it should be one only the intended person can open — a synced

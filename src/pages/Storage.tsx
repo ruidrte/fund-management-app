@@ -6,9 +6,10 @@
  * are read from, because "is this saved?" should never need an engineer.
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type FormEvent } from 'react';
 import {
-  AlertTriangle, Check, FolderOpen, HardDrive, Info, Loader2, RefreshCw, Unplug,
+  AlertTriangle, Check, FolderOpen, HardDrive, Info, Loader2, Lock, Unlock,
+  RefreshCw, Unplug,
 } from 'lucide-react';
 import { useDataSource } from '../context/DataSourceContext';
 import { useScope } from '../context/ScopeContext';
@@ -20,14 +21,17 @@ import { DEMO_CLIENTS } from '../data/demo';
 
 export function Storage() {
   const {
-    kind, folderStatus, folderName, folderError, unsupportedReason,
-    book, summary, connect, reconnect, disconnect, startBook, rescan,
+    kind, folderStatus, folderName, folderError, folderWarning, unsupportedReason,
+    book, summary, connect, reconnect, disconnect, unlockWith, startBook, rescan,
   } = useDataSource();
   const { clients, clientId } = useScope();
   const { principal } = useAuth();
 
   const [busy, setBusy] = useState<string>();
   const [failure, setFailure] = useState<string>();
+  const [passphrase, setPassphrase] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [protectNew, setProtectNew] = useState(true);
 
   const run = async (label: string, action: () => Promise<void>) => {
     setBusy(label);
@@ -46,9 +50,22 @@ export function Storage() {
   // Clients whose structure can still be started here — the ones this folder
   // does not already hold.
   const startable = useMemo(() => {
-    const held = new Set(book?.manifest.clients.map((c) => c.id) ?? []);
+    const held = new Set(book?.clients.map((c) => c.id) ?? []);
     return DEMO_CLIENTS.filter((c) => !held.has(c.id));
   }, [book]);
+
+  const firstClient = book === undefined;
+  const protecting = firstClient && protectNew;
+  const passphraseReady = !protecting
+    || (passphrase.length >= MINIMUM_PASSPHRASE && passphrase === confirmation);
+
+  const submitUnlock = (event: FormEvent) => {
+    event.preventDefault();
+    void run('unlock', async () => {
+      await unlockWith(passphrase);
+      setPassphrase('');
+    });
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -80,7 +97,10 @@ export function Storage() {
           subtitle={folderName ? folderName : 'Real data, no server, no account'}
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              {folderStatus === 'open' && <StatusPill tone="good">Connected</StatusPill>}
+              {folderStatus === 'open' && (
+                <StatusPill tone="good">{book?.encrypted ? 'Connected · encrypted' : 'Connected'}</StatusPill>
+              )}
+              {folderStatus === 'locked' && <StatusPill tone="warning">Locked</StatusPill>}
               {folderStatus === 'empty' && <StatusPill tone="warning">No book here yet</StatusPill>}
               {folderStatus === 'needs-permission' && <StatusPill tone="warning">Needs permission</StatusPill>}
               {folderStatus === 'unsupported' && <StatusPill tone="neutral">Not available</StatusPill>}
@@ -134,6 +154,37 @@ export function Storage() {
             <Line tone="var(--status-critical)" icon={AlertTriangle}>{folderError ?? failure}</Line>
           )}
 
+          {folderWarning && (
+            <Line tone="var(--status-warning)" icon={AlertTriangle}>{folderWarning}</Line>
+          )}
+
+          {folderStatus === 'locked' && (
+            <form onSubmit={submitUnlock} className="flex flex-col gap-2">
+              <Line tone="var(--text-secondary)" icon={Lock}>
+                <strong>{folderName}</strong> holds an encrypted book. The passphrase is not stored
+                anywhere — not in this browser, not in the folder — so it is asked for every time the
+                page loads. There is no way to recover it.
+              </Line>
+              <div className="flex flex-wrap items-end gap-2">
+                <input
+                  type="password" className="field max-w-xs" autoFocus
+                  placeholder="Passphrase" value={passphrase}
+                  onChange={(event) => setPassphrase(event.target.value)}
+                />
+                <button
+                  type="submit" disabled={busy !== undefined || passphrase.length === 0}
+                  className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs disabled:opacity-50"
+                  style={{ background: 'var(--series-1)', color: '#fff' }}
+                >
+                  {busy === 'unlock'
+                    ? <Loader2 size={13} className="animate-spin" aria-hidden />
+                    : <Unlock size={13} aria-hidden />}
+                  Open the book
+                </button>
+              </div>
+            </form>
+          )}
+
           {folderStatus === 'empty' && (
             <div className="mt-1">
               <p className="m-0 mb-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
@@ -141,13 +192,62 @@ export function Storage() {
                 vehicles — the real structure, and not one figure. Everything measured comes from the
                 documents you load afterwards.
               </p>
+              <div className="mb-3 flex flex-col gap-2 rounded p-3" style={{ background: 'var(--surface-2)' }}>
+                <label className="flex items-start gap-2 text-xs" style={{ color: 'var(--text-primary)' }}>
+                  <input
+                    type="checkbox" className="mt-0.5" checked={protectNew}
+                    onChange={(event) => setProtectNew(event.target.checked)}
+                  />
+                  <span>
+                    Encrypt this book with a passphrase
+                    <span className="block text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                      Every fact, every file and the list of clients are encrypted on disk with
+                      AES-GCM, under a key derived from the passphrase. A synced drive then holds
+                      ciphertext, so the book stops depending on the account the drive belongs to.
+                      <strong> There is no recovery.</strong> Lose the passphrase and the book is
+                      gone — keep an export somewhere else. It can only be chosen now: encrypting
+                      later would leave the plaintext in the folder&rsquo;s history, and in the sync
+                      service&rsquo;s.
+                    </span>
+                  </span>
+                </label>
+
+                {protectNew && (
+                  <div className="flex flex-wrap items-end gap-2">
+                    <input
+                      type="password" className="field max-w-xs"
+                      placeholder={`Passphrase — at least ${MINIMUM_PASSPHRASE} characters`}
+                      value={passphrase}
+                      onChange={(event) => setPassphrase(event.target.value)}
+                    />
+                    <input
+                      type="password" className="field max-w-xs"
+                      placeholder="Again"
+                      value={confirmation}
+                      onChange={(event) => setConfirmation(event.target.value)}
+                    />
+                    {passphrase.length > 0 && !passphraseReady && (
+                      <span className="text-[11px]" style={{ color: 'var(--status-warning)' }}>
+                        {passphrase.length < MINIMUM_PASSPHRASE
+                          ? `${MINIMUM_PASSPHRASE - passphrase.length} more character(s)`
+                          : 'The two do not match'}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap gap-1.5">
                 {startable.map((client) => (
                   <button
                     key={client.id}
                     type="button"
-                    disabled={busy !== undefined || !principal.isSuperuser}
-                    onClick={() => run(`start-${client.id}`, () => startBook(client.id))}
+                    disabled={busy !== undefined || !principal.isSuperuser || !passphraseReady}
+                    onClick={() => run(`start-${client.id}`, async () => {
+                      await startBook(client.id, protecting ? passphrase : undefined);
+                      setPassphrase('');
+                      setConfirmation('');
+                    })}
                     className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs disabled:opacity-50"
                     style={{ background: 'var(--series-1)', color: '#fff' }}
                   >
@@ -163,6 +263,16 @@ export function Storage() {
 
           {folderStatus === 'open' && book && (
             <div className="flex flex-col gap-3">
+              {book.encrypted && (
+                <Line tone="var(--text-secondary)" icon={Lock}>
+                  Encrypted. Everything measured is ciphertext on disk, and so is the list of which
+                  clients this book holds — the client folders are named with random ids for that
+                  reason. What stays readable is <code>book.json</code>: the schema version and how
+                  the key is derived from the passphrase, which says nothing about the contents.
+                  The passphrase is held in memory only and is asked for again after a reload.
+                </Line>
+              )}
+
               <Line tone="var(--status-good)" icon={Check}>
                 Reading and writing <strong>{folderName}</strong>
                 {summary?.lastWrite && ` · last written ${new Date(summary.lastWrite).toLocaleString('en-GB')}`}
@@ -336,6 +446,12 @@ function Line({
     </p>
   );
 }
+
+/**
+ * Short enough not to be theatre, long enough to matter against an offline
+ * guess at 600,000 PBKDF2 iterations per attempt.
+ */
+const MINIMUM_PASSPHRASE = 12;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

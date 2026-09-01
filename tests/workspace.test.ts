@@ -9,9 +9,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  appendFacts, createClient, readClient, readDocuments, readManifest, slugFor,
-  storeDocument, summarise, writeManifest,
+  appendFacts, clientsIn, createClient, initialiseBook, readClient, readDocuments,
+  readManifest, slugFor, storeDocument, summarise, vaultFor, writeManifest,
 } from '../src/data/workspace/store';
+import { unlock, WrongPassphrase } from '../src/data/workspace/crypto';
 import { openBook } from '../src/data/workspace/repository';
 import { buildClientStructure } from '../src/data/demo';
 import { factsFrom } from '../src/ingest';
@@ -92,6 +93,17 @@ function memoryDirectory(name = 'book'): FileSystemDirectoryHandle {
   return handle as unknown as FileSystemDirectoryHandle;
 }
 
+/** A folder with one client in it, plaintext unless a passphrase is given. */
+async function bookWith(clientId: string, passphrase?: string) {
+  const root = memoryDirectory();
+  const started = await initialiseBook(root, passphrase);
+  const vault = vaultFor(root, started.cipher);
+  const { client, vehicles } = buildClientStructure(clientId);
+  const manifest = await createClient(vault, client, vehicles, started.cipher);
+  const [entry] = await clientsIn(manifest, started.cipher);
+  return { root, vault, cipher: started.cipher, manifest, client, vehicles, slug: entry.slug };
+}
+
 const doc = (over: Partial<SourceDocument> = {}): SourceDocument => ({
   id: 'doc-1', clientId: 'client-ebg', kind: 'historical-workbook',
   name: 'AbIF Q1 2026.xlsx', mimeType: 'application/vnd.ms-excel', sizeBytes: 12,
@@ -113,14 +125,12 @@ describe('naming a folder for a client', () => {
 
 describe('starting a book', () => {
   it('writes the structure and nothing measured', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-ebg');
-    const manifest = await createClient(root, client, vehicles);
+    const { vault, slug, vehicles, client, manifest } = await bookWith('client-ebg');
 
     expect(manifest.clients).toHaveLength(1);
-    expect(manifest.clients[0].id).toBe(client.id);
+    expect(manifest.clients![0].id).toBe(client.id);
 
-    const read = await readClient(root, manifest.clients[0].slug);
+    const read = await readClient(vault, slug);
     expect(read!.dataset.vehicles.map((v) => v.shortName)).toEqual(vehicles.map((v) => v.shortName));
     // A new book has the real structure and not one figure.
     expect(read!.dataset.positions).toHaveLength(0);
@@ -128,10 +138,8 @@ describe('starting a book', () => {
   });
 
   it('refuses to add the same client twice', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-pam');
-    await createClient(root, client, vehicles);
-    await expect(createClient(root, client, vehicles)).rejects.toThrow(/already in this folder/);
+    const { vault, client, vehicles } = await bookWith('client-pam');
+    await expect(createClient(vault, client, vehicles)).rejects.toThrow(/already in this folder/);
   });
 
   it('refuses a folder written by a newer version', async () => {
@@ -145,15 +153,12 @@ describe('starting a book', () => {
 
 describe('facts are appended, never rewritten', () => {
   it('keeps what was already there', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-ebg');
-    const manifest = await createClient(root, client, vehicles);
-    const slug = manifest.clients[0].slug;
+    const { vault, slug } = await bookWith('client-ebg');
 
-    await appendFacts(root, slug, { positionValuations: [valuation('v1', 100)] });
-    await appendFacts(root, slug, { positionValuations: [valuation('v2', 110)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v2', 110)] });
 
-    const read = await readClient(root, slug);
+    const read = await readClient(vault, slug);
     expect(read!.dataset.positionValuations.map((v) => v.id)).toEqual(['v1', 'v2']);
     // The restatement sits alongside the original rather than replacing it,
     // which is what lets the first quarter still be reproduced as published.
@@ -161,12 +166,9 @@ describe('facts are appended, never rewritten', () => {
   });
 
   it('skips a line it cannot read, reports it, and keeps the rest', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-ut');
-    const manifest = await createClient(root, client, vehicles);
-    const slug = manifest.clients[0].slug;
+    const { root, vault, slug } = await bookWith('client-ut');
 
-    await appendFacts(root, slug, { positionValuations: [valuation('v1', 100)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
     // As if somebody had edited the file by hand and broken a line.
     const facts = await root.getDirectoryHandle('clients');
     const dir = await (await facts.getDirectoryHandle(slug)).getDirectoryHandle('facts');
@@ -176,22 +178,118 @@ describe('facts are appended, never rewritten', () => {
     await writable.write(`${existing}{"broken":\n`);
     await writable.close();
 
-    const read = await readClient(root, slug);
+    const read = await readClient(vault, slug);
     expect(read!.dataset.positionValuations).toHaveLength(1);
-    expect(read!.skipped.join(' ')).toMatch(/position_valuations.jsonl line 2/);
+    expect(read!.problems.join(' ')).toMatch(/position_valuations.jsonl line 2/);
+  });
+
+  it('reports history that has been edited or removed behind its back', async () => {
+    const { root, vault, slug } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, {
+      positionValuations: [valuation('v1', 100), valuation('v2', 110), valuation('v3', 120)],
+    });
+
+    // Somebody deletes the middle line in a text editor. Without the chain this
+    // is invisible: the file still parses and the quarter is simply short.
+    const handle = await factFile(root, slug);
+    const lines = (await (await handle.getFile()).text()).trim().split('\n');
+    const writable = await handle.createWritable();
+    await writable.write(`${[lines[0], lines[2]].join('\n')}\n`);
+    await writable.close();
+
+    const read = await readClient(vault, slug);
+    expect(read!.problems.join(' ')).toMatch(/breaks the chain/);
+    // The surviving facts are still returned — the point is that the gap is
+    // reported, not that the book becomes unreadable.
+    expect(read!.dataset.positionValuations.map((v) => v.id)).toEqual(['v1', 'v3']);
+  });
+
+  it('continues one chain across separate appends', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v2', 110)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v3', 120)] });
+
+    const read = await readClient(vault, slug);
+    expect(read!.problems).toEqual([]);
+    expect(read!.dataset.positionValuations).toHaveLength(3);
+  });
+});
+
+describe('a book encrypted with a passphrase', () => {
+  const PASSPHRASE = 'correct horse battery staple';
+
+  it('leaves nothing readable on disk but how the key is derived', async () => {
+    const { root, vault, slug } = await bookWith('client-ebg', PASSPHRASE);
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+
+    const manifest = (await readManifest(root))!;
+    expect(manifest.encryption?.algorithm).toBe('AES-GCM');
+    // The client list is data too — a folder called "ebg" would say who this is.
+    expect(manifest.clients).toBeUndefined();
+    expect(manifest.clientsSealed).toBeTypeOf('string');
+    expect(slug).toMatch(/^[0-9a-f]{16}$/);
+
+    const files = (await summarise(root)).files.map((f) => f.path);
+    for (const path of files.filter((f) => f !== 'book.json')) {
+      const text = await readRaw(root, path);
+      // Distinctive strings only — random base64 hits any three-letter word.
+      expect(text).not.toMatch(/Abendrot|Impulse|positionId|GP report|2026Q1/i);
+    }
+  });
+
+  it('reads back exactly what was written', async () => {
+    const { root, vault, slug, cipher } = await bookWith('client-ebg', PASSPHRASE);
+    await appendFacts(vault, slug, {
+      positionValuations: [valuation('v1', 100), valuation('v2', 110)],
+    });
+    await storeDocument(vault, slug, doc(), new TextEncoder().encode('workbook bytes'));
+
+    // A fresh unlock, as if the tab had been closed and reopened.
+    const manifest = (await readManifest(root))!;
+    const reopened = vaultFor(root, await unlock(PASSPHRASE, manifest.encryption!));
+    const read = await readClient(reopened, slug);
+
+    expect(read!.problems).toEqual([]);
+    expect(read!.dataset.positionValuations.map((v) => v.nav)).toEqual([100, 110]);
+    expect(read!.dataset.vehicles.length).toBeGreaterThan(0);
+    expect((await readDocuments(reopened, slug))[0].name).toBe('AbIF Q1 2026.xlsx');
+    expect(cipher).toBeDefined();
+  });
+
+  it('tells a wrong passphrase from a damaged folder', async () => {
+    const { root } = await bookWith('client-ebg', PASSPHRASE);
+    const manifest = (await readManifest(root))!;
+    await expect(unlock('not the passphrase', manifest.encryption!))
+      .rejects.toBeInstanceOf(WrongPassphrase);
+  });
+
+  it('reports a line that was altered, rather than reading it as something else', async () => {
+    const { root, vault, slug } = await bookWith('client-ut', PASSPHRASE);
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+
+    // One byte of ciphertext flipped. AES-GCM authenticates, so this cannot
+    // decrypt to a plausible different number — it cannot decrypt at all.
+    const handle = await factFile(root, slug);
+    const line = (await (await handle.getFile()).text()).trim();
+    const flipped = `${line.slice(0, 20)}${line[20] === 'A' ? 'B' : 'A'}${line.slice(21)}`;
+    const writable = await handle.createWritable();
+    await writable.write(`${flipped}\n`);
+    await writable.close();
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.positionValuations).toHaveLength(0);
+    expect(read!.problems.join(' ')).toMatch(/did not decrypt/);
   });
 });
 
 describe('documents are kept with the figures they produced', () => {
   it('stores the file under its hash and indexes the original name', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-ebg');
-    const manifest = await createClient(root, client, vehicles);
-    const slug = manifest.clients[0].slug;
+    const { root, vault, slug } = await bookWith('client-ebg');
 
-    await storeDocument(root, slug, doc(), new TextEncoder().encode('workbook bytes'));
+    await storeDocument(vault, slug, doc(), new TextEncoder().encode('workbook bytes'));
 
-    const index = await readDocuments(root, slug);
+    const index = await readDocuments(vault, slug);
     expect(index).toHaveLength(1);
     expect(index[0].name).toBe('AbIF Q1 2026.xlsx');
 
@@ -203,10 +301,8 @@ describe('documents are kept with the figures they produced', () => {
 
 describe('the book behaves like any other repository', () => {
   it('lists clients, loads one, and takes a commit', async () => {
-    const root = memoryDirectory();
-    const { client, vehicles } = buildClientStructure('client-ebg');
-    const manifest = await createClient(root, client, vehicles);
-    const book = openBook(root, manifest, 'Folder — test');
+    const { root, manifest, client, vehicles } = await bookWith('client-ebg');
+    const book = await openBook(root, manifest, 'Folder — test');
 
     expect((await book.listClients()).map((c) => c.id)).toEqual([client.id]);
 
@@ -254,3 +350,19 @@ describe('the book behaves like any other repository', () => {
     expect(reloaded.positionValuations[0].nav).toBe(4_200);
   });
 });
+
+/** The fact file every test in here pokes at. */
+async function factFile(root: FileSystemDirectoryHandle, slug: string) {
+  const clients = await root.getDirectoryHandle('clients');
+  const facts = await (await clients.getDirectoryHandle(slug)).getDirectoryHandle('facts');
+  return facts.getFileHandle('position_valuations.jsonl');
+}
+
+/** A file's bytes as text, without going through the vault. */
+async function readRaw(root: FileSystemDirectoryHandle, path: string): Promise<string> {
+  const segments = path.split('/');
+  const name = segments.pop()!;
+  let dir = root;
+  for (const segment of segments) dir = await dir.getDirectoryHandle(segment);
+  return (await (await dir.getFileHandle(name)).getFile()).text();
+}

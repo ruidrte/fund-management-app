@@ -14,6 +14,6 @@ describe('documented counts', () => {
       vehicleId: 'veh-ut-early-growth',
       period: '2025Q4',
     });
-    expect(view.checks.results).toHaveLength(19);
+    expect(view.checks.results).toHaveLength(20);
   });
 });

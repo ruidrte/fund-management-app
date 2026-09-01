@@ -24,10 +24,14 @@ import { demoRepository } from '../data/demoRepository';
 import { supabaseRepository } from '../data/supabaseRepository';
 import type { Repository } from '../data/repository';
 import {
-  forgetWorkspace, permissionState, pickWorkspace, rememberWorkspace, rememberedWorkspace,
-  requestWrite, supportsWorkspaceFolders, whyUnsupported,
+  forgetWorkspace, looksLikeRepository, permissionState, pickWorkspace, rememberWorkspace,
+  rememberedWorkspace, requestWrite, supportsWorkspaceFolders, whyUnsupported,
 } from '../data/workspace/fs';
-import { createClient as createClientFolder, summarise, type BookSummary } from '../data/workspace/store';
+import {
+  createClient as createClientFolder, initialiseBook, summarise, vaultFor,
+  type BookManifest, type BookSummary,
+} from '../data/workspace/store';
+import { unlock, WrongPassphrase, type Cipher } from '../data/workspace/crypto';
 import { manifestOf, openBook, type LocalBook } from '../data/workspace/repository';
 import { buildClientStructure } from '../data/demo';
 
@@ -44,6 +48,8 @@ export type FolderStatus =
   | 'needs-permission'
   /** Connected, but there is no book in it yet. */
   | 'empty'
+  /** A protected book, waiting for its passphrase. */
+  | 'locked'
   /** Connected and readable. */
   | 'open'
   | 'error';
@@ -55,18 +61,27 @@ interface DataSourceValue {
   folderStatus: FolderStatus;
   folderName?: string;
   folderError?: string;
+  /** Something worth saying about the folder that is not an error. */
+  folderWarning?: string;
   /** Why folders are unavailable in this browser, when they are. */
   unsupportedReason?: string;
 
   /** The open book, when a folder is the source. */
   book?: LocalBook;
   summary?: BookSummary;
+  /** True while a protected book is waiting for its passphrase. */
+  locked: boolean;
 
   connect(): Promise<void>;
   reconnect(): Promise<void>;
   disconnect(): Promise<void>;
-  /** Starts a book for one of the known clients in the connected folder. */
-  startBook(clientId: string): Promise<void>;
+  /** Opens a protected book. The passphrase is held in memory and never stored. */
+  unlockWith(passphrase: string): Promise<void>;
+  /**
+   * Starts a book for one of the known clients in the connected folder. A
+   * passphrase, given the first time, protects the book from the first byte.
+   */
+  startBook(clientId: string, passphrase?: string): Promise<void>;
   /** Re-reads the folder listing after something was written. */
   rescan(): Promise<void>;
 }
@@ -81,19 +96,39 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
   const [book, setBook] = useState<LocalBook>();
   const [summary, setSummary] = useState<BookSummary>();
   const [folderError, setFolderError] = useState<string>();
+  const [folderWarning, setFolderWarning] = useState<string>();
+  // The key lives here and nowhere else: not in localStorage, not in the
+  // handle store, not on disk. Closing the tab forgets it, which is the
+  // property that makes a protected folder worth protecting.
+  const [cipher, setCipher] = useState<Cipher>();
+  const [sealed, setSealed] = useState<BookManifest>();
 
-  /** Reads the manifest and opens the book, or reports the folder as empty. */
-  const adopt = useCallback(async (directory: FileSystemDirectoryHandle) => {
+  /** Reads the manifest and opens the book, or reports what is in the way. */
+  const adopt = useCallback(async (
+    directory: FileSystemDirectoryHandle, key?: Cipher,
+  ) => {
     setFolderError(undefined);
     const manifest = await manifestOf(directory);
     setHandle(directory);
     setSummary(await summarise(directory));
+
     if (!manifest) {
       setBook(undefined);
+      setSealed(undefined);
       setStatus('empty');
       return;
     }
-    setBook(openBook(directory, manifest, `Folder — ${directory.name}`));
+
+    if (manifest.encryption && !key) {
+      setBook(undefined);
+      setSealed(manifest);
+      setStatus('locked');
+      return;
+    }
+
+    setSealed(manifest);
+    setCipher(key);
+    setBook(await openBook(directory, manifest, `Folder — ${directory.name}`, key));
     setStatus('open');
   }, []);
 
@@ -142,6 +177,10 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
         return;
       }
       await rememberWorkspace(picked);
+      setFolderWarning(await looksLikeRepository(picked)
+        ? `${picked.name} looks like a source repository. A book kept inside a working copy is one `
+          + '"git add ." away from being pushed — put it somewhere else.'
+        : undefined);
       await adopt(picked);
     } catch (cause) {
       setFolderError(describe(cause));
@@ -169,15 +208,34 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     setBook(undefined);
     setSummary(undefined);
     setFolderError(undefined);
+    setCipher(undefined);
+    setSealed(undefined);
     setStatus(supportsWorkspaceFolders() ? 'idle' : 'unsupported');
   }, []);
 
-  const startBook = useCallback(async (clientId: string) => {
+  const unlockWith = useCallback(async (passphrase: string) => {
+    if (!handle || !sealed?.encryption) return;
+    try {
+      await adopt(handle, await unlock(passphrase, sealed.encryption));
+    } catch (cause) {
+      // A wrong passphrase is a typo, not a broken folder, and the difference
+      // is worth saying — otherwise the first reaction is to look for a backup.
+      setFolderError(cause instanceof WrongPassphrase ? cause.message : describe(cause));
+    }
+  }, [handle, sealed, adopt]);
+
+  const startBook = useCallback(async (clientId: string, passphrase?: string) => {
     if (!handle) throw new Error('No folder is connected.');
     const { client, vehicles } = buildClientStructure(clientId);
-    await createClientFolder(handle, client, vehicles);
-    await adopt(handle);
-  }, [handle, adopt]);
+
+    let key = cipher;
+    if (!await manifestOf(handle)) {
+      const started = await initialiseBook(handle, passphrase || undefined);
+      key = started.cipher;
+    }
+    await createClientFolder(vaultFor(handle, key), client, vehicles, key);
+    await adopt(handle, key);
+  }, [handle, cipher, adopt]);
 
   const rescan = useCallback(async () => {
     if (!handle) return;
@@ -190,19 +248,22 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     kind,
     repository: backend ? supabaseRepository : book ?? demoRepository,
     folderStatus: status,
+    locked: status === 'locked',
     folderName: handle?.name,
     folderError,
+    folderWarning,
     unsupportedReason: status === 'unsupported' ? whyUnsupported() : undefined,
     book,
     summary,
     connect,
     reconnect,
     disconnect,
+    unlockWith,
     startBook,
     rescan,
   }), [
-    kind, backend, book, status, handle, folderError, summary,
-    connect, reconnect, disconnect, startBook, rescan,
+    kind, backend, book, status, handle, folderError, folderWarning, summary,
+    connect, reconnect, disconnect, unlockWith, startBook, rescan,
   ]);
 
   return <DataSourceContext.Provider value={value}>{children}</DataSourceContext.Provider>;

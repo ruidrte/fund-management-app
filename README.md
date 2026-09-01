@@ -28,7 +28,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 172 tests over the engine, permissions, ingestion, storage and export
+npm test               # 183 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -45,7 +45,8 @@ total row — and `samples/README.md` says what each row should do.
 
 With no configuration it runs against a built-in sample dataset. From the
 **Storage** screen you can point it at a folder on your own disk instead — real
-data, no server, no account, and the files stay yours; `docs/STORAGE.md`
+data, no server, no account, and the files stay yours, encrypted under a
+passphrase if you choose; `docs/STORAGE.md`
 describes what is written there and what a folder does not give you. Setting
 `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` runs it against a database. The
 engine and the screens are the same in all three.

@@ -142,7 +142,12 @@ async function withStore<T>(
 }
 
 export async function rememberWorkspace(handle: FileSystemDirectoryHandle): Promise<void> {
-  await withStore('readwrite', (store) => store.put(handle, KEY) as IDBRequest<unknown>);
+  try {
+    await withStore('readwrite', (store) => store.put(handle, KEY) as IDBRequest<unknown>);
+  } catch {
+    // Not being able to remember the folder costs a click next time. It is not
+    // a reason to refuse to open it now.
+  }
 }
 
 export async function rememberedWorkspace(): Promise<FileSystemDirectoryHandle | undefined> {
@@ -273,6 +278,21 @@ export async function listFiles(
     }
   }
   return entries.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * True when the chosen folder looks like a source repository.
+ *
+ * Worth saying out loud: a book inside a working copy is one `git add .` away
+ * from being pushed, and a fund's history is not something to discover on a
+ * remote afterwards.
+ */
+export async function looksLikeRepository(root: FileSystemDirectoryHandle): Promise<boolean> {
+  const iterable = root as unknown as AsyncIterable<[string, FileSystemHandle]>;
+  for await (const [name] of iterable) {
+    if (name === '.git' || name === 'package.json') return true;
+  }
+  return false;
 }
 
 /** True when the folder holds nothing at all. */

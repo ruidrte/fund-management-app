@@ -37,6 +37,10 @@ const ABS_TOLERANCE = 0.5;
 /** Relative tolerance for figures large enough that absolute is meaningless. */
 const REL_TOLERANCE = 1e-6;
 
+function sum(values: number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
 function close(a: number, b: number): boolean {
   const diff = Math.abs(a - b);
   if (diff <= ABS_TOLERANCE) return true;
@@ -102,6 +106,26 @@ export function runChecks(
     t.percentInvested,
     t.commitments > 0 ? t.drawn / t.commitments : 0,
     'The headline invested share is the ratio it claims to be',
+  );
+
+  /**
+   * Where a holding has both a statement and a ledger, they must agree.
+   *
+   * Only holdings that have both are counted: a book loaded from a workbook has
+   * statements and no ledger, and a live book often has the ledger and no
+   * cumulatives. When both are present and disagree, one of them is wrong, and
+   * that is a reconciliation item rather than something to average away.
+   */
+  const reconcilable = gross.positions.filter(
+    (p) => p.stated?.drawn !== undefined && p.ledger.drawn > 0,
+  );
+  check(
+    'drawn_statement_vs_ledger',
+    'Drawn per statement = drawn per cashflow ledger',
+    reconcilable.length > 0,
+    sum(reconcilable.map((p) => p.stated!.drawn!)),
+    sum(reconcilable.map((p) => p.ledger.drawn)),
+    'Where a holding has both a reported cumulative and filed cashflows, they describe the same capital',
   );
 
   check(

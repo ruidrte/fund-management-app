@@ -40,7 +40,36 @@ export interface PositionState {
   rollForwardAdjustment: number;
   /** Return assumption applied on top of the roll-forward, as a decimal. */
   appliedReturn: number;
+  /**
+   * Cumulative amounts as the source statement reported them, in the position's
+   * own currency, with the quarter they were reported for.
+   *
+   * A historical workbook gives cumulative drawn and distributed per holding
+   * and no cashflow ledger at all; a live book has the ledger and often no
+   * cumulatives. Carrying whichever the source gave lets the engine use the
+   * statement as the authority for the stock and the ledger for the dated
+   * flows, rather than reporting nothing drawn because no call was ever filed.
+   */
+  reported?: {
+    period: PeriodId;
+    drawn?: number;
+    distributed?: number;
+    recallable?: number;
+  };
   note?: string;
+}
+
+/** The cumulative figures a valuation carries, if it carries any. */
+function reportedCumulatives(row: PositionValuation): PositionState['reported'] {
+  if (row.drawnCumulative === undefined
+    && row.distributedCumulative === undefined
+    && row.recallableCumulative === undefined) return undefined;
+  return {
+    period: row.period,
+    drawn: row.drawnCumulative,
+    distributed: row.distributedCumulative,
+    recallable: row.recallableCumulative,
+  };
 }
 
 export interface CoverageSummary {
@@ -137,6 +166,7 @@ export function resolvePositionStates(
         lagQuarters: 0,
         rollForwardAdjustment: 0,
         appliedReturn: 0,
+        reported: reportedCumulatives(exact),
       });
     } else {
       outstanding.push(position);
@@ -229,6 +259,7 @@ function fillGap(
       lagQuarters: lag,
       rollForwardAdjustment: 0,
       appliedReturn: 0,
+      reported: reportedCumulatives(last),
       note: `Valuation as at ${formatPeriod(last.period)}, carried unchanged`,
     };
   }
@@ -267,6 +298,7 @@ function fillGap(
     lagQuarters: lag,
     rollForwardAdjustment: adjustment,
     appliedReturn,
+    reported: reportedCumulatives(last),
     note: noteParts.join(', '),
   };
 }

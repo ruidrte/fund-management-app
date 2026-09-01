@@ -3,28 +3,31 @@
  *
  * The same interface the Supabase repository implements, so nothing above the
  * data boundary knows the difference — the engine, the screens and the reports
- * are identical whether the book lives in Postgres or in a synced folder.
+ * are identical whether the book lives in Postgres or in a folder.
  *
  * What is different, and worth being clear about, is who is responsible for it:
- * a folder has no row-level security, no audit trail beyond the file dates, and
- * no locking. It is exactly as private as the folder is, and one writer at a
- * time.
+ * a folder has no row-level security and no locking. Encrypting it moves the
+ * confidentiality of the data onto a passphrase the user holds rather than onto
+ * the account the drive belongs to — but it is still one writer at a time, and
+ * anyone who has both the folder and the passphrase has everything.
  */
 
 import type { DataSet } from '../../domain/types';
 import type { SourceDocument } from '../../ingest/types';
 import type { ClientSummary, Repository } from '../repository';
+import type { Cipher } from './crypto';
 import {
-  appendFacts, readClient, readManifest, replaceReference, storeDocument,
-  type BookManifest, type FactBatch, type ReferenceUpdate,
+  appendFacts, clientsIn, readClient, readManifest, replaceReference, storeDocument,
+  vaultFor, type BookManifest, type ClientEntry, type FactBatch, type ReferenceUpdate, type Vault,
 } from './store';
 
 export interface LocalBook extends Repository {
-  readonly root: FileSystemDirectoryHandle;
+  readonly vault: Vault;
   readonly manifest: BookManifest;
-  /** Lines skipped as unreadable on the last load, per client. */
+  readonly clients: ClientEntry[];
+  readonly encrypted: boolean;
+  /** Lines the last load could not read, per client. Never swallowed. */
   problems(clientId: string): string[];
-  /** Files a load could not parse are surfaced, never swallowed. */
   commit(clientId: string, change: BookChange): Promise<Record<string, number>>;
 }
 
@@ -37,36 +40,47 @@ export interface BookChange {
   bytes?: Uint8Array;
 }
 
-export function openBook(
-  root: FileSystemDirectoryHandle, manifest: BookManifest, label: string,
-): LocalBook {
+/**
+ * Opens a book. The client list is resolved once — for a protected book that
+ * means decrypting it — so every later call is a plain lookup.
+ */
+export async function openBook(
+  root: FileSystemDirectoryHandle,
+  manifest: BookManifest,
+  label: string,
+  cipher?: Cipher,
+): Promise<LocalBook> {
+  const vault = vaultFor(root, cipher);
+  const clients = await clientsIn(manifest, cipher);
   const problems = new Map<string, string[]>();
 
   const slugOf = (clientId: string): string => {
-    const entry = manifest.clients.find((c) => c.id === clientId);
+    const entry = clients.find((c) => c.id === clientId);
     if (!entry) throw new Error(`This folder holds no client with id ${clientId}.`);
     return entry.slug;
   };
 
   return {
-    root,
+    vault,
     manifest,
+    clients,
+    encrypted: vault.encrypted,
     label,
 
     async listClients(): Promise<ClientSummary[]> {
-      return manifest.clients.map((c) => ({ id: c.id, name: c.name, shortName: c.shortName }));
+      return clients.map((c) => ({ id: c.id, name: c.name, shortName: c.shortName }));
     },
 
     async loadClient(clientId: string): Promise<DataSet> {
       const slug = slugOf(clientId);
-      const read = await readClient(root, slug);
+      const read = await readClient(vault, slug);
       if (!read) {
         throw new Error(
-          `The folder lists ${clientId} in book.json but clients/${slug}/client.json is missing. `
+          `The folder lists this client in book.json but clients/${slug}/client.json is missing. `
           + 'The folder has been moved or partly deleted.',
         );
       }
-      problems.set(clientId, read.skipped);
+      problems.set(clientId, read.problems);
       return read.dataset;
     },
 
@@ -80,17 +94,17 @@ export function openBook(
       // folder holds a file nobody used, which is inert; the other order would
       // leave figures whose source is not there.
       if (change.document) {
-        await storeDocument(root, slug, change.document, change.bytes);
+        await storeDocument(vault, slug, change.document, change.bytes);
       }
       if (change.reference) {
-        await replaceReference(root, slug, change.reference);
+        await replaceReference(vault, slug, change.reference);
       }
-      return change.facts ? appendFacts(root, slug, change.facts) : {};
+      return change.facts ? appendFacts(vault, slug, change.facts) : {};
     },
   };
 }
 
-/** Reads the manifest, so a folder can be opened before anything is committed. */
+/** Reads the manifest, so a folder can be inspected before it is unlocked. */
 export async function manifestOf(
   root: FileSystemDirectoryHandle,
 ): Promise<BookManifest | undefined> {

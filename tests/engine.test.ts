@@ -3,7 +3,7 @@ import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engin
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
 import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
-import type { FxRate, Scope } from '../src/domain/types';
+import type { DataSet, FxRate, PositionValuation, Scope } from '../src/domain/types';
 
 const meridian = buildDemoDataSet('client-ebg');
 const aurora = buildDemoDataSet('client-ut');
@@ -396,6 +396,93 @@ describe('a restricted investor register', () => {
     // Portfolio, cash and accruals are the vehicle's and are not confidential.
     expect(partial.net.product.components.vehicleNav)
       .toBeCloseTo(full.net.product.components.vehicleNav, 6);
+  });
+});
+
+describe('a book loaded from statements, with no cashflow ledger', () => {
+  /** One holding, one valuation carrying cumulatives, and no flows at all. */
+  const fromStatements = (over: Partial<PositionValuation> = {}): DataSet => ({
+    client: { id: 'c', name: 'Test', shortName: 'T', reportingCurrency: 'EUR' },
+    vehicles: [{
+      id: 'v', clientId: 'c', kind: 'fund-of-funds', name: 'Vehicle', shortName: 'V',
+      currency: 'EUR', inceptionDate: '2020-01-01', investorCommitment: 100_000,
+      manager: 'M', administrator: 'A', domicile: 'LU', status: 'Investing',
+    }],
+    positions: [{
+      id: 'p', vehicleId: 'v', kind: 'fund', name: 'Baltic Wind Partners II', currency: 'EUR',
+      vintage: 2021, commitmentDate: '2021-06-30', commitment: 10_000, ownership: 1,
+      assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
+    }],
+    assets: [], investors: [], assetValuations: [], cashflows: [], balanceSheets: [],
+    esgMetrics: [],
+    fxRates: [],
+    positionValuations: [{
+      id: 'val', positionId: 'p', period: '2026Q1', recordedAt: '2026-04-20T09:00:00Z',
+      nav: 8_400, drawnCumulative: 7_000, distributedCumulative: 1_500,
+      source: 'AbIF since inception.xlsx', ...over,
+    }],
+  });
+
+  it('reports what the statement says was drawn, not nothing', () => {
+    const view = analyse(fromStatements(), { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    const [holding] = view.gross.positions;
+
+    expect(holding.drawn).toBe(7_000);
+    expect(holding.distributed).toBe(1_500);
+    // Which is the whole point: without it the commitment reads as wholly
+    // undrawn and the holding has no multiple at all.
+    expect(holding.undrawn).toBe(3_000);
+    expect(holding.multiples.tvpi).toBeCloseTo((8_400 + 1_500) / 7_000, 10);
+  });
+
+  it('adds flows filed after the statement it came from', () => {
+    const dataset = fromStatements();
+    dataset.cashflows = [{
+      id: 'cf', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -1_000,
+      currency: 'EUR', date: '2026-05-15', period: '2026Q2',
+      recordedAt: '2026-05-15T09:00:00Z', affectsCommitment: true, status: 'Settled',
+    }];
+
+    const q1 = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    expect(q1.gross.positions[0].drawn).toBe(7_000);
+
+    // Q2 has no statement, so the Q1 one is carried and the later call added.
+    const q2 = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q2' });
+    expect(q2.gross.positions[0].drawn).toBe(8_000);
+  });
+
+  it('does not double-count a flow the statement already includes', () => {
+    const dataset = fromStatements();
+    dataset.cashflows = [{
+      id: 'cf', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -7_000,
+      currency: 'EUR', date: '2026-02-15', period: '2026Q1',
+      recordedAt: '2026-02-15T09:00:00Z', affectsCommitment: true, status: 'Settled',
+    }];
+    const view = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    expect(view.gross.positions[0].drawn).toBe(7_000);
+
+    // Both sources exist and agree, so the reconciliation check runs and passes.
+    const reconciliation = view.checks.results.find((r) => r.id === 'drawn_statement_vs_ledger');
+    expect(reconciliation!.status).toBe('pass');
+  });
+
+  it('fails the reconciliation when the statement and the ledger disagree', () => {
+    const dataset = fromStatements();
+    dataset.cashflows = [{
+      id: 'cf', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -6_400,
+      currency: 'EUR', date: '2026-02-15', period: '2026Q1',
+      recordedAt: '2026-02-15T09:00:00Z', affectsCommitment: true, status: 'Settled',
+    }];
+    const view = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    const reconciliation = view.checks.results.find((r) => r.id === 'drawn_statement_vs_ledger');
+    expect(reconciliation!.status).toBe('fail');
+    expect(reconciliation!.difference).toBeCloseTo(600, 10);
+  });
+
+  it('skips the reconciliation where there is nothing to reconcile', () => {
+    const view = analyse(fromStatements(), { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    expect(view.checks.results.find((r) => r.id === 'drawn_statement_vs_ledger')!.status)
+      .toBe('skip');
   });
 });
 

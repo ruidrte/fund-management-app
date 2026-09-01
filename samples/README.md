@@ -13,7 +13,7 @@ sheet, and four rows that must not load cleanly:
 | Nordic Growth Partners IV **SCSp** | Matches "Nordic Growth Partners IV" — the legal form is stripped |
 | Thames Venture Fund **3** | Matches "Thames Venture Fund III" — roman and arabic numerals are the same |
 | Iberia Real Estate Partners | NAV reads `n/a`; listed under **Not read** rather than loaded as zero |
-| Unknown Vehicle SA | Matches no holding; **blocked**, Accept is disabled |
+| Unknown Vehicle SA | Matches no holding; **blocked**, Accept is disabled — unless *create holdings this book does not have* is on, which is what seeding a new book is for |
 | Total | Skipped — a total row must not become a holding |
 
 Numbers are written Swiss (`15'000.00`), UK (`15,700.00`) and German

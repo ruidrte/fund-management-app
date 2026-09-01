@@ -116,6 +116,34 @@ Newton alone diverges on the cashflow shapes private funds actually produce: a
 long run of calls followed by one large late distribution. An unsolved IRR is
 `undefined`; returning a wrong root quietly would be worse.
 
+### Drawn and distributed
+
+Two sources can say how much a holding has drawn: the cashflow ledger, and the
+cumulative figure on the GP's statement. Books arrive with one or the other. A
+history loaded from a workbook has statements and no ledger; a book built from
+notices has the ledger and often no cumulatives.
+
+**The statement is the authority for the stock; the ledger for what moved
+after it.**
+
+```
+drawn = reported_cumulative(as at the statement's quarter)
+      + calls filed for quarters after it
+```
+
+with the ledger alone when no cumulative was reported. The same holds for
+distributions and for the recallable portion.
+
+Deriving these from flows alone was wrong in a way that looked plausible: a
+portfolio loaded from statements reported nothing drawn, its whole commitment
+undrawn, and no multiple, while every statement behind it said otherwise.
+
+Where a holding has both, they must agree — an identity check compares them and
+fails when they do not. That is a reconciliation item, not something to average
+away. An IRR still needs dated flows: a cumulative has no dates, so a holding
+with statements alone shows a multiple and no IRR rather than an IRR built on
+invented dates.
+
 ## Commitments
 
 ```
