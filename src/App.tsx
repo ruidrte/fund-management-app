@@ -1,0 +1,79 @@
+import { useState } from 'react';
+import { AlertCircle } from 'lucide-react';
+import { ThemeProvider } from './context/ThemeContext';
+import { ScopeProvider, useScope } from './context/ScopeContext';
+import { Header } from './components/layout/Header';
+import { ScopeBar } from './components/layout/ScopeBar';
+import { Navigation, type PageId } from './components/layout/Navigation';
+import { Dashboard } from './pages/Dashboard';
+import { Portfolio } from './pages/Portfolio';
+import { Exposure } from './pages/Exposure';
+import { Investors } from './pages/Investors';
+import { Reports } from './pages/Reports';
+import { DataQuality } from './pages/DataQuality';
+import { Esg } from './pages/Esg';
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <ScopeProvider>
+        <Shell />
+      </ScopeProvider>
+    </ThemeProvider>
+  );
+}
+
+function Shell() {
+  const [page, setPage] = useState<PageId>('dashboard');
+  const { loading, error, view } = useScope();
+
+  return (
+    <div className="flex h-full flex-col">
+      <Header />
+      <ScopeBar />
+      <div className="flex min-h-0 flex-1">
+        <Navigation active={page} onChange={setPage} />
+        <main className="min-w-0 flex-1 overflow-y-auto p-5">
+          {error && <Notice tone="var(--status-critical)" title="Could not load this scope" body={error} />}
+          {!error && loading && <Notice tone="var(--text-muted)" title="Loading" body="Reading the client's data." />}
+          {!error && !loading && !view && (
+            <Notice
+              tone="var(--status-warning)"
+              title="Nothing to analyse"
+              body="This client has no vehicle with data for any quarter yet."
+            />
+          )}
+          {!error && view && <Page page={page} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Page({ page }: { page: PageId }) {
+  const { view } = useScope();
+  if (!view) return null;
+
+  switch (page) {
+    case 'portfolio': return <Portfolio view={view} />;
+    case 'exposure': return <Exposure view={view} />;
+    case 'investors': return <Investors view={view} />;
+    case 'reports': return <Reports view={view} />;
+    case 'quality': return <DataQuality view={view} />;
+    case 'esg': return <Esg view={view} />;
+    case 'dashboard':
+    default: return <Dashboard view={view} />;
+  }
+}
+
+function Notice({ tone, title, body }: { tone: string; title: string; body: string }) {
+  return (
+    <div className="card flex gap-3 p-4" style={{ borderLeftWidth: 3, borderLeftColor: tone }} role="status">
+      <AlertCircle size={16} className="mt-0.5 shrink-0" style={{ color: tone }} aria-hidden />
+      <div>
+        <p className="m-0 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</p>
+        <p className="mt-1 mb-0 text-xs" style={{ color: 'var(--text-secondary)' }}>{body}</p>
+      </div>
+    </div>
+  );
+}

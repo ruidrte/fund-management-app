@@ -175,7 +175,8 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
     commitment,
     called,
     distributed,
-    undrawn: Math.max(0, commitment - called),
+    // Unclamped, for the same reason as the portfolio side.
+    undrawn: commitment - called,
     percentCalled: commitment > 0 ? called / commitment : 0,
     calledInPeriod: sum(inPeriod.filter(isInvestorCall).map((c) => convert(Math.abs(c.amount), c.currency, c.period))),
     distributedInPeriod: sum(inPeriod.filter(isInvestorDistribution).map((c) => convert(Math.abs(c.amount), c.currency, c.period))),
@@ -287,7 +288,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
       commitment: account.commitment,
       called,
       distributed,
-      undrawn: Math.max(0, account.commitment - called),
+      undrawn: account.commitment - called,
       nav,
       navPrior,
       ownership: share,

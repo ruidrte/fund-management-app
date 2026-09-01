@@ -137,7 +137,11 @@ export function computeGross(inputs: GrossInputs): GrossResult {
     const distributionsInPeriod = sum(inPeriod.filter(isDistribution).map(convertFlow));
 
     const commitment = position.commitment * closingRate;
-    const undrawn = Math.max(0, commitment - drawn);
+    // Not clamped at zero. A position drawn beyond its commitment — recycling,
+    // or an equalisation the data has not caught up with — is a real condition,
+    // and clamping would hide it while silently breaking the identity that
+    // commitment equals drawn plus undrawn.
+    const undrawn = commitment - drawn;
     const openCommitment = conventions.recallableRestoresCommitment
       ? undrawn + recallable
       : undrawn;
@@ -227,7 +231,7 @@ function aggregate(
       .filter((p) => results.some((r) => r.position.id === p.id))
       .map((p) => p.commitment * (rates.tryRate(p.currency, currency, prior) ?? 1)),
   );
-  const undrawnPrior = Math.max(0, commitmentsPrior - drawnPrior);
+  const undrawnPrior = commitmentsPrior - drawnPrior;
 
   const allFlows: DatedFlow[] = throughPeriod(
     cashflows.filter((c) => c.positionId),

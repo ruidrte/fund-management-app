@@ -41,6 +41,14 @@ export interface ExposureBreakdown {
   provenance: Provenance;
   /** Share of NAV the breakdown could actually classify. */
   coverage: number;
+  /**
+   * Set on look-through breakdowns: the portfolio NAV the asset values are
+   * being compared against. Asset detail rarely accounts for the whole of a
+   * fund's NAV — undeployed capital, fund-level cash and holdings with no asset
+   * data all sit outside it — so the shortfall is reported rather than left for
+   * a reader to discover by adding the column up.
+   */
+  benchmarkTotal?: number;
 }
 
 export type ExposureDimension =
@@ -158,8 +166,12 @@ export function lookThroughExposure(
     }
   }
 
-  return assemble(dimension, 'look-through', currency, total, 0, classified, buckets,
+  const breakdown = assemble(dimension, 'look-through', currency, total, 0, classified, buckets,
     weakest(provenances));
+  return {
+    ...breakdown,
+    benchmarkTotal: results.reduce((sum, r) => sum + r.nav, 0),
+  };
 }
 
 function assemble(

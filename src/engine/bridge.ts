@@ -176,6 +176,10 @@ export function describeQuarter(bridge: Bridge, period: PeriodId): string {
   return `Net asset value ${direction} by ${parts.join(', ')}.${emphasis}`;
 }
 
+/** Same denomination as every other figure on screen: thousands in, millions out. */
 function fmt(value: number): string {
-  return value.toLocaleString('en-GB', { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+  return `${(value / 1000).toLocaleString('en-GB', {
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  })}m`;
 }

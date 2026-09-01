@@ -191,6 +191,28 @@ describe('draft calculation on an incomplete quarter', () => {
   });
 });
 
+describe('an over-called position', () => {
+  it('reports negative undrawn rather than clamping and breaking the identity', () => {
+    const over = buildDemoDataSet('client-meridian');
+    const target = over.positions[0];
+    // Draw twice the commitment, as recycling or a late equalisation would.
+    over.cashflows.push({
+      id: 'cf-overcall', positionId: target.id, vehicleId: target.vehicleId,
+      type: 'Capital Call', amount: -target.commitment * 2, currency: target.currency,
+      date: '2026-03-31', period: '2026Q1', recordedAt: '2026-05-12T09:00:00Z',
+      affectsCommitment: true, status: 'Settled',
+    });
+
+    const view = analyse(over, scope());
+    const result = view.gross.positions.find((p) => p.position.id === target.id)!;
+
+    expect(result.undrawn).toBeLessThan(0);
+    const t = view.gross.totals;
+    expect(t.drawn + t.undrawn).toBeCloseTo(t.commitments, 6);
+    expect(view.checks.results.find((r) => r.id === 'commitments_split')!.status).toBe('pass');
+  });
+});
+
 describe('exposure and allocation', () => {
   const view = analyse(meridian, scope());
 

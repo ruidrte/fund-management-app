@@ -89,6 +89,12 @@ interface PositionSeed {
   /** Opening NAV in local currency at 2024Q1, and the quarterly growth applied. */
   openingNav: number;
   quarterlyGrowth: number;
+  /**
+   * Capital drawn before the series starts, which is what built `openingNav`.
+   * Without it the multiples and IRR see a large NAV against almost no paid-in
+   * capital and come out at several hundred percent.
+   */
+  inceptionCall?: number;
   /** Quarters for which no valuation is filed — the draft calculation's job. */
   silentPeriods?: PeriodId[];
   callSchedule: Partial<Record<PeriodId, number>>;
@@ -101,6 +107,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'EUR', vintage: 2021, commitment: 15_000, ownership: 0.042,
     assetClass: 'Private Equity', subAssetClass: 'Growth', region: 'Europe', kind: 'fund',
     openingNav: 8_200, quarterlyGrowth: 0.028,
+    inceptionCall: 6724,
     callSchedule: { '2024Q2': 1_200, '2024Q4': 900, '2025Q2': 1_100, '2025Q4': 800, '2026Q1': 600 },
     distributionSchedule: { '2025Q3': 1_400, '2026Q1': 900 },
   },
@@ -109,6 +116,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'USD', vintage: 2020, commitment: 18_000, ownership: 0.031,
     assetClass: 'Private Equity', subAssetClass: 'Buyout', region: 'North America', kind: 'fund',
     openingNav: 11_400, quarterlyGrowth: 0.021,
+    inceptionCall: 9348,
     callSchedule: { '2024Q1': 1_500, '2024Q3': 1_100, '2025Q1': 900, '2025Q3': 700 },
     distributionSchedule: { '2024Q4': 2_100, '2025Q4': 2_600, '2026Q1': 1_200 },
   },
@@ -117,6 +125,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'EUR', vintage: 2022, commitment: 12_000, ownership: 0.055,
     assetClass: 'Real Assets', subAssetClass: 'Infrastructure', region: 'Europe', kind: 'fund',
     openingNav: 4_100, quarterlyGrowth: 0.018,
+    inceptionCall: 3362,
     callSchedule: { '2024Q2': 900, '2024Q4': 1_100, '2025Q2': 1_300, '2025Q4': 900, '2026Q1': 700 },
   },
   {
@@ -124,6 +133,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'GBP', vintage: 2021, commitment: 8_000, ownership: 0.068,
     assetClass: 'Private Equity', subAssetClass: 'Early (VC)', region: 'Europe', kind: 'fund',
     openingNav: 3_600, quarterlyGrowth: 0.034,
+    inceptionCall: 2952,
     // Venture managers file late. Q1 2026 is missing at the draft date.
     silentPeriods: ['2026Q1'],
     callSchedule: { '2024Q1': 600, '2024Q3': 700, '2025Q1': 800, '2025Q3': 600, '2026Q1': 400 },
@@ -133,6 +143,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'EUR', vintage: 2023, commitment: 9_000, ownership: 0.075,
     assetClass: 'Real Assets', subAssetClass: 'Real Estate', region: 'Europe', kind: 'fund',
     openingNav: 1_800, quarterlyGrowth: 0.012,
+    inceptionCall: 1476,
     silentPeriods: ['2026Q1'],
     callSchedule: { '2024Q2': 700, '2024Q4': 800, '2025Q2': 900, '2025Q4': 1_000, '2026Q1': 500 },
   },
@@ -149,6 +160,7 @@ const FOF_POSITIONS: PositionSeed[] = [
     currency: 'EUR', vintage: 2023, commitment: 6_000, ownership: 0.090,
     assetClass: 'Real Assets', subAssetClass: 'Nature-based', region: 'Global', kind: 'fund',
     openingNav: 900, quarterlyGrowth: 0.015,
+    inceptionCall: 738,
     callSchedule: { '2024Q3': 600, '2025Q1': 700, '2025Q3': 800, '2026Q1': 500 },
   },
 ];
@@ -232,7 +244,10 @@ function meridianDataSet(): DataSet {
     assets: built.assets,
     assetValuations: built.assetValuations,
     positionValuations: built.valuations,
-    cashflows: [...built.cashflows, ...investorCashflows(vehicleId, meridianInvestors(vehicleId))],
+    cashflows: [
+      ...built.cashflows,
+      ...investorCashflows(vehicleId, meridianInvestors(vehicleId), built.cashflows, 'EUR'),
+    ],
     investors: meridianInvestors(vehicleId),
     balanceSheets: balanceSheets(vehicleId, 'EUR', 1_450, 320, 210),
     fxRates: fxRates(),
@@ -273,7 +288,10 @@ function auroraDataSet(): DataSet {
     assets: built.assets,
     assetValuations: built.assetValuations,
     positionValuations: built.valuations,
-    cashflows: [...built.cashflows, ...investorCashflows(vehicleId, auroraInvestors(vehicleId))],
+    cashflows: [
+      ...built.cashflows,
+      ...investorCashflows(vehicleId, auroraInvestors(vehicleId), built.cashflows, 'USD'),
+    ],
     investors: auroraInvestors(vehicleId),
     balanceSheets: balanceSheets(vehicleId, 'USD', 980, 140, 95),
     fxRates: fxRates(),
@@ -309,6 +327,17 @@ function buildPortfolio(seeds: PositionSeed[], vehicleId: string, mode: 'fund' |
     });
 
     // Cashflows first — the valuation series has to be consistent with them.
+    if (seed.inceptionCall) {
+      const date = `${seed.vintage}-09-30`;
+      cashflows.push({
+        id: id('cf'), positionId: seed.id, vehicleId, type: 'Capital Call',
+        amount: -seed.inceptionCall, currency: seed.currency,
+        date, period: `${seed.vintage}Q3`, recordedAt: `${seed.vintage}-11-15T09:00:00Z`,
+        affectsCommitment: true, status: 'Settled',
+        description: `Capital drawn to inception — ${seed.name}`,
+      });
+    }
+
     for (const period of PERIODS) {
       const call = seed.callSchedule[period];
       if (call) {
@@ -362,9 +391,16 @@ function buildPortfolio(seeds: PositionSeed[], vehicleId: string, mode: 'fund' |
       }
     }
 
-    // Look-through assets — three per position, weighted sector splits.
-    const assetCount = mode === 'direct' ? 1 : 3;
-    for (let i = 0; i < assetCount; i += 1) {
+    // Look-through assets — three per underlying fund, one per direct holding.
+    //
+    // The vehicle's economic exposure to an asset is its total value scaled by
+    // the position's stake and then by the vehicle's stake in the position. So
+    // the total value stored here is grossed back up through both, which is
+    // what makes the look-through breakdown reconcile to the portfolio NAV
+    // rather than landing two orders of magnitude below it.
+    const splits = mode === 'direct' ? [1] : [0.42, 0.33, 0.25];
+    const assetOwnerships = mode === 'direct' ? [1] : [0.6, 0.45, 0.8];
+    for (let i = 0; i < splits.length; i += 1) {
       const assetId = `${seed.id}-asset-${i + 1}`;
       assets.push({
         id: assetId,
@@ -372,7 +408,7 @@ function buildPortfolio(seeds: PositionSeed[], vehicleId: string, mode: 'fund' |
         name: mode === 'direct' ? seed.name : `${seed.name.split(' ')[0]} Holding ${i + 1}`,
         currency: seed.currency,
         investmentDate: `${seed.vintage + 1}-03-31`,
-        ownership: mode === 'direct' ? 1 : [0.42, 0.33, 0.25][i],
+        ownership: assetOwnerships[i],
         assetClass: seed.assetClass,
         subAssetClass: seed.subAssetClass,
         sector: i === 0
@@ -383,15 +419,24 @@ function buildPortfolio(seeds: PositionSeed[], vehicleId: string, mode: 'fund' |
         status: 'Held',
       });
 
-      let assetNav = seed.openingNav * [0.42, 0.33, 0.25][i] || seed.openingNav;
+      const grossUp = assetOwnerships[i] * seed.ownership;
+      // Assets carry the same cashflows and growth as the position, split by
+      // their share of it, then grossed back up through both ownership layers.
+      // They still land below the position NAV — undeployed capital and
+      // fund-level cash sit outside the asset detail — which is the gap the
+      // exposure card reports rather than hides.
+      let assetNav = (seed.openingNav * splits[i]) / (grossUp || 1);
       for (const period of PERIODS) {
-        assetNav *= 1 + seed.quarterlyGrowth;
+        const call = (seed.callSchedule[period] ?? 0) * splits[i] / (grossUp || 1);
+        const distribution = (seed.distributionSchedule?.[period] ?? 0) * splits[i] / (grossUp || 1);
+        assetNav = (assetNav + call - distribution) * (1 + seed.quarterlyGrowth);
         if (seed.silentPeriods?.includes(period)) continue;
         assetValuations.push({
           id: id('aval'), assetId, period, recordedAt: recordedFor(period),
-          invested: Math.round(assetNav * 0.8 * 100) / 100,
-          realised: Math.round(assetNav * 0.1 * 100) / 100,
-          unrealised: Math.round(assetNav * 100) / 100,
+          invested: Math.round(assetNav * 0.78 * 100) / 100,
+          realised: Math.round(assetNav * 0.12 * 100) / 100,
+          // Only part of a fund's value is traceable to named assets.
+          unrealised: Math.round(assetNav * 0.88 * 100) / 100,
           source: 'GP portfolio report',
         });
       }
@@ -419,57 +464,102 @@ function auroraInvestors(vehicleId: string): DataSet['investors'] {
 }
 
 /**
- * Investor-side flows. Calls are raised pro rata on commitment, which is what a
- * vehicle without equalisation actually does, and lets the LP-level engine be
- * exercised against booked flows rather than allocation.
+ * Investor-side flows, derived from the portfolio rather than invented.
+ *
+ * A vehicle calls capital because its portfolio called capital, and distributes
+ * because its portfolio distributed. Deriving the investor schedule from the
+ * portfolio one keeps the net tier in a believable relationship with the gross
+ * tier — an arbitrary schedule produces net multiples several times the gross
+ * ones, which is the giveaway that the two sides were never connected.
+ *
+ * Calls are raised pro rata on commitment, which is what a vehicle without
+ * equalisation does, and gives the LP-level engine booked flows to work from
+ * rather than an allocation.
  */
-function investorCashflows(vehicleId: string, investors: DataSet['investors']): Cashflow[] {
+function investorCashflows(
+  vehicleId: string,
+  investors: DataSet['investors'],
+  portfolio: Cashflow[],
+  vehicleCurrency: string,
+): Cashflow[] {
   const total = investors.reduce((sum, i) => sum + i.commitment, 0);
-  const schedule: Partial<Record<PeriodId, { call?: number; distribution?: number; fee?: number }>> = {
-    '2024Q1': { call: 2_100, fee: 180 },
-    '2024Q3': { call: 2_600, fee: 180 },
-    '2024Q4': { call: 1_900, distribution: 1_800, fee: 190 },
-    '2025Q1': { call: 2_400, fee: 190 },
-    '2025Q3': { call: 2_100, distribution: 1_200, fee: 195 },
-    '2025Q4': { call: 1_800, distribution: 2_300, fee: 195 },
-    '2026Q1': { call: 2_500, distribution: 1_400, fee: 200 },
-  };
+  if (total === 0) return [];
+
+  // Portfolio flows converted into the vehicle's currency at the period close.
+  const byPeriod = new Map<PeriodId, { calls: number; distributions: number }>();
+  for (const flow of portfolio) {
+    const rate = toVehicleRate(flow.currency, vehicleCurrency, flow.period);
+    const entry = byPeriod.get(flow.period) ?? { calls: 0, distributions: 0 };
+    if (flow.type === 'Capital Call') entry.calls += Math.abs(flow.amount) * rate;
+    if (flow.type === 'Distribution') entry.distributions += Math.abs(flow.amount) * rate;
+    byPeriod.set(flow.period, entry);
+  }
 
   const rows: Cashflow[] = [];
-  for (const [period, entry] of Object.entries(schedule) as Array<[PeriodId, { call?: number; distribution?: number; fee?: number }]>) {
+  // A quarterly management fee on committed capital, drawn alongside the calls.
+  const quarterlyFee = (total * 0.0125) / 4;
+
+  for (const period of [...byPeriod.keys()].sort()) {
+    const entry = byPeriod.get(period)!;
     const recordedAt = recordedFor(period);
+    // The vehicle calls what the portfolio needs plus its running costs, less
+    // whatever it received in the same quarter and can recycle.
+    const call = Math.max(0, entry.calls + quarterlyFee - entry.distributions * 0.4);
+    // Distributions reach investors net of the retained portion.
+    const distribution = entry.distributions * 0.6;
+
     for (const investor of investors) {
       const share = investor.commitment / total;
-      if (entry.call) {
+      if (call > 1) {
         rows.push({
           id: id('icf'), investorId: investor.id, vehicleId, type: 'Capital Call',
-          amount: entry.call * share, currency: investor.currency,
+          amount: Math.round(call * share * 100) / 100, currency: investor.currency,
           date: periodEndDate(period), period, recordedAt,
           affectsCommitment: true, status: 'Settled',
           description: 'Investor capital call',
         });
       }
-      if (entry.distribution) {
+      if (distribution > 1) {
         rows.push({
           id: id('icf'), investorId: investor.id, vehicleId, type: 'Distribution',
-          amount: -entry.distribution * share, currency: investor.currency,
+          amount: -Math.round(distribution * share * 100) / 100, currency: investor.currency,
           date: periodEndDate(period), period, recordedAt,
           affectsCommitment: false, status: 'Settled',
           description: 'Investor distribution',
         });
       }
     }
-    if (entry.fee) {
-      rows.push({
-        id: id('fee'), vehicleId, type: 'Fee',
-        amount: -entry.fee, currency: 'EUR',
-        date: periodEndDate(period), period, recordedAt,
-        affectsCommitment: false, status: 'Settled',
-        description: 'Management fee',
-      });
-    }
+
+    rows.push({
+      id: id('fee'), vehicleId, type: 'Fee',
+      amount: -Math.round(quarterlyFee * 100) / 100, currency: vehicleCurrency,
+      date: periodEndDate(period), period, recordedAt,
+      affectsCommitment: false, status: 'Settled',
+      description: 'Management fee',
+    });
   }
+
   return rows;
+}
+
+/**
+ * Closing rate into the vehicle currency, falling back to the nearest quarter
+ * the tables cover — the demo's series starts in 2024 but inception calls sit
+ * before it.
+ */
+function toVehicleRate(from: string, to: string, period: PeriodId): number {
+  if (from === to) return 1;
+  const table = (ccy: string) => (ccy === 'USD' ? USD_CLOSING : ccy === 'GBP' ? GBP_CLOSING : undefined);
+
+  const nearest = (t: Record<string, number>) =>
+    t[period] ?? t[PERIODS.find((p) => p >= period) ?? PERIODS[0]] ?? 1;
+
+  // Rates are quoted as 1 EUR = X foreign, so a foreign amount divides.
+  const fromTable = table(from);
+  const toTable = table(to);
+  const fromInEur = fromTable ? 1 / nearest(fromTable) : 1;
+  const eurInTo = toTable ? nearest(toTable) : 1;
+  return fromInEur * eurInTo;
 }
 
 function balanceSheets(
