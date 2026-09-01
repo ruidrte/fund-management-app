@@ -1,11 +1,11 @@
 import {
-  Activity, DatabaseZap, Download, FileText, HardDrive, KeyRound, LayoutDashboard,
-  PieChart, ShieldCheck, Users, Wallet,
+  Activity, CalendarCheck, DatabaseZap, Download, FileText, HardDrive, KeyRound,
+  LayoutDashboard, PieChart, ShieldCheck, Users, Wallet,
 } from 'lucide-react';
 
 export type PageId =
   | 'dashboard' | 'portfolio' | 'exposure' | 'investors'
-  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'storage' | 'access';
+  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'close' | 'storage' | 'access';
 
 import { useAuth } from '../../context/AuthContext';
 import type { Capability } from '../../auth/permissions';
@@ -20,6 +20,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
+  { id: 'close', label: 'The close', icon: CalendarCheck, hint: 'Every product, this quarter' },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, hint: 'Performance and what moved' },
   { id: 'portfolio', label: 'Portfolio', icon: Wallet, hint: 'Holdings, gross of fees' },
   { id: 'exposure', label: 'Exposure', icon: PieChart, hint: 'Allocation and currency' },

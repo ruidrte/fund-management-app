@@ -16,6 +16,7 @@ import type { ClientSummary } from '../data';
 import { useDataSource } from './DataSourceContext';
 import { useAuth } from './AuthContext';
 import { boundInvestorId, visibleClientIds } from '../auth/permissions';
+import { restrictToInvestor } from '../auth/restrict';
 import type { CurrencyCode, DataSet, PositionKind, Scope, Vehicle } from '../domain/types';
 import { periodForDate, type PeriodId } from '../domain/period';
 
@@ -244,17 +245,6 @@ export function usePositions(): Array<{ id: string; name: string; kind: Position
  * cashflows are removed. Portfolio flows carry no investor and are kept, since
  * they are the reporting the investor receives.
  */
-function restrictToInvestor(dataset: DataSet, investorId: string | undefined): DataSet {
-  if (!investorId) return dataset;
-  return {
-    ...dataset,
-    investors: dataset.investors.filter((i) => i.id === investorId),
-    cashflows: dataset.cashflows.filter(
-      (c) => c.investorId === undefined || c.investorId === investorId,
-    ),
-  };
-}
-
 function describe(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }

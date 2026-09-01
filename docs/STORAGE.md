@@ -44,6 +44,7 @@ from disk over `file://` cannot ask for a folder — run the served build.
 book.json                          what this folder is, and which schema
 clients/<slug>/
   client.json                      the client and its reporting conventions
+  reporting.json                   this client's report layouts and branding
   vehicles.json                    reference data — rewritten when it changes
   positions.json
   assets.json

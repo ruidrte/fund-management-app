@@ -28,7 +28,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 183 tests over the engine, permissions, ingestion, storage and export
+npm test               # 193 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -213,15 +213,38 @@ arithmetic can be tested directly rather than through a rendered screen.
 
 ## Reports
 
-Four predefined layouts — quarterly investor report, internal monitoring pack,
-investor capital accounts, direct fund quarterly. A layout declares which
-sections appear in what order; it is never a bespoke renderer. Output is one
-self-contained HTML file: inline styles, hand-emitted SVG, no CDN, no network at
-render time or view time. It opens from a local disk or an email attachment, and
-will keep doing so.
+A layout declares which sections appear in what order; it is never a bespoke
+renderer. Output is one self-contained HTML file: inline styles, hand-emitted
+SVG, no CDN, no network at render time or view time. It opens from a local disk
+or an email attachment, and will keep doing so.
+
+Four built-in layouts come with the application — quarterly investor report,
+internal monitoring pack, investor capital accounts, direct fund quarterly — and
+they are the desk's. **The pack that goes to a limited partner belongs to the
+client**: its layout and its branding (house, accent, cover note, standing
+footer text) live in that client's own book, beside its figures, and are edited
+on the Reports screen. A new client is a new profile rather than a new build.
+
+The accent colours the cover rule and the eyebrow and nothing else. It never
+reaches a data mark: the categorical palette is chosen for separation and
+contrast, and a brand colour dropped into it produces two series that no longer
+read apart.
 
 If a fund needs something the layouts cannot express, the fix is a new section
 type, not a special case in the renderer.
+
+## The close
+
+One screen for the question that comes before every other one: across every
+product a person is responsible for, what is ready, what is waiting, and on
+what. Coverage, failing checks and standing for each product in a quarter, the
+outstanding holdings that would have to arrive for it to be final, and one
+button that generates every selected product's own pack into a single zip,
+foldered by client, with an index recording the standing each was generated at.
+
+The work is not "produce a report" — it is "produce seven reports, in the same
+fortnight, from data that arrives at seven different times". Opening each
+product in turn to find out which are short is the part that does not scale.
 
 ## Charts
 

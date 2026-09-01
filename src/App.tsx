@@ -19,6 +19,7 @@ import { Intake } from './pages/Intake';
 import { Export } from './pages/Export';
 import { Access } from './pages/Access';
 import { Storage } from './pages/Storage';
+import { Close } from './pages/Close';
 
 export default function App() {
   return (
@@ -106,6 +107,7 @@ function Page({ page }: { page: PageId }) {
     case 'intake': return <Intake view={view} />;
     case 'export': return <Export view={view} />;
     case 'esg': return <Esg view={view} />;
+    case 'close': return <Close />;
     case 'dashboard':
     default: return <Dashboard view={view} />;
   }
