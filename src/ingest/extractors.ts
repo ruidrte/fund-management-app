@@ -606,23 +606,65 @@ export function classifyCashflow(
   return { type: amount < 0 ? 'Capital Call' : 'Distribution', confidence: 0.4 };
 }
 
+/**
+ * The amount a notice is actually calling for.
+ *
+ * Harder than it looks, and worth spelling out because the first attempt got it
+ * wrong. Scanning for a number next to the word "due" matched the *date* line —
+ * "Due: 14 April 2026" — and produced an amount of 14. A notice also states
+ * several numbers that are not the amount due: the components of the call, and
+ * the undrawn commitment left afterwards, which is usually the largest number on
+ * the page. So neither "the one next to a keyword" nor "the largest" works.
+ *
+ * Instead: consider only tokens that are shaped like money — grouped thousands
+ * or two decimal places, which excludes a bare day or year outright — then score
+ * each by the line it sits on. A line saying "total" is what the reader wants; a
+ * line about the remaining commitment is context, not the amount.
+ */
 function findAmount(text: string): { value: number; locator: string } | undefined {
-  // Prefer an amount adjacent to wording that names it, over the largest number
-  // on the page — a commitment total is usually larger than the call.
-  const labelled = /(?:total|amount|call amount|distribution amount|payable|due)[^\d\n]{0,30}([\d.,'’ ]{3,})/i.exec(text);
-  if (labelled) {
-    const value = parseNumber(labelled[1]);
-    if (value !== null && value !== 0) {
-      return { value, locator: `near "${labelled[0].slice(0, 40).trim()}"` };
+  // Grouped thousands (1'000'000.00, 6,400,000.00) or a plain decimal (1234.56).
+  // A bare integer is deliberately not money: it is a day, a year or a notice
+  // number far more often than it is an amount.
+  const MONEY = /(\d{1,3}(?:[.,'’\u00a0\u202f ]\d{3})+(?:[.,]\d{2})?|\d+[.,]\d{2})/g;
+
+  const WANTED = /\b(total|amount due|payable|call amount|distribution amount|net amount)\b/i;
+  const CONTEXT = /\b(undrawn|remaining|unfunded|commitment|balance|to date|cumulative|after this)\b/i;
+  const MONTH = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i;
+
+  const candidates: Array<{ value: number; score: number; locator: string }> = [];
+
+  for (const line of text.split(String.fromCharCode(10))) {
+    for (const match of line.matchAll(MONEY)) {
+      const value = parseNumber(match[1]);
+      if (value === null || value === 0) continue;
+
+      let score = 0;
+      if (WANTED.test(line)) score += 10;
+      // The remaining commitment is usually the biggest figure on the page and
+      // is never what is being called.
+      if (CONTEXT.test(line)) score -= 8;
+      // A number sitting inside a date is not an amount.
+      if (MONTH.test(line.slice(match.index ?? 0, (match.index ?? 0) + 24))) score -= 6;
+      if (/[.,]\d{2}$/.test(match[1])) score += 1;
+
+      candidates.push({
+        value,
+        score,
+        locator: `"${line.trim().slice(0, 48)}"`,
+      });
     }
   }
 
-  const numbers = [...text.matchAll(/([\d]{1,3}(?:[.,'’ ][\d]{3})+(?:[.,][\d]{2})?)/g)]
-    .map((match) => ({ value: parseNumber(match[1]), locator: `"${match[1]}"` }))
-    .filter((entry): entry is { value: number; locator: string } => entry.value !== null);
+  if (candidates.length === 0) return undefined;
 
-  if (numbers.length === 0) return undefined;
-  return numbers.reduce((largest, entry) => (Math.abs(entry.value) > Math.abs(largest.value) ? entry : largest));
+  // Highest score wins; among equals, the largest amount — a total exceeds the
+  // components it is made of.
+  const best = candidates.reduce((winner, entry) => {
+    if (entry.score !== winner.score) return entry.score > winner.score ? entry : winner;
+    return Math.abs(entry.value) > Math.abs(winner.value) ? entry : winner;
+  });
+
+  return { value: best.value, locator: best.locator };
 }
 
 function findDate(text: string): { value: string; locator: string } | undefined {

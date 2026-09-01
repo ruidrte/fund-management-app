@@ -271,6 +271,43 @@ describe('transaction notices', () => {
     expect(candidate.fields.amount.confidence).toBeLessThan(0.9);
   });
 
+  it('finds the amount due in a real notice, not the date or the undrawn balance', async () => {
+    // The shape a GP actually sends: a due *date*, several component amounts,
+    // a total, and the remaining commitment — which is the largest number on
+    // the page and is never what is being called.
+    const notice = [
+      'IMPULSE PARTNERS',
+      'European Impact Growth Fund III SCSp',
+      'CAPITAL CALL NOTICE No. 14',
+      'To:      Abendrot Impulse Fund',
+      'Date:    31 March 2026',
+      'Due:     14 April 2026',
+      'Description                          Amount (EUR)',
+      "Investment in portfolio company Helios Bio    850'000.00",
+      "Management fee, Q1 2026                       112'500.00",
+      "Fund operating expenses                        37'500.00",
+      "Total amount due                            1'000'000.00",
+      'Your remaining undrawn commitment after this call: EUR 6,400,000.00',
+    ].join('\n');
+
+    const result = await transactionNoticeExtractor.extract({
+      document: doc({ kind: 'transaction-notice', name: 'drawdown.pdf' }),
+      context,
+      text: notice,
+    });
+
+    expect(result.candidates).toHaveLength(1);
+    const amount = result.candidates[0].fields.amount.value;
+    // A call is money out of the vehicle.
+    expect(amount).toBe(-1_000_000);
+    // Not the day from "Due: 14 April", not a component, and not the undrawn
+    // commitment — all three of which a naive reading picks up.
+    expect(amount).not.toBe(-14);
+    expect(amount).not.toBe(-850_000);
+    expect(amount).not.toBe(-6_400_000);
+    expect(result.candidates[0].fields.date.value).toBe('2026-03-31');
+  });
+
   it('says so plainly when it cannot find a movement', async () => {
     const result = await transactionNoticeExtractor.extract({
       document: doc({ kind: 'transaction-notice' }), context,

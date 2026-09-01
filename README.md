@@ -233,6 +233,9 @@ baseline and prints a signed value; provenance carries an icon and a word.
   reader. Their text extracts, but the layouts share nothing between GPs. Enter
   the figures through the manual event form, which records them against the
   document exactly as a parsed figure would be.
+- **PDF reading in the single-file build.** `npm run build:single` cannot load
+  the pdf.js worker, which is a separate file. It says so rather than failing as
+  though the document were corrupt. The normal build reads PDFs.
 - **Scanned PDFs** — no OCR. A scan with no text layer is reported as such
   rather than appearing to succeed with nothing in it.
 - **Persistence of intake** — committed candidates are applied to the in-memory
