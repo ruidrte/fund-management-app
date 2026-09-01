@@ -6,7 +6,7 @@ import {
 } from '../src/export/serialise';
 import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
 
-const dataset = buildDemoDataSet('client-meridian');
+const dataset = buildDemoDataSet('client-ebg');
 
 describe('formula injection', () => {
   it('neutralises every lead character a spreadsheet would execute', () => {
@@ -66,7 +66,7 @@ describe('extract', () => {
   const extract = buildExtract({
     dataset,
     window: { kind: 'since-inception', period: '2026Q1' },
-    vehicleId: 'veh-meridian-pf-ii',
+    vehicleId: 'veh-abif',
   });
 
   it('carries every fact table plus the derived sheets', () => {
@@ -108,7 +108,7 @@ describe('extract', () => {
     const one = buildExtract({
       dataset,
       window: { kind: 'period', period: '2025Q4' },
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
     });
     const sheet = one.sheets.find((s) => s.name === 'position_valuations')!;
     const periodColumn = sheet.columns.indexOf('period');
@@ -120,13 +120,13 @@ describe('extract', () => {
     const pinned = buildExtract({
       dataset,
       window: { kind: 'since-inception', period: '2025Q4' },
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
       knowledgeDate: DEMO_TIMELINE.DRAFT_CUT,
     });
     const now = buildExtract({
       dataset,
       window: { kind: 'since-inception', period: '2025Q4' },
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
     });
     const rows = (e: typeof pinned) => e.sheets.find((s) => s.name === 'position_valuations')!.rows.length;
     expect(rows(pinned)).toBeLessThan(rows(now));
@@ -134,7 +134,7 @@ describe('extract', () => {
   });
 
   it('states in the manifest what was extracted', () => {
-    expect(extract.manifest).toContain('Meridian Capital Partners');
+    expect(extract.manifest).toContain('EBG Investment Solutions');
     expect(extract.manifest).toContain('Since inception through Q1 2026');
     expect(extract.manifest).toContain('money out is negative');
   });
@@ -144,7 +144,7 @@ describe('serialised output', () => {
   const extract = buildExtract({
     dataset,
     window: { kind: 'range', from: '2025Q1', period: '2026Q1' },
-    vehicleId: 'veh-meridian-pf-ii',
+    vehicleId: 'veh-abif',
   });
 
   it('produces a CSV bundle with one file per sheet plus a manifest', () => {
@@ -201,7 +201,7 @@ describe('serialised output', () => {
           i === 0 ? { ...p, name: 'Ampersand & <script>alert("x")</script>' } : p),
       },
       window: { kind: 'period', period: '2026Q1' },
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
     });
     const zip = unzipSync(toXlsx(hostile));
     const sheetIndex = hostile.sheets.findIndex((s) => s.name === 'positions') + 2;

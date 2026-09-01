@@ -4,8 +4,8 @@ import {
   roleOn, visibleClientIds, type Principal, type Role,
 } from '../src/auth/permissions';
 
-const CLIENT = 'client-meridian';
-const OTHER = 'client-aurora';
+const CLIENT = 'client-ebg';
+const OTHER = 'client-ut';
 
 const withRole = (role: Role, investorId?: string): Principal => ({
   userId: 'u',

@@ -143,20 +143,34 @@ export function resolvePositionStates(
     }
   }
 
-  // The reported cohort's value change this quarter, before cashflows. This is
-  // the only return assumption that is defensible without a house view.
-  const cohortReturn = reportedCohortReturn(
-    [...reportedStates.values()],
-    valuations,
-    cashflows,
-    period,
-    knowledgeDate,
+  // The reported cohort's value change this quarter, before cashflows — the only
+  // return assumption defensible without a house view.
+  //
+  // Computed per vehicle rather than across the whole scope. A climate
+  // infrastructure fund-of-funds and a direct Swiss infrastructure portfolio do
+  // not inform each other's estimates, and blending them would also make a
+  // consolidated total differ from the sum of its vehicles, which is the first
+  // thing anyone checks.
+  const byVehicle = new Map<string, number | undefined>();
+  const vehicleIds = new Set(expected.map((p) => p.vehicleId));
+  for (const vehicleId of vehicleIds) {
+    const reported = [...reportedStates.values()].filter((state) =>
+      expected.find((p) => p.id === state.positionId)?.vehicleId === vehicleId);
+    byVehicle.set(vehicleId, reportedCohortReturn(
+      reported, valuations, cashflows, period, knowledgeDate,
+    ));
+  }
+
+  // Falls back to the whole scope when a vehicle has nothing reported at all.
+  const overallReturn = reportedCohortReturn(
+    [...reportedStates.values()], valuations, cashflows, period, knowledgeDate,
   );
 
   // Pass 2 — fill the gaps.
   const states: PositionState[] = [...reportedStates.values()];
 
   for (const position of outstanding) {
+    const cohortReturn = byVehicle.get(position.vehicleId) ?? overallReturn;
     states.push(
       fillGap(position, valuations, cashflows, period, policy, cohortReturn, knowledgeDate),
     );
@@ -164,7 +178,7 @@ export function resolvePositionStates(
 
   states.sort((a, b) => a.positionId.localeCompare(b.positionId));
 
-  return summarise(states, expected.length, policy, cohortReturn);
+  return summarise(states, expected.length, policy, overallReturn);
 }
 
 function fillGap(

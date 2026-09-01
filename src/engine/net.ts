@@ -80,14 +80,18 @@ export interface NetInputs {
   gross: GrossResult;
   investors: Investor[];
   /**
-   * The vehicle being reported. Its `investorCommitment` is the authoritative
-   * total; deriving that total by summing the investor rows breaks the moment
-   * the list is incomplete, which is exactly what happens for an investor login.
+   * The vehicles in scope — one normally, several on a consolidated view.
+   *
+   * Their `investorCommitment` is the authoritative total; deriving it by
+   * summing the investor rows breaks the moment the list is incomplete, which
+   * is exactly what happens for an investor login. Taking a set rather than one
+   * vehicle is what keeps a consolidated view coherent: the balance sheets and
+   * the investor flows have to come from the same vehicles the portfolio did,
+   * or the numerator and denominator of every multiple describe different funds.
    */
-  vehicle?: Vehicle;
+  vehicles: Vehicle[];
   cashflows: Cashflow[];
   balanceSheets: VehicleBalanceSheet[];
-  vehicleId: string;
   period: PeriodId;
   presentationCurrency: CurrencyCode;
   rates: RateLookup;
@@ -127,23 +131,30 @@ function totalCommitmentOf(
   convert: (amount: number, currency: CurrencyCode, period: PeriodId) => number,
 ): number {
   const visible = sum(inputs.investors.map((i) => convert(i.commitment, i.currency, inputs.period)));
-  const stated = inputs.vehicle
-    ? convert(inputs.vehicle.investorCommitment, inputs.vehicle.currency, inputs.period)
-    : 0;
+  const stated = sum(inputs.vehicles.map(
+    (v) => convert(v.investorCommitment, v.currency, inputs.period),
+  ));
   return Math.max(visible, stated);
 }
 
 /** True when the visible investors do not account for the vehicle's commitment. */
 function isRestricted(inputs: NetInputs): boolean {
-  if (!inputs.vehicle || inputs.vehicle.investorCommitment <= 0) return false;
+  // Compared in the vehicles' own currencies, which is where both figures are
+  // stated; a consolidated scope across currencies falls back to not restricted
+  // rather than reporting a currency difference as a missing investor.
+  const currencies = new Set(inputs.vehicles.map((v) => v.currency));
+  if (currencies.size > 1) return false;
+
+  const stated = sum(inputs.vehicles.map((v) => v.investorCommitment));
+  if (stated <= 0) return false;
   const visible = sum(inputs.investors.map((i) => i.commitment));
   // A small tolerance: rounding in the register should not read as a restriction.
-  return visible < inputs.vehicle.investorCommitment * 0.999;
+  return visible < stated * 0.999;
 }
 
 function computeProductNet(inputs: NetInputs): ProductNetResult {
   const {
-    gross, cashflows, balanceSheets, vehicleId, period,
+    gross, cashflows, balanceSheets, vehicles, period,
     presentationCurrency, rates, conventions, knowledgeDate,
   } = inputs;
 
@@ -152,17 +163,28 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   const convert = (amount: number, currency: CurrencyCode, p: PeriodId) =>
     amount * (rates.tryRate(currency, presentationCurrency, p, flowKind) ?? 1);
 
-  const sheets = balanceSheets.filter((b) => b.vehicleId === vehicleId);
-  const exact = forPeriod(sheets, period, knowledgeDate)
-    .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
-  const sheet = exact ?? latestThrough(sheets, period, knowledgeDate);
-  const priorSheet = latestThrough(sheets, prior, knowledgeDate);
+  // One balance sheet per vehicle, summed. A consolidated view that took only
+  // the first vehicle's would report three portfolios against one fund's cash.
+  const inScope = new Set(vehicles.map((v) => v.id));
+  const selectSheets = (target: PeriodId) => vehicles.map((vehicle) => {
+    const own = balanceSheets.filter((b) => b.vehicleId === vehicle.id);
+    const exact = forPeriod(own, target, knowledgeDate)
+      .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
+    return {
+      vehicle,
+      sheet: exact ?? latestThrough(own, target, knowledgeDate),
+      exact: Boolean(exact),
+    };
+  });
 
-  const components = buildComponents(gross.totals.nav, sheet);
-  const componentsPrior = buildComponents(gross.totals.navPrior, priorSheet);
+  const current = selectSheets(period);
+  const components = buildComponents(gross.totals.nav, current, rates, presentationCurrency, period);
+  const componentsPrior = buildComponents(
+    gross.totals.navPrior, selectSheets(prior), rates, presentationCurrency, prior,
+  );
 
   const investorFlows = cashflows.filter(
-    (c) => c.vehicleId === vehicleId && c.investorId !== undefined,
+    (c) => inScope.has(c.vehicleId) && c.investorId !== undefined,
   );
   const toDate = throughPeriod(investorFlows, period, knowledgeDate)
     .filter((c) => c.status !== 'Draft');
@@ -175,9 +197,7 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   const called = sum(toDate.filter(isInvestorCall).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
   const distributed = sum(toDate.filter(isInvestorDistribution).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
 
-  const feeFlows = cashflows.filter(
-    (c) => c.vehicleId === vehicleId && isCost(c),
-  );
+  const feeFlows = cashflows.filter((c) => inScope.has(c.vehicleId) && isCost(c));
   const feesCumulative = sum(
     throughPeriod(feeFlows, period, knowledgeDate)
       .filter((c) => c.status !== 'Draft')
@@ -202,7 +222,8 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
 
   // A vehicle with no balance sheet for the period still reports, but the
   // provenance drops so the omission is visible rather than assumed to be zero.
-  const balanceSheetEstimated = !exact;
+  // Estimated when any vehicle in scope is missing its own filed sheet.
+  const balanceSheetEstimated = current.some((entry) => !entry.exact);
   const provenance: Provenance = balanceSheetEstimated && gross.provenance === 'reported'
     ? 'estimated'
     : gross.provenance;
@@ -229,11 +250,32 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   };
 }
 
-function buildComponents(portfolio: number, sheet?: VehicleBalanceSheet): NavComponents {
-  const cash = sheet?.cash ?? 0;
-  const otherAssets = sheet?.otherAssets ?? 0;
-  const currentLiabilities = sheet?.currentLiabilities ?? 0;
-  const accruedExpenses = sheet?.accruedExpenses ?? 0;
+/**
+ * Sums the vehicles' own balance sheets, each translated from its own currency.
+ * A vehicle reporting in CHF and one in EUR cannot simply be added.
+ */
+function buildComponents(
+  portfolio: number,
+  entries: Array<{ vehicle: Vehicle; sheet?: VehicleBalanceSheet }>,
+  rates: RateLookup,
+  presentationCurrency: CurrencyCode,
+  period: PeriodId,
+): NavComponents {
+  let cash = 0;
+  let otherAssets = 0;
+  let currentLiabilities = 0;
+  let accruedExpenses = 0;
+
+  for (const { vehicle, sheet } of entries) {
+    if (!sheet) continue;
+    // Balance-sheet items are stocks, so they translate at the closing rate.
+    const rate = rates.tryRate(vehicle.currency, presentationCurrency, period) ?? 1;
+    cash += sheet.cash * rate;
+    otherAssets += sheet.otherAssets * rate;
+    currentLiabilities += sheet.currentLiabilities * rate;
+    accruedExpenses += sheet.accruedExpenses * rate;
+  }
+
   return {
     portfolio,
     cash,
@@ -254,8 +296,11 @@ function buildComponents(portfolio: number, sheet?: VehicleBalanceSheet): NavCom
  * equalised one and must not be presented as a statement of account.
  */
 function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): InvestorNetResult[] {
+  // No vehicle filter here: `cashflows` and `investors` are already narrowed to
+  // the vehicles in scope before they reach the engine, so matching on the
+  // investor alone is both correct and one fewer place to get the set wrong.
   const {
-    investors, cashflows, vehicleId, period,
+    investors, cashflows, period,
     presentationCurrency, rates, conventions, knowledgeDate,
   } = inputs;
 
@@ -273,7 +318,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   // would misallocate whenever investors entered at different times.
   const accounts = investors.map((investor) => {
     const own = cashflows.filter(
-      (c) => c.vehicleId === vehicleId && c.investorId === investor.id && c.status !== 'Draft',
+      (c) => c.investorId === investor.id && c.status !== 'Draft',
     );
     const toDate = throughPeriod(own, period, knowledgeDate);
     const toPrior = throughPeriod(own, prior, knowledgeDate);

@@ -9,9 +9,9 @@ import { buildDemoDataSet } from '../src/data/demo';
  */
 describe('documented counts', () => {
   it('runs the number of identity checks the documentation claims', () => {
-    const view = analyse(buildDemoDataSet('client-aurora'), {
-      clientId: 'client-aurora',
-      vehicleId: 'veh-aurora-opportunities',
+    const view = analyse(buildDemoDataSet('client-ut'), {
+      clientId: 'client-ut',
+      vehicleId: 'veh-ut-early-growth',
       period: '2025Q4',
     });
     expect(view.checks.results).toHaveLength(19);

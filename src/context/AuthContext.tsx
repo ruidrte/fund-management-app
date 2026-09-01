@@ -179,7 +179,7 @@ export function useCan(capability: Capability, scope?: Scope): {
  * The demo dataset's client ids. Simulation needs a membership per client, and
  * the demo repository is the only place these exist.
  */
-const SIMULATED_CLIENT_IDS = ['client-meridian', 'client-aurora'];
+const SIMULATED_CLIENT_IDS = ['client-pam', 'client-ebg', 'client-ut'];
 
 /**
  * Reads the principal's platform role and memberships.

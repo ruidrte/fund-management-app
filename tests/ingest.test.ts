@@ -13,7 +13,7 @@ import { buildExtract } from '../src/export/extract';
 import { buildDemoDataSet } from '../src/data/demo';
 import type { MatchContext, SourceDocument } from '../src/ingest/types';
 
-const dataset = buildDemoDataSet('client-meridian');
+const dataset = buildDemoDataSet('client-ebg');
 
 const context: MatchContext = {
   clientId: dataset.client.id,
@@ -107,7 +107,7 @@ describe('CSV parsing', () => {
 describe('header detection and column mapping', () => {
   it('skips title rows and finds the real header', () => {
     const rows = [
-      ['Meridian Capital Partners', null, null],
+      ['EBG Investment Solutions', null, null],
       ['Portfolio as at 31 March 2026', null, null],
       [],
       ['Fund Name', 'Commitment (EUR)', 'NAV'],
@@ -160,9 +160,19 @@ describe('entity matching', () => {
   });
 
   it('proposes a confident match with its alternatives', () => {
-    const match = matchEntity('Nordic Growth Partners IV SCSp', 'position', context);
-    expect(match.matchedName).toBe('Nordic Growth Partners IV');
+    const match = matchEntity('Circular Materials Venture II SCSp', 'position', context);
+    expect(match.matchedName).toBe('Circular Materials Venture II');
     expect(match.confidence).toBeGreaterThan(0.85);
+    expect(match.alternatives.length).toBeGreaterThan(0);
+  });
+
+  it('proposes a plausible near-miss without calling it confident', () => {
+    // "Nordic Growth Partners IV" is not in this client's portfolio; the nearest
+    // thing is "Global Growth Partners IV". Proposing it is useful — silently
+    // treating it as settled is how a valuation lands on the wrong fund.
+    const match = matchEntity('Nordic Growth Partners IV SCSp', 'position', context);
+    expect(match.matchedName).toBe('Global Growth Partners IV');
+    expect(match.confidence).toBeLessThan(0.88);
     expect(match.alternatives.length).toBeGreaterThan(0);
   });
 
@@ -181,19 +191,19 @@ describe('historical workbook extraction', () => {
       table: {
         sheetName: 'Positions',
         rows: [
-          ['Meridian Private Markets Fund II', null, null, null],
+          ['Abendrot Impulse Fund', null, null, null],
           ['Portfolio as at 31 March 2026', null, null, null],
           ['Fund Name', 'Commitment', 'Paid-In', 'Net Asset Value'],
-          ['Nordic Growth Partners IV SCSp', 15000, 11300, 13300],
-          ['Atlantic Buyout Fund VII', 15700, 13100, 10700],
-          ['Total', 30700, 24400, 24000],
+          ['European Impact Growth Fund III SCSp', 26000, 19400, 21300],
+          ['Social Infrastructure Partners II', 24000, 17800, 18600],
+          ['Total', 50000, 37200, 39900],
         ],
       },
     });
 
     expect(result.candidates).toHaveLength(2);
-    expect(result.candidates[0].match?.matchedName).toBe('Nordic Growth Partners IV');
-    expect(result.candidates[0].fields.nav.value).toBe(13300);
+    expect(result.candidates[0].match?.matchedName).toBe('European Impact Growth Fund III');
+    expect(result.candidates[0].fields.nav.value).toBe(21300);
     expect(result.candidates[0].fields.nav.locator).toBe('D4');
     // The total row must not become a holding.
     expect(result.candidates.map((c) => c.match?.sourceName)).not.toContain('Total');
@@ -216,12 +226,12 @@ describe('historical workbook extraction', () => {
         rows: [
           ['Fund Name', 'Net Asset Value'],
           ['Nordic Growth Partners IV', 13300],
-          ['Helios Infrastructure II', 'n/a'],
+          ['Social Infrastructure Partners II', 'n/a'],
         ],
       },
     });
     expect(result.candidates).toHaveLength(1);
-    expect(result.unparsed.join(' ')).toMatch(/Helios/);
+    expect(result.unparsed.join(' ')).toMatch(/Social Infrastructure/);
   });
 });
 
@@ -311,13 +321,13 @@ describe('vehicle-level documents target the scoped vehicle', () => {
       document: doc({ kind: 'nav-pack', name: 'TB_export_final_v3.xlsx' }),
       context,
       period: '2026Q1',
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
       table: {
         sheetName: 'TB',
         rows: [['Account', 'Balance'], ['Cash at bank', 1800]],
       },
     });
-    expect(result.candidates[0].match?.id).toBe('veh-meridian-pf-ii');
+    expect(result.candidates[0].match?.id).toBe('veh-abif');
     expect(result.candidates[0].match?.confidence).toBe(1);
   });
 });
@@ -432,7 +442,7 @@ describe('round trip: an export can be read back in', () => {
     const extract = buildExtract({
       dataset,
       window: { kind: 'period', period: '2026Q1' },
-      vehicleId: 'veh-meridian-pf-ii',
+      vehicleId: 'veh-abif',
       includeDerived: false,
     });
     const bytes = toXlsx(extract);
@@ -441,7 +451,8 @@ describe('round trip: an export can be read back in', () => {
     const positions = workbook.sheets.find((s) => s.sheetName === 'positions');
     expect(positions).toBeDefined();
     expect(positions!.rows[0]).toContain('name');
-    expect(positions!.rows.length).toBe(dataset.positions.length + 1);
+    const inVehicle = dataset.positions.filter((p) => p.vehicleId === 'veh-abif');
+    expect(positions!.rows.length).toBe(inVehicle.length + 1);
 
     // And the values survive as values, not as strings.
     const valuations = workbook.sheets.find((s) => s.sheetName === 'position_valuations')!;

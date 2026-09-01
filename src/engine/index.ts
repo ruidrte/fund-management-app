@@ -135,12 +135,9 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
   const net = computeNet({
     gross,
     investors,
-    vehicle: vehicles[0],
+    vehicles,
     cashflows,
     balanceSheets,
-    // A consolidated view across several vehicles has no single balance sheet;
-    // the first vehicle's is used and the check on NAV components catches it.
-    vehicleId: vehicles[0]?.id ?? '',
     period: scope.period,
     presentationCurrency: currency,
     rates,
@@ -179,7 +176,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
       ? ['No vehicle balance sheet for the period — net NAV carries the last known one']
       : []),
     ...(vehicles.length > 1
-      ? ['Consolidated across vehicles — net figures use the lead vehicle balance sheet']
+      ? [`Consolidated across ${vehicles.length} vehicles — balance sheets and investor flows are summed`]
       : []),
     ...checks.results
       .filter((r) => r.status === 'fail')

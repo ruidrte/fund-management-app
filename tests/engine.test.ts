@@ -5,12 +5,12 @@ import { latestThrough, visibleAt } from '../src/engine/asof';
 import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
 import type { Scope } from '../src/domain/types';
 
-const meridian = buildDemoDataSet('client-meridian');
-const aurora = buildDemoDataSet('client-aurora');
+const meridian = buildDemoDataSet('client-ebg');
+const aurora = buildDemoDataSet('client-ut');
 
 const scope = (over: Partial<Scope> = {}): Scope => ({
-  clientId: 'client-meridian',
-  vehicleId: 'veh-meridian-pf-ii',
+  clientId: 'client-ebg',
+  vehicleId: 'veh-abif',
   period: '2026Q1',
   ...over,
 });
@@ -25,7 +25,7 @@ describe('point-in-time selection', () => {
 
   it('lets a later restatement win, but only once it is known', () => {
     const rows = meridian.positionValuations.filter(
-      (v) => v.positionId === 'pos-atlantic-buyout' && v.period === '2025Q4',
+      (v) => v.positionId === 'pos-abif-social-infra' && v.period === '2025Q4',
     );
     expect(rows.length).toBe(2);
 
@@ -36,7 +36,7 @@ describe('point-in-time selection', () => {
   });
 
   it('reproduces a past quarter identically when pinned to its publication date', () => {
-    const pinned = { clientId: 'client-meridian', vehicleId: 'veh-meridian-pf-ii', period: '2025Q4' as const, knowledgeDate: DEMO_TIMELINE.DRAFT_CUT };
+    const pinned = { clientId: 'client-ebg', vehicleId: 'veh-abif', period: '2025Q4' as const, knowledgeDate: DEMO_TIMELINE.DRAFT_CUT };
     const a = analyse(meridian, pinned);
     const b = analyse(meridian, pinned);
     expect(a.gross.totals.nav).toBe(b.gross.totals.nav);
@@ -47,7 +47,7 @@ describe('point-in-time selection', () => {
   });
 
   it('offers only periods and knowledge dates that exist', () => {
-    const periods = availablePeriods(meridian, { clientId: 'client-meridian' });
+    const periods = availablePeriods(meridian, { clientId: 'client-ebg' });
     expect(periods[0]).toBe('2026Q1');
     expect(periods).toContain('2024Q1');
     expect(availableKnowledgeDates(meridian).length).toBeGreaterThan(0);
@@ -133,7 +133,7 @@ describe('gross and net analysis', () => {
 
   it('presents in a requested currency, translating stocks at the closing rate', () => {
     const inUsd = analyse(meridian, scope({ presentationCurrency: 'USD' }));
-    const rate = buildRateLookup(meridian.fxRates).rate('EUR', 'USD', '2026Q1');
+    const rate = buildRateLookup(meridian.fxRates).rate(view.currency, 'USD', '2026Q1');
     expect(inUsd.currency).toBe('USD');
     // NAV is a stock: one closing rate applies to the whole of it.
     expect(inUsd.gross.totals.nav).toBeCloseTo(view.gross.totals.nav * rate, 0);
@@ -168,7 +168,7 @@ describe('draft calculation on an incomplete quarter', () => {
   });
 
   it('never lets a missing valuation become a silent zero', () => {
-    const silent = draft.gross.positions.find((p) => p.position.id === 'pos-thames-venture')!;
+    const silent = draft.gross.positions.find((p) => p.position.id === 'pos-abif-microfinance')!;
     expect(silent.nav).toBeGreaterThan(0);
     expect(silent.provenance).not.toBe('reported');
     expect(silent.state.note).toMatch(/Last valued/);
@@ -193,7 +193,7 @@ describe('draft calculation on an incomplete quarter', () => {
 
 describe('an over-called position', () => {
   it('reports negative undrawn rather than clamping and breaking the identity', () => {
-    const over = buildDemoDataSet('client-meridian');
+    const over = buildDemoDataSet('client-ebg');
     const target = over.positions[0];
     // Draw twice the commitment, as recycling or a late equalisation would.
     over.cashflows.push({
@@ -210,6 +210,78 @@ describe('an over-called position', () => {
     const t = view.gross.totals;
     expect(t.drawn + t.undrawn).toBeCloseTo(t.commitments, 6);
     expect(view.checks.results.find((r) => r.id === 'commitments_split')!.status).toBe('pass');
+  });
+});
+
+describe('consolidating several vehicles', () => {
+  // The net tier once took a single vehicle id, so a consolidated view summed
+  // the portfolio across every vehicle but took investor flows and the balance
+  // sheet from the first one — a numerator and a denominator describing
+  // different funds, and a net multiple several times the real one.
+  const pam = buildDemoDataSet('client-pam');
+  const whole = analyse(pam, { clientId: 'client-pam', period: '2026Q1' });
+
+  const parts = pam.vehicles.map((vehicle) => analyse(pam, {
+    clientId: 'client-pam', vehicleId: vehicle.id, period: '2026Q1',
+    presentationCurrency: whole.currency,
+  }));
+
+  it('covers more than one vehicle', () => {
+    expect(pam.vehicles.length).toBeGreaterThan(1);
+  });
+
+  it('passes every identity check', () => {
+    expect(whole.checks.results.filter((r) => r.status === 'fail')).toEqual([]);
+  });
+
+  it('is the sum of its vehicles, exactly', () => {
+    // Anyone looking at three vehicles and a total will add them up. The draft
+    // cohort is therefore computed per vehicle: blending a fund-of-funds with a
+    // direct portfolio would both misprice the estimate and break this.
+    const sum = (pick: (v: typeof whole) => number) =>
+      parts.reduce((total, part) => total + pick(part), 0);
+
+    expect(whole.gross.totals.nav).toBeCloseTo(sum((v) => v.gross.totals.nav), 4);
+    expect(whole.net.product.components.vehicleNav)
+      .toBeCloseTo(sum((v) => v.net.product.components.vehicleNav), 4);
+    expect(whole.net.product.called).toBeCloseTo(sum((v) => v.net.product.called), 4);
+    expect(whole.net.product.commitment).toBeCloseTo(sum((v) => v.net.product.commitment), 4);
+  });
+
+  it('produces a net multiple in the same range as its vehicles', () => {
+    const tvpi = whole.net.product.multiples.tvpi!;
+    const lowest = Math.min(...parts.map((p) => p.net.product.multiples.tvpi ?? 0));
+    const highest = Math.max(...parts.map((p) => p.net.product.multiples.tvpi ?? 0));
+    expect(tvpi).toBeGreaterThanOrEqual(lowest - 0.01);
+    expect(tvpi).toBeLessThanOrEqual(highest + 0.01);
+  });
+
+  it('sums balance sheets across vehicles rather than taking the first', () => {
+    const cash = parts.reduce((total, part) => total + part.net.product.components.cash, 0);
+    expect(whole.net.product.components.cash).toBeCloseTo(cash, 4);
+    expect(whole.net.product.components.cash)
+      .toBeGreaterThan(parts[0].net.product.components.cash);
+  });
+});
+
+describe('the draft cohort is per vehicle', () => {
+  const pam = buildDemoDataSet('client-pam');
+
+  it('marks an unreported holding with its own vehicle’s experience', () => {
+    const whole = analyse(pam, { clientId: 'client-pam', period: '2026Q1' });
+
+    for (const vehicle of pam.vehicles) {
+      const alone = analyse(pam, {
+        clientId: 'client-pam', vehicleId: vehicle.id, period: '2026Q1',
+      });
+      for (const part of alone.gross.positions.filter((p) => p.provenance !== 'reported')) {
+        const consolidated = whole.gross.positions.find(
+          (p) => p.position.id === part.position.id,
+        )!;
+        // The assumption must not change with how wide a net the viewer cast.
+        expect(consolidated.state.appliedReturn).toBeCloseTo(part.state.appliedReturn, 10);
+      }
+    }
   });
 });
 
@@ -281,8 +353,11 @@ describe('exposure and allocation', () => {
 
   it('shows currency exposure the vehicle carries whether it wants to or not', () => {
     const currencies = view.exposure.currency.slices.map((s) => s.label);
+    // AbIF reports in CHF and holds EUR and USD funds; the exposure is real
+    // whether or not the vehicle intends to carry it.
     expect(currencies).toContain('USD');
-    expect(currencies).toContain('GBP');
+    expect(currencies).toContain('EUR');
+    expect(currencies.length).toBeGreaterThan(1);
   });
 });
 
@@ -302,13 +377,13 @@ describe('identity checks', () => {
 
 describe('direct funds use the same engine as fund-of-funds', () => {
   const view = analyse(aurora, {
-    clientId: 'client-aurora',
-    vehicleId: 'veh-aurora-opportunities',
+    clientId: 'client-ut',
+    vehicleId: 'veh-ut-early-growth',
     period: '2026Q1',
   });
 
   it('reports in the vehicle currency', () => {
-    expect(view.currency).toBe('USD');
+    expect(view.currency).toBe('EUR');
     expect(view.vehicles[0].kind).toBe('direct-fund');
   });
 
@@ -325,13 +400,13 @@ describe('direct funds use the same engine as fund-of-funds', () => {
 
 describe('scoping', () => {
   it('narrows to a single position', () => {
-    const one = analyse(meridian, scope({ positionId: 'pos-helios-infra' }));
+    const one = analyse(meridian, scope({ positionId: 'pos-abif-social-infra' }));
     expect(one.gross.positions).toHaveLength(1);
-    expect(one.gross.positions[0].position.name).toBe('Helios Infrastructure II');
+    expect(one.gross.positions[0].position.name).toBe('Social Infrastructure Partners II');
   });
 
   it('keeps clients separate', () => {
-    const view = analyse(meridian, { clientId: 'client-meridian', period: '2026Q1' });
-    expect(view.vehicles.every((v) => v.clientId === 'client-meridian')).toBe(true);
+    const view = analyse(meridian, { clientId: 'client-ebg', period: '2026Q1' });
+    expect(view.vehicles.every((v) => v.clientId === 'client-ebg')).toBe(true);
   });
 });

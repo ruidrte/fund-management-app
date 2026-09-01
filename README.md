@@ -41,11 +41,36 @@ deliberately awkward in the ways real documents are awkward — four number
 conventions in one column, an ambiguous date, a fund that matches nothing, a
 total row — and `samples/README.md` says what each row should do.
 
-With no configuration it runs against a built-in demo dataset — two clients, a
-EUR fund-of-funds and a USD direct fund, three currencies, an incomplete latest
-quarter and a restated prior one. Set `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY` to run against a database instead; the engine and the
-screens are the same either way.
+With no configuration it runs against a built-in sample dataset. Set
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` to run against a database
+instead; the engine and the screens are the same either way.
+
+### The sample dataset
+
+The **structure** is real — three clients and the seven vehicles they run. Every
+**figure** is synthetic, and so is every holding name. Real vehicle names make
+the application recognisable to the people who will use it; invented figures
+make it impossible for a screenshot to be mistaken for a report.
+
+| Client | Vehicle | Kind | Currency | Inception | Status |
+|---|---|---|---|---|---|
+| PAM | Patrimonium Climate Infrastructure Opportunity Fund I | fund-of-funds | EUR | 2021-06-30 | Investing |
+| PAM | Patrimonium Climate Infrastructure Opportunity Fund II | fund-of-funds | EUR | 2024-09-30 | Fundraising |
+| PAM | PAS Infra | direct-fund | CHF | 2019-12-31 | Harvesting |
+| EBG | Abendrot Impulse Fund | fund-of-funds | CHF | 2020-03-31 | Investing |
+| EBG | Planetary Health Fund I | fund-of-funds | EUR | 2022-06-30 | Investing |
+| EBG | PK TG | fund-of-funds | CHF | 2018-09-30 | Harvesting |
+| UT | Una Terra Early Growth Fund | direct-fund | EUR | 2022-03-31 | Investing |
+
+**Kind, currency, inception and status are assumptions**, inferred from each
+vehicle's strategy rather than supplied. Correcting them means editing the one
+table at the top of `src/data/demo.ts`.
+
+The dataset is deliberately awkward in the ways real data is awkward: four
+currencies, vehicles at different stages of life, a latest quarter where part of
+several portfolios has not reported, and a prior quarter restated after
+publication. PK TG is the one vehicle that is complete and final; the rest are
+drafts.
 
 The schema is in `supabase/migrations/`. It has been applied to a clean
 PostgreSQL 16 and its constraints and row-level-security policies verified.

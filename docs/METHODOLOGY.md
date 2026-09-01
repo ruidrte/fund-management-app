@@ -107,6 +107,12 @@ A quarter is almost never complete on the day it is wanted.
    cashflows. This anchors the estimate to what actually happened rather than to
    a house assumption. `'fixed'` applies a stated rate; `'none'` leaves the NAV
    cost-adjusted.
+
+   The cohort is **the holding's own vehicle**, not everything on screen. A
+   climate-infrastructure fund-of-funds and a direct Swiss infrastructure
+   portfolio do not inform each other's estimates. It also keeps a consolidated
+   total equal to the sum of its vehicles, which is the first thing anyone
+   checks. A vehicle with nothing reported at all falls back to the wider scope.
 3. **Propagate.** Provenance is ordered
    `reported < stale < rolled-forward < estimated < missing`, and every derived
    figure inherits the weakest among its inputs.
@@ -117,6 +123,17 @@ A quarter is almost never complete on the day it is wanted.
 A holding that has never been valued and has no cashflows contributes nothing
 and is counted `missing`. One that has never been valued but has drawn capital
 is held at net capital drawn, and marked `estimated`.
+
+## Consolidating vehicles
+
+A scope naming no vehicle consolidates every vehicle of the client. The
+portfolio, the balance sheets and the investor flows all come from the same set,
+each translated from its own currency — a vehicle reporting in CHF and one in
+EUR cannot simply be added.
+
+The consolidated figures equal the sum of the vehicles taken separately, exactly.
+That is a property worth relying on, because anyone shown three vehicles and a
+total will add them up.
 
 ## Point in time
 
