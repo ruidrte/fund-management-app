@@ -19,3 +19,18 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=()"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+    # No inline script anywhere in the bundle, so script-src needs no escape
+    # hatch — which is the point of having a policy at all. Inline *styles* are
+    # a different matter: the interface sets colours through style attributes,
+    # which style-src governs, so 'unsafe-inline' there is load-bearing and
+    # buys an attacker nothing they could not already do with a class.
+    #
+    # worker-src covers the pdf.js worker, a same-origin file. connect-src
+    # names Supabase because that is the only host the application ever talks
+    # to; with no backend configured it talks to nothing. frame-src is for the
+    # sandboxed report preview.
+    #
+    # Verified against the built bundle: every screen, a report preview and a
+    # PDF parsed end to end, with no violation reported.
+    Content-Security-Policy = "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; form-action 'none'; img-src 'self' data:; font-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; worker-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self'"

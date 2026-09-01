@@ -142,12 +142,19 @@ Supabase defaults apply: JWTs refreshed in the background, no idle timeout, no
 enforced MFA. For investor data an idle timeout and mandatory MFA for `editor`
 and `owner` are the minimum, and both are configuration rather than code.
 
-### Transport and headers
+### Transport and headers — closed
 
-HTTPS is assumed but not asserted. A production deployment should add HSTS, a
-Content-Security-Policy tight enough to forbid inline script (the application
-needs none), `X-Content-Type-Options: nosniff` and a restrictive
-`Referrer-Policy`. These belong in the hosting configuration, not the bundle.
+`netlify.toml` sets HSTS, `nosniff`, a restrictive `Referrer-Policy`,
+`X-Frame-Options: DENY` and a Content-Security-Policy with no escape hatch for
+script: the bundle contains no inline script, so `script-src 'self'` holds.
+`style-src` does carry `'unsafe-inline'`, because the interface sets colours
+through style attributes; that buys an attacker nothing a class would not.
+
+Verified against the built bundle with the header actually served: every screen,
+a report preview in its sandboxed frame, and a PDF parsed end to end, with no
+violation reported. Any other host needs the same headers — they belong in the
+hosting configuration, not in the bundle, and a bundle cannot check that they
+are there.
 
 ### Rate limiting and brute force
 
@@ -180,6 +187,7 @@ includes a database-level compromise.
 | Malicious spreadsheet formula in an export | Addressed — neutralised in both formats |
 | Script injection through a fund name | Addressed — escaped at every interpolation |
 | Hostile PDF | Partly — parser hardened, but it is still a parser |
+| Script injected into the page itself | Addressed for a hosted build — CSP with no inline script |
 | Stolen session token | Not addressed — no idle timeout, no MFA |
 | Insider exporting everything | Not addressed — no export audit or approval |
 | Database-level compromise | Not addressed — no column encryption |
@@ -222,7 +230,8 @@ In order, because each depends on the last:
 3. Build the membership screen. The policies and grants exist; adding a person
    is still a SQL insert, which is how the wrong role gets granted.
 4. Decide where documents live and how their permissions track row permissions.
-5. Set the security headers in the hosting configuration.
+5. Carry the security headers to whatever host is chosen — `netlify.toml` has
+   them, and a different host will not.
 6. Enforce `vehicle_ids` in the database. The permission check honours a
    membership narrowed to certain vehicles; no policy does yet, so treat it as
    an interface convenience rather than a boundary.
