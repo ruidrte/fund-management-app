@@ -520,12 +520,21 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0);
 }
 
+/**
+ * HTML-escapes a value for both element and attribute contexts.
+ *
+ * The single quote is escaped even though every attribute this renderer emits
+ * is double-quoted. Fund and manager names come from imported documents and are
+ * not trusted input; the day someone writes a single-quoted attribute here, the
+ * escape should already be right rather than needing to be remembered.
+ */
 function esc(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 const STYLES = `

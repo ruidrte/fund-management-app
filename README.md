@@ -6,6 +6,10 @@ funds through the same code path.
 The application answers four questions about a portfolio, at any quarter, as at
 any date:
 
+- **What comes in?** Historical workbooks, transaction notices and administrator
+  NAV packs are read, matched, validated and reviewed before anything is filed.
+- **What goes out?** Any quarter, range, or the whole history since inception,
+  as an Excel workbook or a zipped CSV bundle.
 - **What is it worth, gross and net?** The portfolio measured on its own terms,
   and the investor's position after everything the vehicle charges — kept
   separate, because they are different questions.
@@ -22,7 +26,7 @@ any date:
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm test         # 55 tests over the calculation engine
+npm test         # 107 tests over the engine, ingestion and export
 npm run build
 ```
 
@@ -72,6 +76,24 @@ arrived and states plainly what it did for the rest:
 - Below a configurable share of reported NAV the quarter is refused rather than
   published.
 
+### Nothing enters unreviewed
+
+Everything that arrives — a spreadsheet, a PDF notice, a typed correction — goes
+through one pipeline: document, extraction, candidates, review, commit. Every
+candidate carries what it was read from (down to the cell reference), how
+confident the reader was, what it was matched to, and what validation found.
+
+The review step is not a formality. An extracted figure is a *claim about* a
+document, and a wrong claim that lands silently is indistinguishable from a
+correct one six months later. So the readers refuse rather than guess: a
+workbook whose header cannot be identified is reported, not interpreted; an
+ambiguous `03/04/2026` is rejected because a day-month swap moves a cashflow
+into the wrong quarter; a fund name matching nothing blocks its row instead of
+attaching to the nearest.
+
+A manual entry is recorded as a document too, so a typed figure is as traceable
+as a parsed one.
+
 ### Identities are checked, not assumed
 
 A green recalculation does not prove a number is right. A failing identity
@@ -80,6 +102,18 @@ every analysis: bridge closure, commitment splits, NAV composition, capital
 accounts summing to the vehicle, each breakdown summing to the whole. Checks
 are conditional on their inputs, so a partial quarter produces skips rather than
 failures, and the skips are reported.
+
+## Security, and the questions still open
+
+`docs/SECURITY.md` sets out what is enforced — tenancy in the database rather
+than the application, insert-only fact tables, spreadsheet-formula and HTML
+injection defences, a hardened PDF parser, zero dependency advisories — and what
+is not: data residency, `created_by`, MFA, document storage, export auditing.
+Those are decisions to take before real investor data goes in, and the document
+lists them in the order they depend on each other.
+
+`docs/SHAREPOINT.md` separates the four different things "SharePoint
+compatibility" turns out to mean, and recommends two of them.
 
 ## Layout
 
@@ -101,6 +135,8 @@ src/
   context/     scope and theme
   components/  layout, shared UI, charts
   pages/       one per section
+  ingest/      document intake: format drivers, entity matching, validation
+  export/      historical extract, and the CSV and XLSX writers
   reports/     layout declarations and the self-contained HTML renderer
 supabase/migrations/
 tests/
@@ -137,8 +173,14 @@ baseline and prints a signed value; provenance carries an icon and a word.
   place. The PAI indicator library, look-through metric aggregation, taxonomy
   alignment and period-on-period comparatives are not. `src/pages/Esg.tsx` lists
   the specific gaps.
-- **Data entry** — the application reads. Loading a quarter means writing to the
-  fact tables directly or through an import that has yet to be built.
+- **Capital account statements and financial statements** — no structural
+  reader. Their text extracts, but the layouts share nothing between GPs. Enter
+  the figures through the manual event form, which records them against the
+  document exactly as a parsed figure would be.
+- **Scanned PDFs** — no OCR. A scan with no text layer is reported as such
+  rather than appearing to succeed with nothing in it.
+- **Persistence of intake** — committed candidates are applied to the in-memory
+  dataset. Against Supabase they are inserts; the writes are not yet wired.
 - **Hedging** — currency exposure is shown before hedging. Hedge instruments are
   not modelled, so a hedged vehicle's reported exposure overstates what it
   actually carries.

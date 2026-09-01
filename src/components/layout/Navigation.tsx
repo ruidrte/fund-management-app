@@ -1,10 +1,11 @@
 import {
-  Activity, FileText, LayoutDashboard, PieChart, ShieldCheck, Users, Wallet,
+  Activity, DatabaseZap, Download, FileText, LayoutDashboard, PieChart,
+  ShieldCheck, Users, Wallet,
 } from 'lucide-react';
 
 export type PageId =
   | 'dashboard' | 'portfolio' | 'exposure' | 'investors'
-  | 'reports' | 'quality' | 'esg';
+  | 'reports' | 'quality' | 'esg' | 'intake' | 'export';
 
 interface Item {
   id: PageId;
@@ -20,6 +21,8 @@ const ITEMS: Item[] = [
   { id: 'investors', label: 'Investors', icon: Users, hint: 'Net, at product and LP level' },
   { id: 'reports', label: 'Reports', icon: FileText, hint: 'Predefined report layouts' },
   { id: 'quality', label: 'Data quality', icon: ShieldCheck, hint: 'Coverage and identity checks' },
+  { id: 'intake', label: 'Data intake', icon: DatabaseZap, hint: 'Load documents and events' },
+  { id: 'export', label: 'Export', icon: Download, hint: 'Historical extract' },
   { id: 'esg', label: 'ESG', icon: Activity, hint: 'Sustainability metrics' },
 ];
 

@@ -1,6 +1,7 @@
-import { Moon, Sun, Monitor, RefreshCw } from 'lucide-react';
+import { Moon, Sun, Monitor, RefreshCw, LogOut } from 'lucide-react';
 import { useScope } from '../../context/ScopeContext';
 import { useTheme } from '../../context/ThemeContext';
+import { useAuth } from '../../context/AuthContext';
 import { formatPeriod } from '../../domain/period';
 import { StatusPill } from '../common/Badges';
 import { formatTimestamp } from '../common/format';
@@ -8,6 +9,7 @@ import { formatTimestamp } from '../common/format';
 export function Header() {
   const { view, sourceLabel, refresh, knowledgeDate, period } = useScope();
   const { theme, toggle } = useTheme();
+  const { user, requiresAuth, signOut } = useAuth();
 
   const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
 
@@ -64,6 +66,17 @@ export function Header() {
         >
           <ThemeIcon size={14} aria-hidden />
         </button>
+        {requiresAuth && user && (
+          <button
+            type="button" onClick={() => void signOut()}
+            className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-[11px]"
+            style={{ color: 'var(--text-secondary)', background: 'var(--surface-2)' }}
+            title={user.email}
+          >
+            <LogOut size={13} aria-hidden />
+            Sign out
+          </button>
+        )}
       </div>
     </header>
   );

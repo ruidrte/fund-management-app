@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { ThemeProvider } from './context/ThemeContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ScopeProvider, useScope } from './context/ScopeContext';
+import { SignIn } from './components/auth/SignIn';
 import { Header } from './components/layout/Header';
 import { ScopeBar } from './components/layout/ScopeBar';
 import { Navigation, type PageId } from './components/layout/Navigation';
@@ -12,14 +14,42 @@ import { Investors } from './pages/Investors';
 import { Reports } from './pages/Reports';
 import { DataQuality } from './pages/DataQuality';
 import { Esg } from './pages/Esg';
+import { Intake } from './pages/Intake';
+import { Export } from './pages/Export';
 
 export default function App() {
   return (
     <ThemeProvider>
-      <ScopeProvider>
-        <Shell />
-      </ScopeProvider>
+      <AuthProvider>
+        <Gate />
+      </AuthProvider>
     </ThemeProvider>
+  );
+}
+
+/**
+ * With a backend configured, a session is required before any client data is
+ * requested. Row level security would return zero rows to an unauthenticated
+ * client rather than an error, which on screen is indistinguishable from an
+ * empty portfolio — so the gate is what makes a failed sign-in visible.
+ */
+function Gate() {
+  const { loading, user, requiresAuth } = useAuth();
+
+  if (requiresAuth && loading) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Checking your session…</p>
+      </div>
+    );
+  }
+
+  if (requiresAuth && !user) return <SignIn />;
+
+  return (
+    <ScopeProvider>
+      <Shell />
+    </ScopeProvider>
   );
 }
 
@@ -60,6 +90,8 @@ function Page({ page }: { page: PageId }) {
     case 'investors': return <Investors view={view} />;
     case 'reports': return <Reports view={view} />;
     case 'quality': return <DataQuality view={view} />;
+    case 'intake': return <Intake view={view} />;
+    case 'export': return <Export view={view} />;
     case 'esg': return <Esg view={view} />;
     case 'dashboard':
     default: return <Dashboard view={view} />;
