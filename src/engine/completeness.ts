@@ -17,7 +17,7 @@
  *      A draft built on a fifth of the portfolio is not a draft, it is a guess.
  */
 
-import { comparePeriods, periodsBetween, type PeriodId } from '../domain/period';
+import { comparePeriods, formatPeriod, periodsBetween, type PeriodId } from '../domain/period';
 import type {
   Cashflow,
   DraftPolicy,
@@ -215,7 +215,7 @@ function fillGap(
       lagQuarters: lag,
       rollForwardAdjustment: 0,
       appliedReturn: 0,
-      note: `Valuation as at ${last.period}, carried unchanged`,
+      note: `Valuation as at ${formatPeriod(last.period)}, carried unchanged`,
     };
   }
 
@@ -239,7 +239,7 @@ function fillGap(
     : lag <= policy.staleAfterQuarters ? 'rolled-forward'
     : 'estimated';
 
-  const noteParts = [`Last valued ${last.period} (${lag}Q lag)`];
+  const noteParts = [`Last valued ${formatPeriod(last.period)} (${lag}Q lag)`];
   if (adjustment !== 0) noteParts.push('rolled forward for cashflows');
   if (appliedReturn !== 0) {
     noteParts.push(`${(appliedReturn * 100).toFixed(1)}% assumed value change`);
@@ -362,6 +362,7 @@ function summarise(
   cohortReturn: number | undefined,
 ): DraftResult {
   const count = (p: Provenance) => states.filter((s) => s.provenance === p).length;
+  const positions = (n: number) => `${n} position${n === 1 ? '' : 's'}`;
 
   const totalNav = states.reduce((sum, s) => sum + Math.abs(s.nav), 0);
   const reportedNav = states
@@ -376,17 +377,17 @@ function summarise(
   const qualifications: string[] = [];
   if (count('rolled-forward') > 0) {
     qualifications.push(
-      `${count('rolled-forward')} position(s) rolled forward from an earlier valuation`,
+      `${positions(count('rolled-forward'))} rolled forward from an earlier valuation`,
     );
   }
   if (count('estimated') > 0) {
-    qualifications.push(`${count('estimated')} position(s) carry an estimated value`);
+    qualifications.push(`${positions(count('estimated'))} carry an estimated value`);
   }
   if (count('stale') > 0) {
-    qualifications.push(`${count('stale')} position(s) carried at a stale valuation`);
+    qualifications.push(`${positions(count('stale'))} carried at a stale valuation`);
   }
   if (count('missing') > 0) {
-    qualifications.push(`${count('missing')} position(s) have no data and contribute nothing`);
+    qualifications.push(`${positions(count('missing'))} have no data and contribute nothing`);
   }
   if (policy.valueChange === 'portfolio' && cohortReturn !== undefined && count('estimated') > 0) {
     qualifications.push(

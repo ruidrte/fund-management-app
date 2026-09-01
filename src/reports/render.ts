@@ -547,12 +547,14 @@ p{margin:.5em 0}
 .lede{color:var(--ink-2);margin:.25em 0 .75em}
 .asat{color:var(--ink-2);font-size:.8125rem}
 .block{margin:32px 0;padding-top:20px;border-top:1px solid var(--border)}
+.cover + .block{border-top:none;padding-top:0}
 .intro{color:var(--ink-2);font-size:.8125rem;max-width:62ch}
 .summary{font-size:.95rem;max-width:70ch}
 .quals{margin:.75em 0 0;padding-left:1.1em;color:var(--ink-3);font-size:.8125rem}
 .flag{display:inline-block;padding:2px 9px;border-radius:4px;font-size:.75rem;font-weight:600;background:var(--surface-2)}
 .flag-good{color:var(--good)}.flag-draft{color:var(--serious)}.flag-stop{color:var(--stop)}
-.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:12px 0}
+.kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+@media (max-width:640px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 .kpi{background:var(--surface-2);border-radius:6px;padding:10px 12px}
 .kpi-label{margin:0;font-size:.6875rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3)}
 .kpi-value{margin:4px 0 2px;font-size:1.2rem;font-weight:600;font-variant-numeric:tabular-nums}

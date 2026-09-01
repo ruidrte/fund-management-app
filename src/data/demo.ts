@@ -169,13 +169,18 @@ const FOF_POSITIONS: PositionSeed[] = [
  * Client B — Aurora Direct, a USD direct fund
  * ------------------------------------------------------------------ */
 
+/**
+ * Direct holdings open at zero and are established by their funding call. An
+ * opening NAV on top of a full commitment call would double-count the
+ * investment and inflate every multiple built on it.
+ */
 const DIRECT_POSITIONS: PositionSeed[] = [
   {
     id: 'pos-lumen-systems', name: 'Lumen Systems', manager: 'Aurora Direct',
     currency: 'USD', vintage: 2022, commitment: 14_000, ownership: 0.34,
     assetClass: 'Private Equity', subAssetClass: 'Growth', region: 'North America',
     kind: 'direct-investment',
-    openingNav: 12_800, quarterlyGrowth: 0.031,
+    openingNav: 0, quarterlyGrowth: 0.031,
     callSchedule: { '2024Q1': 14_000 },
   },
   {
@@ -183,7 +188,7 @@ const DIRECT_POSITIONS: PositionSeed[] = [
     currency: 'EUR', vintage: 2023, commitment: 9_500, ownership: 0.51,
     assetClass: 'Real Assets', subAssetClass: 'Infrastructure', region: 'Europe',
     kind: 'direct-investment',
-    openingNav: 8_900, quarterlyGrowth: 0.017,
+    openingNav: 0, quarterlyGrowth: 0.017,
     callSchedule: { '2024Q1': 9_500 },
     distributionSchedule: { '2025Q2': 700, '2026Q1': 500 },
   },
