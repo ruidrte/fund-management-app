@@ -31,7 +31,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 193 tests over the engine, permissions, ingestion, storage and export
+npm test               # 212 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -40,6 +40,35 @@ npm run build:single   # dist-single/index.html — the whole app in one file
 opens from a link, an email attachment or a local disk with no server at all.
 Everything works in that build except reading PDFs, which needs the pdf.js
 worker as a separate file; it says so rather than failing obscurely.
+
+### Getting to your own data, from nothing
+
+On a machine that has never run it, in order. Chrome or Edge — folder access
+needs one of them.
+
+```
+1  Install Node LTS            nodejs.org, the LTS installer, defaults are fine
+2  git clone <this repo>       or download the ZIP from GitHub and unpack it
+3  cd fund-management-app
+4  npm install                 once, a couple of minutes
+5  npm run dev                 leave it running; it prints http://localhost:5173
+```
+
+Then, in the browser:
+
+```
+6  Storage                     → Choose a folder → pick where the book will live
+                                 (not inside this repository — it warns if you do)
+7  Encrypt with a passphrase   optional, and only offered now. No recovery.
+8  Start <client> here         writes the client and its vehicles, no figures
+9  Data intake                 → Choose file → your workbook
+                                 A portfolio database is recognised as a book and
+                                 imported whole; anything else goes to review.
+10 Data quality                → House conventions → set them to match the house
+```
+
+From then on `npm run dev` and the folder is remembered — the browser asks for
+the passphrase and for permission again each time, which is the point of both.
 
 `samples/` holds documents for exercising the intake pipeline. They are
 deliberately awkward in the ways real documents are awkward — four number
