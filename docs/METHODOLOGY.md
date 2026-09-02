@@ -185,6 +185,24 @@ A holding that has never been valued and has no cashflows contributes nothing
 and is counted `missing`. One that has never been valued but has drawn capital
 is held at net capital drawn, and marked `estimated`.
 
+### The house decides some of this
+
+Four of these are conventions rather than arithmetic, and they belong to the
+house rather than to the application. They are kept with the client, in the
+client's own book, and editable under *Data quality → House conventions*:
+
+| Convention | Options | Default |
+|---|---|---|
+| A holding that has not reported | carried flat (adjusted for cashflows), marked with the reporting cohort's value change, marked with a fixed return, or carried untouched | cohort's value change |
+| Cashflow translation | the rate of the flow's own date, or the period average | the flow's own date |
+| Money-weighted return | flows on their own dates, or at the end of their quarter | own dates |
+| Recallable distributions | restore undrawn commitment, or not | restore |
+
+They are not preferences. Reconciling one real quarter against a house that
+carries unreported holdings flat, against the default that marks them with the
+cohort's change, moved the portfolio by six thousand euros on a hundred and
+twenty million — small, and still a number somebody has to explain.
+
 ## Consolidating vehicles
 
 A scope naming no vehicle consolidates every vehicle of the client. The

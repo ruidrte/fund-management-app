@@ -12,6 +12,7 @@ import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
 import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from '../ingest';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
+import { DEFAULT_CONVENTIONS, type ReportingConventions } from '../domain/types';
 
 export interface FilingResult {
   /** How many facts were written, or would have been. */
@@ -127,6 +128,49 @@ export function useImport() {
   }, [dataset, book, kind, clientId, folderName, rescan, refresh]);
 
   return { apply, canImport, destination: folderName };
+}
+
+/**
+ * The house conventions, saved with the client they belong to.
+ *
+ * These are not preferences. Whether a holding that has not reported is
+ * carried flat or marked with the cohort's value change moved one real
+ * quarter's net asset value by six thousand euros — a rounding error on a
+ * hundred and twenty million, and still a number somebody would have to
+ * explain. A house that carries flat should be able to say so without a
+ * rebuild.
+ */
+export function useConventions() {
+  const { kind, book, folderName } = useDataSource();
+  const { clientId, dataset, refresh } = useScope();
+
+  const conventions = dataset?.client.conventions ?? DEFAULT_CONVENTIONS;
+  const canSave = kind === 'folder' && Boolean(book);
+
+  const save = useCallback(async (next: ReportingConventions) => {
+    if (!dataset) throw new Error('No client is loaded.');
+    if (!book || kind !== 'folder') {
+      throw new Error(
+        kind === 'supabase'
+          ? 'Writing to the database is not built yet, so conventions cannot be saved.'
+          : 'The sample dataset is not persisted. Connect a folder under Storage to keep them.',
+      );
+    }
+    await book.commit(clientId, {
+      reference: { client: { ...dataset.client, conventions: next } },
+    });
+    refresh();
+  }, [book, kind, clientId, dataset, refresh]);
+
+  return {
+    conventions,
+    save,
+    canSave,
+    destination: folderName,
+    reason: canSave ? undefined : kind === 'supabase'
+      ? 'Writing to the database is not built yet.'
+      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+  };
 }
 
 export function useFiling() {

@@ -3,7 +3,10 @@ import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engin
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
 import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
-import type { DataSet, FxRate, PositionValuation, Scope } from '../src/domain/types';
+import {
+  DEFAULT_CONVENTIONS,
+  type DataSet, type DraftPolicy, type FxRate, type PositionValuation, type Scope,
+} from '../src/domain/types';
 
 const meridian = buildDemoDataSet('client-ebg');
 const aurora = buildDemoDataSet('client-ut');
@@ -483,6 +486,84 @@ describe('a book loaded from statements, with no cashflow ledger', () => {
     const view = analyse(fromStatements(), { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
     expect(view.checks.results.find((r) => r.id === 'drawn_statement_vs_ledger')!.status)
       .toBe('skip');
+  });
+});
+
+describe('the house convention for a holding that has not reported', () => {
+  /** One holding reported this quarter, one that last reported a year ago. */
+  const book = (): DataSet => ({
+    client: { id: 'c', name: 'Test', shortName: 'T', reportingCurrency: 'EUR' },
+    vehicles: [{
+      id: 'v', clientId: 'c', kind: 'fund-of-funds', name: 'Vehicle', shortName: 'V',
+      currency: 'EUR', inceptionDate: '2020-01-01', investorCommitment: 100_000,
+      manager: 'M', administrator: 'A', domicile: 'LU', status: 'Investing',
+    }],
+    positions: [
+      {
+        id: 'reporting', vehicleId: 'v', kind: 'fund', name: 'Reports on time', currency: 'EUR',
+        vintage: 2021, commitmentDate: '2021-01-01', commitment: 10_000, ownership: 1,
+        assetClass: 'PE', region: 'Europe', status: 'Investing',
+      },
+      {
+        id: 'silent', vehicleId: 'v', kind: 'fund', name: 'Two quarters behind', currency: 'EUR',
+        vintage: 2021, commitmentDate: '2021-01-01', commitment: 10_000, ownership: 1,
+        assetClass: 'PE', region: 'Europe', status: 'Investing',
+      },
+    ],
+    assets: [], investors: [], assetValuations: [], balanceSheets: [], esgMetrics: [], fxRates: [],
+    cashflows: [],
+    positionValuations: [
+      { id: 'a', positionId: 'reporting', period: '2025Q4', recordedAt: '2026-01-20T09:00:00Z', nav: 1_000, source: 'GP' },
+      { id: 'b', positionId: 'reporting', period: '2026Q1', recordedAt: '2026-04-20T09:00:00Z', nav: 1_100, source: 'GP' },
+      { id: 'c', positionId: 'silent', period: '2025Q3', recordedAt: '2025-10-20T09:00:00Z', nav: 2_000, source: 'GP' },
+    ],
+  });
+
+  const at = (policy: Partial<DraftPolicy>) => {
+    const dataset = book();
+    dataset.vehicles[0].conventions = {
+      ...DEFAULT_CONVENTIONS,
+      draftPolicy: { ...DEFAULT_CONVENTIONS.draftPolicy, ...policy },
+    };
+    const view = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    return view.gross.positions.find((p) => p.position.id === 'silent')!;
+  };
+
+  it('marks it with what the reporting cohort achieved, by default', () => {
+    const silent = at({});
+    // The one holding that reported rose 10%.
+    expect(silent.nav).toBeCloseTo(2_200, 6);
+    expect(silent.provenance).toBe('estimated');
+  });
+
+  it('carries it flat when the house says so', () => {
+    // The convention a real book reconciled against: the last value, adjusted
+    // for cashflows since and nothing else. On one quarter of a real portfolio
+    // the difference between this and the default was six thousand euros.
+    const silent = at({ valueChange: 'none' });
+    expect(silent.nav).toBe(2_000);
+    // Still not `rolled-forward`: two quarters is beyond the staleness
+    // tolerance, and saying "stale" for a figure that old would understate it.
+    expect(silent.provenance).toBe('estimated');
+    expect(silent.state.appliedReturn).toBe(0);
+
+    // Within tolerance it is what it says it is.
+    expect(at({ valueChange: 'none', staleAfterQuarters: 2 }).provenance).toBe('rolled-forward');
+  });
+
+  it('applies a fixed assumption when the house has one', () => {
+    const silent = at({ valueChange: 'fixed', fixedReturn: 0.02 });
+    expect(silent.nav).toBeCloseTo(2_040, 6);
+  });
+
+  it('refuses the quarter when coverage is below the floor', () => {
+    const dataset = book();
+    dataset.vehicles[0].conventions = {
+      ...DEFAULT_CONVENTIONS,
+      draftPolicy: { ...DEFAULT_CONVENTIONS.draftPolicy, minimumCoverage: 0.9 },
+    };
+    const view = analyse(dataset, { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+    expect(view.gross.coverage.publishable).toBe(false);
   });
 });
 
