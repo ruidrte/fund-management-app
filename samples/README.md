@@ -3,6 +3,51 @@
 Files for exercising the intake pipeline. They are deliberately awkward in the
 ways real documents are awkward, so the review step has something to catch.
 
+## What a historical workbook needs
+
+No template. The reader looks for a header row and maps its columns by name,
+so an existing sheet usually loads as it is.
+
+**Required:** a column naming the holding, and one carrying its value. Nothing
+else is mandatory.
+
+| Field | Headers recognised (case, punctuation and bracketed units ignored) |
+|---|---|
+| Holding | fund, fund name, investment, investment name, holding, position, name, partnership, Beteiligung |
+| Value | nav, net asset value, fair value, valuation, value, market value, ending capital, closing balance, ending balance, capital account balance |
+| Commitment | commitment, total commitment, committed, commitment amount, subscription |
+| Drawn | drawn, called, paid in, paid-in, contributions, contributed capital, cumulative calls, total drawn, capital called |
+| Distributed | distributed, distributions, cumulative distributions, total distributed, proceeds |
+| Recallable | recallable, recallable distributions, return of capital |
+| Currency | currency, ccy, curr, Währung, devise |
+| Quarter | period, quarter, as of, as at, reporting date, valuation date, reference date |
+| Vintage | vintage, vintage year, year |
+| Region | region, geography, geographic focus |
+| Asset class | asset class, strategy, sub strategy, sub-asset class, type of investment |
+
+A header is matched exactly first, then by containment — so `Total Commitment
+(EUR)` finds *commitment*. Where two columns claim the same field the first
+wins, so a sheet with `NAV` and `NAV (prior)` maps the plain one. Anything
+matched by nothing is listed under **Not read** rather than guessed at.
+
+Other things it copes with:
+
+- **Title rows.** The header is found by looking for the first mostly-textual
+  row of two or more cells that has data under it, in the first 25 rows.
+- **Several sheets.** The one with the most tabular content is read, and the
+  others are offered in a dropdown to read instead.
+- **Number formats.** `15'000.00`, `15,700.00` and `9.300,00` all read
+  identically, as do `(400.00)` for a negative and a trailing `%`.
+- **Quarters.** `2026Q1` and `Q1 2026` in a period column; otherwise a date —
+  `2026-03-31`, `31 March 2026`, `31/03/2026`, or an Excel serial. `03/04/2026`
+  is **rejected**, because a day-month swap moves a figure into another quarter.
+  With no period column at all, the quarter selected in the scope bar is used.
+- **Total rows.** A holding called total, sum, subtotal or grand total is
+  skipped rather than loaded as a fund.
+
+What it does *not* need: a fixed column order, specific sheet names, one file
+per quarter, or units — figures are read as written.
+
 ## 01_historical_positions.csv — Historical workbook
 
 Two title rows before the header, four different number conventions in the same

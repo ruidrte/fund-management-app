@@ -47,10 +47,11 @@ export function Intake({ view }: { view: QuarterView }) {
   const [committed, setCommitted] = useState<string>();
   const [manualOpen, setManualOpen] = useState(false);
   const [createMissing, setCreateMissing] = useState(false);
+  const [sheet, setSheet] = useState<string>();
 
   const extractor = EXTRACTORS.find((e) => e.kind === kind);
 
-  const handleFile = useCallback(async (file: File) => {
+  const handleFile = useCallback(async (file: File, sheetName?: string) => {
     if (!dataset) return;
     uploaded.current = file;
     setBusy(true);
@@ -60,12 +61,13 @@ export function Intake({ view }: { view: QuarterView }) {
       const result = await ingest(
         {
           file, kind, clientId, vehicleId, period: view.period,
-          createMissing, uploadedBy: user?.id,
+          sheetName, createMissing, uploadedBy: user?.id,
         },
         dataset,
       );
       // Anything clean is pre-accepted; anything with a warning or an error is
       // left pending, so the reviewer's attention goes where it is needed.
+      setSheet(sheetName);
       setOutcome({
         ...result,
         candidates: result.candidates.map((candidate) => ({
@@ -299,10 +301,25 @@ export function Intake({ view }: { view: QuarterView }) {
             </p>
 
             {outcome.availableSheets && outcome.availableSheets.length > 1 && (
-              <p className="mt-2 mb-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                Sheets in this workbook: {outcome.availableSheets.join(', ')}. The one with the most tabular
-                content was read.
-              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <label htmlFor="sheet" className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                  Sheet read — the one with the most tabular content, unless you say otherwise:
+                </label>
+                <select
+                  id="sheet" className="field max-w-[16rem] text-xs"
+                  value={sheet ?? ''}
+                  disabled={busy}
+                  onChange={(event) => {
+                    const file = uploaded.current;
+                    if (file) void handleFile(file, event.target.value || undefined);
+                  }}
+                >
+                  <option value="">Whichever looks like data</option>
+                  {outcome.availableSheets.map((name) => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </Card>
 
