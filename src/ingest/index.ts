@@ -49,7 +49,13 @@ export interface IngestOutcome extends ExtractionResult {
 /** 25 MB. Larger than any statement, small enough not to hang a browser tab. */
 export const MAX_FILE_BYTES = 25 * 1024 * 1024;
 
-const ALLOWED_EXTENSIONS = ['.csv', '.tsv', '.txt', '.xlsx', '.pdf'];
+/**
+ * `.xlsm` is here because real portfolio workbooks are macro-enabled — the
+ * forms and validation people actually use are written in VBA. Nothing here
+ * executes any of it: an xlsm is a zip of the same XML an xlsx is, the macro
+ * project is a part this reader never opens, and the parse is the same one.
+ */
+const ALLOWED_EXTENSIONS = ['.csv', '.tsv', '.txt', '.xlsx', '.xlsm', '.pdf'];
 
 export async function ingest(
   request: IngestRequest,
@@ -115,7 +121,7 @@ export async function ingest(
       };
     }
     text = parsed.text;
-  } else if (extension === '.xlsx') {
+  } else if (extension === '.xlsx' || extension === '.xlsm') {
     const workbook = parseXlsx(bytes);
     availableSheets = workbook.sheets.map((sheet) => sheet.sheetName);
     table = request.sheetName
@@ -371,6 +377,7 @@ function guessMime(extension: string): string {
   switch (extension) {
     case '.pdf': return 'application/pdf';
     case '.xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    case '.xlsm': return 'application/vnd.ms-excel.sheet.macroEnabled.12';
     case '.csv': return 'text/csv';
     default: return 'application/octet-stream';
   }

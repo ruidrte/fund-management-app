@@ -11,6 +11,7 @@ import { canCommit, validateAll } from '../src/ingest/validate';
 import { applyCandidates, factsFrom, REVIEW_THRESHOLD } from '../src/ingest';
 import { buildRateLookup } from '../src/engine/fx';
 import { toXlsx } from '../src/export/serialise';
+import { buildTemplate } from '../src/ingest/template';
 import { buildExtract } from '../src/export/extract';
 import { buildDemoDataSet } from '../src/data/demo';
 import type { MatchContext, SourceDocument } from '../src/ingest/types';
@@ -541,6 +542,53 @@ describe('seeding a book from a workbook', () => {
     const [position] = validateAll(result.candidates.filter((c) => c.kind === 'position'), dataset);
     expect(canCommit(position)).toBe(true);
     expect(position.issues.some((i) => i.severity === 'warning' && /new holding/.test(i.message))).toBe(true);
+  });
+});
+
+describe('the template the application offers', () => {
+  it('reads back through the same reader it was written for', async () => {
+    // A template nobody validated is a promise: this proves the sheet the
+    // application hands out is one the application can read.
+    const workbook = parseXlsx(toXlsx(buildTemplate()));
+    const holdings = workbook.sheets.find((sheet) => sheet.sheetName === 'Holdings')!;
+    expect(holdings).toBeDefined();
+
+    const result = await historicalWorkbookExtractor.extract({
+      document: doc({ name: 'reporting_template.xlsx' }),
+      context,
+      period: '2026Q1',
+      vehicleId: 'veh-abif',
+      createMissing: true,
+      table: holdings,
+    });
+
+    const valuations = result.candidates.filter((c) => c.kind === 'position-valuation');
+    expect(valuations).toHaveLength(2);
+    expect(valuations[0].fields.nav.value).toBe(6400);
+    expect(valuations[0].fields.drawnCumulative.value).toBe(5600);
+
+    // The second row is written in another convention on purpose — Swiss
+    // grouping and the quarter as a date — and must read identically.
+    expect(valuations[1].fields.nav.value).toBe(11400);
+    expect(valuations[1].fields.period.value).toBe('2026Q1');
+
+    // Every row lands somewhere: matched to a holding the book has, or tied to
+    // one this batch creates. A row that is neither would be silently lost.
+    expect(valuations.every((c) => c.match?.id || c.dependsOn)).toBe(true);
+
+    const created = result.candidates.filter((c) => c.kind === 'position');
+    expect(created.length).toBeGreaterThan(0);
+    expect(created[0].fields.currency.value).toBe('EUR');
+    expect(created[0].fields.vintage.value).toBe(2021);
+  });
+
+  it('describes every sheet it contains', () => {
+    const template = buildTemplate();
+    expect(template.sheets.map((s) => s.name)).toEqual([
+      'Read me', 'Holdings', 'Transactions', 'Balance sheet', 'FX',
+    ]);
+    // The manifest is what a person reads before filling anything in.
+    expect(template.manifest).toMatch(/never required|not a requirement|convenience/i);
   });
 });
 

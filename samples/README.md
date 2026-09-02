@@ -5,8 +5,14 @@ ways real documents are awkward, so the review step has something to catch.
 
 ## What a historical workbook needs
 
-No template. The reader looks for a header row and maps its columns by name,
-so an existing sheet usually loads as it is.
+No template required. The reader looks for a header row and maps its columns by
+name, so an existing sheet usually loads as it is.
+
+There *is* one to fill in, if that is easier than checking your headings against
+the list below: **Data intake → Template** downloads a workbook with a sheet per
+kind of thing, each with two example rows written in different conventions. It
+is a convenience, never a contract — and a test loads it back through the same
+reader, so it cannot drift into being a sheet the application no longer reads.
 
 **Required:** a column naming the holding, and one carrying its value. Nothing
 else is mandatory.

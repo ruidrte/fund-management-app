@@ -9,7 +9,7 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, FileUp, Loader2, Plus, X, XCircle,
+  AlertTriangle, Check, FileDown, FileUp, Loader2, Plus, X, XCircle,
 } from 'lucide-react';
 import type { QuarterView } from '../engine';
 import { formatPeriod } from '../domain/period';
@@ -24,6 +24,8 @@ import {
   type Candidate, type DocumentKind, type IngestOutcome,
 } from '../ingest';
 import { useFiling } from '../context/filing';
+import { buildTemplate } from '../ingest/template';
+import { toXlsx, download } from '../export/serialise';
 
 const UPLOADABLE: DocumentKind[] = [
   'historical-workbook', 'transaction-notice', 'nav-pack',
@@ -166,14 +168,28 @@ export function Intake({ view }: { view: QuarterView }) {
         subtitle={`Into ${view.vehicles[0]?.name ?? 'this client'}, for ${formatPeriod(view.period)}`}
         note={extractor?.capability}
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+            type="button"
+            onClick={() => download(
+              toXlsx(buildTemplate()), 'reporting_template.xlsx',
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )}
+            className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+            title="A sheet to fill in — never required, since the reader works by recognising headings"
+          >
+            <FileDown size={13} aria-hidden /> Template
+          </button>
           <button
             type="button"
             onClick={() => setManualOpen((open) => !open)}
             className="inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs"
             style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
           >
-            <Plus size={13} aria-hidden /> New event
-          </button>
+              <Plus size={13} aria-hidden /> New event
+            </button>
+          </div>
         }
       >
         <div className="flex flex-wrap items-end gap-3">
@@ -194,7 +210,7 @@ export function Intake({ view }: { view: QuarterView }) {
 
           <input
             ref={fileInput} type="file" className="hidden"
-            accept=".csv,.tsv,.txt,.xlsx,.pdf"
+            accept=".csv,.tsv,.txt,.xlsx,.xlsm,.pdf"
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) void handleFile(file);
@@ -213,7 +229,7 @@ export function Intake({ view }: { view: QuarterView }) {
           </button>
 
           <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            CSV, XLSX or PDF, up to {MAX_FILE_BYTES / 1024 / 1024} MB
+            CSV, XLSX, XLSM or PDF, up to {MAX_FILE_BYTES / 1024 / 1024} MB
           </span>
 
           {kind === 'historical-workbook' && (
