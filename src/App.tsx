@@ -71,9 +71,9 @@ function Shell() {
     <div className="flex h-full flex-col">
       <Header />
       <ScopeBar />
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <Navigation active={page} onChange={setPage} clientId={clientId} />
-        <main className="min-w-0 flex-1 overflow-y-auto p-5">
+        <main className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-5">
           {error && <Notice tone="var(--status-critical)" title="Could not load this scope" body={error} />}
           {!error && loading && !standalone && (
             <Notice tone="var(--text-muted)" title="Loading" body="Reading the client's data." />
