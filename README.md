@@ -8,6 +8,9 @@ any date:
 
 - **What comes in?** Historical workbooks, transaction notices and administrator
   NAV packs are read, matched, validated and reviewed before anything is filed.
+  A portfolio database — funds, movements, companies and their quarterly values
+  in one workbook — is recognised as a book rather than a document and imported
+  whole, filling the portfolio and the look-through together.
   Exchange rates are taken from the ECB and replaced by the rates the
   administrator's financials declare, once those arrive.
 - **What goes out?** Any quarter, range, or the whole history since inception,

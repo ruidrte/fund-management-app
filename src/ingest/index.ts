@@ -13,12 +13,17 @@ import {
   detectDelimiter, parseCsv, parseXlsx, type Cell,
 } from './workbook';
 import { extractorFor } from './extractors';
+import { isPortfolioDatabase, programsIn, type ProgramSummary } from './pfdb';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
 } from './types';
 
 export * from './types';
+export {
+  isPortfolioDatabase, planImport, programsIn,
+  type ImportPlan, type PfdbOptions, type ProgramSummary,
+} from './pfdb';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
 export { validateAll, canCommit, stringField, numberField, booleanField } from './validate';
@@ -56,6 +61,53 @@ export const MAX_FILE_BYTES = 25 * 1024 * 1024;
  * project is a part this reader never opens, and the parse is the same one.
  */
 const ALLOWED_EXTENSIONS = ['.csv', '.tsv', '.txt', '.xlsx', '.xlsm', '.pdf'];
+
+/**
+ * A workbook that turns out to be a whole book rather than a document.
+ *
+ * Checked before the readers are offered a sheet, because a portfolio database
+ * is not a document with facts in it — it is five related tables, and running
+ * the historical-workbook reader over the largest of them produces confident
+ * nonsense. Returns undefined for anything else, which then goes down the
+ * ordinary path.
+ */
+export async function openDatabase(
+  file: File, clientId: string, uploadedBy?: string,
+): Promise<DatabaseOutcome | undefined> {
+  const extension = fileExtension(file.name);
+  if (extension !== '.xlsx' && extension !== '.xlsm') return undefined;
+  if (file.size > MAX_FILE_BYTES) return undefined;
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const workbook = parseXlsx(bytes);
+  if (!isPortfolioDatabase(workbook.sheets)) return undefined;
+
+  return {
+    document: {
+      id: `doc-${await shortHash(bytes)}`,
+      clientId,
+      kind: 'historical-workbook',
+      name: file.name,
+      mimeType: file.type || guessMime(extension),
+      sizeBytes: file.size,
+      contentHash: await sha256(bytes),
+      uploadedAt: new Date().toISOString(),
+      uploadedBy,
+      status: 'extracted',
+    },
+    bytes,
+    sheets: workbook.sheets,
+    programs: programsIn(workbook.sheets),
+  };
+}
+
+export interface DatabaseOutcome {
+  document: SourceDocument;
+  /** Kept so the file itself can be stored beside the figures it produced. */
+  bytes: Uint8Array;
+  sheets: TableData[];
+  programs: ProgramSummary[];
+}
 
 export async function ingest(
   request: IngestRequest,

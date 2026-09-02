@@ -20,9 +20,10 @@ import { StatusPill } from '../components/common/Badges';
 import { DataTable } from '../components/common/DataTable';
 import { ManualEvent } from '../components/intake/ManualEvent';
 import {
-  DOCUMENT_KIND_LABEL, EXTRACTORS, MAX_FILE_BYTES, canCommit, ingest,
-  type Candidate, type DocumentKind, type IngestOutcome,
+  DOCUMENT_KIND_LABEL, EXTRACTORS, MAX_FILE_BYTES, canCommit, ingest, openDatabase,
+  type Candidate, type DatabaseOutcome, type DocumentKind, type IngestOutcome,
 } from '../ingest';
+import { DatabaseImport } from '../components/intake/DatabaseImport';
 import { useFiling } from '../context/filing';
 import { buildTemplate } from '../ingest/template';
 import { toXlsx, download } from '../export/serialise';
@@ -50,6 +51,7 @@ export function Intake({ view }: { view: QuarterView }) {
   const [manualOpen, setManualOpen] = useState(false);
   const [createMissing, setCreateMissing] = useState(false);
   const [sheet, setSheet] = useState<string>();
+  const [database, setDatabase] = useState<DatabaseOutcome>();
 
   const extractor = EXTRACTORS.find((e) => e.kind === kind);
 
@@ -60,6 +62,15 @@ export function Intake({ view }: { view: QuarterView }) {
     setError(undefined);
     setCommitted(undefined);
     try {
+      // A whole book rather than a document: five related tables, which the
+      // document readers would turn into confident nonsense.
+      const asDatabase = sheetName ? undefined : await openDatabase(file, clientId, user?.id);
+      if (asDatabase) {
+        setDatabase(asDatabase);
+        setOutcome(undefined);
+        return;
+      }
+      setDatabase(undefined);
       const result = await ingest(
         {
           file, kind, clientId, vehicleId, period: view.period,
@@ -278,6 +289,15 @@ export function Intake({ view }: { view: QuarterView }) {
           </p>
         )}
       </Card>
+
+      {database && (
+        <DatabaseImport
+          outcome={database}
+          view={view}
+          onClose={() => setDatabase(undefined)}
+          onImported={(message) => { setCommitted(message); setDatabase(undefined); }}
+        />
+      )}
 
       {manualOpen && (
         <ManualEvent

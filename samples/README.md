@@ -3,6 +3,46 @@
 Files for exercising the intake pipeline. They are deliberately awkward in the
 ways real documents are awkward, so the review step has something to catch.
 
+## A portfolio database
+
+A workbook with **FundDB** and **FundTX** sheets is recognised as a portfolio
+database rather than a document, and takes a different path: it is imported as a
+whole rather than reviewed row by row. Nobody confirms a capital call from 2018
+one at a time.
+
+| Sheet | What it carries | Becomes |
+|---|---|---|
+| `FundDB` | one row per fund per programme — currency, size, vintage, region, sector, manager, dates | holdings |
+| `FundTX` | one row per dated event; the column that is filled says what it was | cashflows **and** valuations |
+| `CompDB` | the underlying companies of each fund | look-through assets |
+| `CompQ` | those companies quarter by quarter — invested, realised, unrealised | asset valuations |
+| `FX` | one row per date, a column per currency, EUR = 1 | rates |
+
+A **programme** is a book of its own. One holds the funds a vehicle invests in;
+another may hold that same vehicle seen from its limited partner, whose rows are
+the capital account rather than holdings — the import screen detects which is
+which and offers the partner alongside the portfolio, so one import fills both
+the gross and the net tier.
+
+Three conventions the reader applies, because getting them wrong produces
+figures that look entirely plausible:
+
+- **Units.** `FundDB` sizes are millions, `FundTX` is thousands (what this
+  application stores), `CompQ` is millions.
+- **Signs.** The workbook writes calls positive and distributions negative. This
+  application writes flows from the vehicle's side of the account. That is
+  exactly the workbook's own `DCash` column, so every converted row is checked
+  against it and a disagreement is reported rather than absorbed.
+- **Whose value.** `CompQ` holds the *fund's* position in each company, not the
+  company's enterprise value. So the vehicle's share comes from its commitment
+  divided by the fund's size, and a fund with no size in `FundDB` has its
+  companies left out of the look-through — assuming 100% is not a conservative
+  guess, it is a wrong one, and on a real workbook it put one fund's whole
+  portfolio, larger than the vehicle itself, into the exposure.
+
+Everything the reader could not use, and every assumption it had to make, is
+listed on the import screen before anything is written.
+
 ## What a historical workbook needs
 
 No template required. The reader looks for a header row and maps its columns by

@@ -10,7 +10,7 @@
 import { useCallback } from 'react';
 import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
-import { factsFrom, type Candidate, type SourceDocument } from '../ingest';
+import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from '../ingest';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
 
 export interface FilingResult {
@@ -58,6 +58,75 @@ export function useReportingProfile() {
       ? 'Writing to the database is not built yet.'
       : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
   };
+}
+
+/**
+ * Filing a whole book at once.
+ *
+ * A portfolio database is a migration rather than a document: thousands of rows
+ * that belong together and are worth nothing apart. So it commits as one write
+ * — reference data replaced, facts appended, the workbook itself kept beside
+ * them — instead of passing through a review list built for a dozen candidates.
+ */
+export function useImport() {
+  const { kind, book, folderName, rescan } = useDataSource();
+  const { clientId, dataset, refresh } = useScope();
+
+  const canImport = kind === 'folder' && Boolean(book);
+
+  const apply = useCallback(async (
+    plan: ImportPlan, document: SourceDocument, bytes?: Uint8Array,
+  ): Promise<string> => {
+    if (!dataset) throw new Error('No client is loaded.');
+    if (!book || kind !== 'folder') {
+      throw new Error(
+        kind === 'supabase'
+          ? 'Writing to the database is not built yet, so a book cannot be imported.'
+          : 'The sample dataset is not persisted. Connect a folder under Storage to import into it.',
+      );
+    }
+
+    // Reference data is replaced rather than appended: importing the same
+    // programme twice should leave one set of holdings, not two.
+    const keep = <T extends { id: string; vehicleId?: string; positionId?: string }>(
+      existing: T[], incoming: T[],
+    ): T[] => {
+      const replaced = new Set(incoming.map((row) => row.id));
+      return [...existing.filter((row) => !replaced.has(row.id)), ...incoming];
+    };
+
+    await book.commit(clientId, {
+      reference: {
+        positions: keep(dataset.positions, plan.positions),
+        assets: keep(dataset.assets, plan.assets),
+        investors: keep(dataset.investors, plan.investors),
+      },
+      facts: {
+        positionValuations: plan.valuations,
+        assetValuations: plan.assetValuations,
+        cashflows: plan.cashflows,
+        fxRates: plan.fxRates,
+      },
+      document: { ...document, status: 'committed' },
+      bytes,
+    });
+
+    await rescan();
+    refresh();
+
+    const counts = [
+      `${plan.positions.length} holding(s)`,
+      `${plan.valuations.length} valuation(s)`,
+      `${plan.cashflows.length} cashflow(s)`,
+      plan.assets.length > 0 ? `${plan.assets.length} company(ies)` : '',
+      plan.assetValuations.length > 0 ? `${plan.assetValuations.length} company valuation(s)` : '',
+      plan.fxRates.length > 0 ? `${plan.fxRates.length} rate(s)` : '',
+    ].filter(Boolean);
+
+    return `${plan.program} written to ${folderName}: ${counts.join(', ')}.`;
+  }, [dataset, book, kind, clientId, folderName, rescan, refresh]);
+
+  return { apply, canImport, destination: folderName };
 }
 
 export function useFiling() {
