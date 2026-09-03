@@ -247,3 +247,57 @@ describe('rates', () => {
     expect(fxRates.some((r) => r.quote === 'EUR')).toBe(false);
   });
 });
+
+describe('funds whose names differ only at the end', () => {
+  // Two real ones did: "Generation IM Sustainable Solutions Fund II" and
+  // "... III", and "Rose Affordable Housing Preservation Fund IV" and "... V".
+  // Truncating the name to build an identifier merged each pair into a single
+  // holding carrying both funds' figures — a portfolio two funds short, with no
+  // row missing from any sheet to point at.
+  const LONG = 'Generation IM Sustainable Solutions Fund';
+  const sheets = (): TableData[] => [
+    {
+      sheetName: 'FundDB',
+      rows: [
+        ['Progid', 'Program', 'Fund', 'CCY', 'Size (Mio)', 'Vintage'],
+        ['1', 'ABIF', `${LONG} II`, 'EUR', 500, 2019],
+        ['2', 'ABIF', `${LONG} III`, 'EUR', 800, 2022],
+      ],
+    },
+    {
+      sheetName: 'FundTX',
+      rows: [
+        ['Program', 'Fund', 'Date', 'CCY', 'Commitment', 'Capital Calls', 'NAV', 'DCash'],
+        ['ABIF', `${LONG} II`, serial('2019-06-30'), 'EUR', 4000, null, null, 0],
+        ['ABIF', `${LONG} II`, serial('2022-03-31'), 'EUR', null, null, 3100, 0],
+        ['ABIF', `${LONG} III`, serial('2022-01-31'), 'EUR', 6000, null, null, 0],
+        ['ABIF', `${LONG} III`, serial('2022-03-31'), 'EUR', null, null, 5200, 0],
+      ],
+    },
+  ];
+
+  const built = () => planImport(sheets(), { program: 'ABIF', vehicleId: 'veh-1' });
+
+  it('gives each of them its own holding', () => {
+    const { positions, problems } = built();
+
+    expect(positions).toHaveLength(2);
+    expect(new Set(positions.map((p) => p.id)).size).toBe(2);
+    expect(problems).toEqual([]);
+  });
+
+  it('keeps each valuation on its own holding', () => {
+    const { positions, valuations } = built();
+    const navOf = (name: string) => {
+      const position = positions.find((p) => p.name === name)!;
+      return valuations.find((v) => v.positionId === position.id)!.nav;
+    };
+
+    expect(navOf(`${LONG} II`)).toBe(3_100);
+    expect(navOf(`${LONG} III`)).toBe(5_200);
+  });
+
+  it('still produces the same identifier when the same workbook is read twice', () => {
+    expect(built().positions.map((p) => p.id)).toEqual(built().positions.map((p) => p.id));
+  });
+});

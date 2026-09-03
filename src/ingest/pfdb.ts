@@ -177,11 +177,29 @@ function find(sheets: TableData[], name: string): TableData | undefined {
 }
 
 /** An id fragment. Accents become separators, which is fine for an identifier. */
-function slug(value: string): string {
-  return value.toLowerCase()
+function slug(value: string, limit = 40): string {
+  const full = value.toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40) || 'x';
+    .replace(/^-+|-+$/g, '');
+  if (!full) return 'x';
+  if (full.length <= limit) return full;
+  // Truncation on its own collides, and does so precisely where it costs most:
+  // funds in the same family differ only in the roman numeral at the end, so
+  // "Rose Affordable Housing Preservation Fund IV" and "... V" became one
+  // holding carrying both funds' figures. A digest of the whole name keeps the
+  // id readable and distinct, and depends on the name alone — so importing the
+  // same workbook twice still produces the same id.
+  return `${full.slice(0, limit).replace(/-+$/, '')}-${digest(full)}`;
+}
+
+/** FNV-1a, 32 bits. Not a security hash: a suffix that makes an id unique. */
+function digest(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 /* ------------------------------------------------------------------ *
@@ -330,6 +348,23 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
     positions.push(position);
     positionOf.set(name, position);
   });
+
+  // Two holdings sharing an id do not fail: they merge, quietly, and the
+  // portfolio comes up short by one fund with no row missing from any sheet.
+  // That is the kind of wrong figure worth a loud line rather than a silent
+  // one, so it is checked even though the ids are now built not to collide.
+  const byId = new Map<string, string[]>();
+  for (const position of positions) {
+    byId.set(position.id, [...(byId.get(position.id) ?? []), position.name]);
+  }
+  for (const [, names] of byId) {
+    if (names.length > 1) {
+      problems.push(
+        `${names.join(' and ')} produced the same identifier, so their figures would have been `
+        + 'merged into one holding. Rename one of them in FundDB.',
+      );
+    }
+  }
 
   /* --- transactions ------------------------------------------------ */
 

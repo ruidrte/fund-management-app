@@ -31,7 +31,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 212 tests over the engine, permissions, ingestion, storage and export
+npm test               # 217 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```

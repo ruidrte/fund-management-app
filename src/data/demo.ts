@@ -399,12 +399,14 @@ const CLIENTS: ClientSeed[] = [
         name: 'Abendrot Impulse Fund',
         shortName: 'AbIF',
         kind: 'fund-of-funds',
-        currency: 'CHF',
+        // The fund reports in euro, whatever the currency of its investor: its
+        // financial statements, capital accounts and portfolio are all in EUR.
+        currency: 'EUR',
         inception: '2020-03-31',
-        investorCommitment: 150_000,
+        investorCommitment: 165_000,
         status: 'Investing',
         domicile: 'Switzerland',
-        administrator: 'Helvetia Fund Administration',
+        administrator: 'RSM',
         cash: 2_800,
         positions: [
           fund('impact-growth', 'European Impact Growth Fund III', 'Impulse Partners', 'EUR', 2020, 26_000, 'Growth', 'Europe', 16_200, 0.027,
@@ -432,10 +434,10 @@ const CLIENTS: ClientSeed[] = [
             { '2024Q4': 7_000, '2025Q4': 3_500 }, undefined, { sfdr: 'Article 9' }),
         ],
         investors: [
-          { name: 'Pension Foundation Abendrot', type: 'Institution', country: 'Switzerland', commitment: 90_000, entryDate: '2020-03-31' },
-          { name: 'Basel Charitable Trust', type: 'Institution', country: 'Switzerland', commitment: 28_000, entryDate: '2020-09-30' },
-          { name: 'Sustainable Wealth Feeder', type: 'Feeder', country: 'Switzerland', commitment: 20_000, entryDate: '2021-06-30' },
-          { name: 'Zurich Family Office', type: 'Family Office', country: 'Switzerland', commitment: 12_000, entryDate: '2022-03-31' },
+          { name: 'Pension Foundation Abendrot', type: 'Institution', country: 'Switzerland', commitment: 99_000, entryDate: '2020-03-31' },
+          { name: 'Basel Charitable Trust', type: 'Institution', country: 'Switzerland', commitment: 30_800, entryDate: '2020-09-30' },
+          { name: 'Sustainable Wealth Feeder', type: 'Feeder', country: 'Switzerland', commitment: 22_000, entryDate: '2021-06-30' },
+          { name: 'Zurich Family Office', type: 'Family Office', country: 'Switzerland', commitment: 13_200, entryDate: '2022-03-31' },
         ],
       },
       {
@@ -620,7 +622,10 @@ export function buildDemoDataSet(clientId: string): DataSet {
       administrator: vehicleSeed.administrator,
       domicile: vehicleSeed.domicile,
       status: vehicleSeed.status,
-      conventions: DEFAULT_CONVENTIONS,
+      // Deliberately none. A vehicle's conventions override its client's, so
+      // stamping the defaults here at creation would make the client-level
+      // setting unreachable — the screen would save and nothing would move.
+      // A vehicle carries conventions only when somebody sets them for it.
     });
 
     const built = buildPortfolio(vehicleSeed, vehicleId, vehicleIndex);

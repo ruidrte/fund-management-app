@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engine';
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
-import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
+import { buildClientStructure, buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
 import {
   DEFAULT_CONVENTIONS,
   type DataSet, type DraftPolicy, type FxRate, type PositionValuation, type Scope,
@@ -641,5 +641,40 @@ describe('scoping', () => {
   it('keeps clients separate', () => {
     const view = analyse(meridian, { clientId: 'client-ebg', period: '2026Q1' });
     expect(view.vehicles.every((v) => v.clientId === 'client-ebg')).toBe(true);
+  });
+});
+
+describe('where a book gets its conventions', () => {
+  // The conventions screen saves to the client. A vehicle's own conventions
+  // override its client's, so a new book that stamped the defaults onto every
+  // vehicle at creation made that screen inert: it saved, and no figure moved.
+  it('leaves a new book\'s vehicles without conventions of their own', () => {
+    const { vehicles } = buildClientStructure('client-ebg');
+    expect(vehicles.every((v) => v.conventions === undefined)).toBe(true);
+  });
+
+  it('lets the client\'s policy reach the figures', () => {
+    const { client, vehicles } = buildClientStructure('client-ebg');
+    const source = buildDemoDataSet('client-ebg');
+    const base: DataSet = { ...source, client, vehicles };
+
+    const withPolicy = (valueChange: DraftPolicy['valueChange'], fixedReturn?: number): DataSet => ({
+      ...base,
+      client: {
+        ...client,
+        conventions: {
+          ...DEFAULT_CONVENTIONS,
+          draftPolicy: { ...DEFAULT_CONVENTIONS.draftPolicy, valueChange, fixedReturn },
+        },
+      },
+    });
+
+    const flat = analyse(withPolicy('none'), scope({ period: '2026Q1' })).gross;
+    const marked = analyse(withPolicy('fixed', 0.25), scope({ period: '2026Q1' })).gross;
+
+    // The quarter has holdings that have not reported, so a 25% assumed return
+    // has to show up somewhere.
+    expect(flat.coverage.reported).toBeLessThan(flat.coverage.expected);
+    expect(marked.totals.nav).toBeGreaterThan(flat.totals.nav);
   });
 });
