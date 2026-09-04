@@ -309,6 +309,27 @@ describe('a client\u2019s report layouts live in its own book', () => {
   });
 });
 
+describe('the currency a product reports in', () => {
+  it('is kept in the book, so it survives a reload rather than a rebuild', async () => {
+    const { vault, slug, vehicles } = await bookWith('client-ebg');
+    const abif = vehicles.find((v) => v.shortName === 'AbIF')!;
+    expect(abif.currency).toBe('EUR');
+
+    await replaceReference(vault, slug, {
+      vehicles: vehicles.map((v) => (v.id === abif.id ? { ...v, currency: 'CHF' } : v)),
+    });
+
+    const read = await readClient(vault, slug);
+    const reloaded = read!.dataset.vehicles.find((v) => v.id === abif.id)!;
+    expect(reloaded.currency).toBe('CHF');
+    // The other products are untouched: this is one product's basis, not the
+    // book's.
+    expect(read!.dataset.vehicles.filter((v) => v.currency === 'CHF')).toHaveLength(
+      vehicles.filter((v) => v.currency === 'CHF').length + 1,
+    );
+  });
+});
+
 describe('documents are kept with the figures they produced', () => {
   it('stores the file under its hash and indexes the original name', async () => {
     const { root, vault, slug } = await bookWith('client-ebg');

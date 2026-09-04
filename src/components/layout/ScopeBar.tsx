@@ -31,6 +31,14 @@ export function ScopeBar() {
   const viewingPast = knowledgeDate !== undefined;
   const showClients = clients.length > 1;
 
+  // The currency the product itself reports in — the basis, set with the
+  // product and kept in the book. Undefined on a consolidated view across
+  // products that do not share one, where there is no single basis to name.
+  const selected = vehicles.filter((v) => !vehicleId || v.id === vehicleId);
+  const bases = new Set(selected.map((v) => v.currency));
+  const reportingCurrency = bases.size === 1 ? [...bases][0] : undefined;
+  const translating = currency !== undefined && currency !== reportingCurrency;
+
   const vehicleTabs = useMemo(
     () => vehicles.map((vehicle) => ({
       id: vehicle.id,
@@ -114,10 +122,20 @@ export function ScopeBar() {
           label="Currency"
           value={currency ?? ''}
           onChange={(value) => setCurrency(value || undefined)}
+          // A currency other than the product's own restates every figure on
+          // screen away from the basis the fund actually reports on. That is a
+          // simulation, and it is highlighted like the "as at" selector for the
+          // same reason: nobody should copy a number off a translated screen
+          // believing it is the published one.
+          highlighted={translating}
         >
-          <option value="">Vehicle currency</option>
+          <option value="">
+            {reportingCurrency ? `${reportingCurrency} — as reported` : 'As reported'}
+          </option>
           {currencies.map((code) => (
-            <option key={code} value={code}>{code}</option>
+            <option key={code} value={code}>
+              {code}{code === reportingCurrency ? '' : ' — translated'}
+            </option>
           ))}
         </Selector>
       </div>

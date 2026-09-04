@@ -13,6 +13,12 @@ export function Header() {
 
   const ThemeIcon = theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor;
 
+  // True when the presentation currency is not the one every product in scope
+  // reports in. A consolidation of products with different currencies has no
+  // single basis, so it is not a translation away from one.
+  const bases = new Set(view?.vehicles.map((v) => v.currency) ?? []);
+  const translated = Boolean(view) && bases.size === 1 && ![...bases].includes(view!.currency);
+
   return (
     <header
       className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3"
@@ -31,7 +37,17 @@ export function Header() {
           {view && (
             <>
               <span aria-hidden>·</span>
-              <span>{view.currency}</span>
+              <span>
+                {view.currency}
+                {/* Named as a translation whenever the screen is not on the
+                    product's own reporting basis, so a figure copied from here
+                    carries what it is. */}
+                {translated && (
+                  <span style={{ color: 'var(--status-warning)' }}>
+                    {' '}— translated from {view.vehicles[0]?.currency}
+                  </span>
+                )}
+              </span>
               <span aria-hidden>·</span>
               <span>{view.vehicles[0]?.kind === 'direct-fund' ? 'Direct fund' : 'Fund of funds'}</span>
             </>

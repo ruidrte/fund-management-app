@@ -12,7 +12,9 @@ import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
 import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from '../ingest';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
-import { DEFAULT_CONVENTIONS, type ReportingConventions } from '../domain/types';
+import {
+  DEFAULT_CONVENTIONS, type CurrencyCode, type ReportingConventions,
+} from '../domain/types';
 
 export interface FilingResult {
   /** How many facts were written, or would have been. */
@@ -128,6 +130,54 @@ export function useImport() {
   }, [dataset, book, kind, clientId, folderName, rescan, refresh]);
 
   return { apply, canImport, destination: folderName };
+}
+
+/**
+ * The currency a product reports in.
+ *
+ * A fund's reporting currency is a fact about the fund, not a view setting: the
+ * financial statements, the capital accounts and every figure the investor
+ * reads are in it. So it is set once, kept in the book, and the currency
+ * selector on the scope bar translates *away* from it — which is a simulation,
+ * and says so — rather than deciding the basis quietly.
+ */
+export function useProductCurrency() {
+  const { kind, book, folderName } = useDataSource();
+  const { clientId, dataset, refresh } = useScope();
+
+  const canSave = kind === 'folder' && Boolean(book);
+
+  const save = useCallback(async (vehicleId: string, currency: CurrencyCode) => {
+    if (!dataset) throw new Error('No client is loaded.');
+    const vehicle = dataset.vehicles.find((v) => v.id === vehicleId);
+    if (!vehicle) throw new Error('That product is not in this book.');
+    if (!book || kind !== 'folder') {
+      throw new Error(
+        kind === 'supabase'
+          ? 'Writing to the database is not built yet, so the currency cannot be saved.'
+          : 'The sample dataset is not persisted. Connect a folder under Storage to keep it.',
+      );
+    }
+
+    await book.commit(clientId, {
+      reference: {
+        vehicles: dataset.vehicles.map(
+          (v) => (v.id === vehicleId ? { ...v, currency } : v),
+        ),
+      },
+    });
+    refresh();
+  }, [book, kind, clientId, dataset, refresh]);
+
+  return {
+    vehicles: dataset?.vehicles ?? [],
+    save,
+    canSave,
+    destination: folderName,
+    reason: canSave ? undefined : kind === 'supabase'
+      ? 'Writing to the database is not built yet.'
+      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+  };
 }
 
 /**
