@@ -31,7 +31,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 221 tests over the engine, permissions, ingestion, storage and export
+npm test               # 231 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -279,6 +279,26 @@ foldered by client, with an index recording the standing each was generated at.
 The work is not "produce a report" — it is "produce seven reports, in the same
 fortnight, from data that arrives at seven different times". Opening each
 product in turn to find out which are short is the part that does not scale.
+
+## What is loaded
+
+A map of the book: every quarter across, every kind of data down. Filed rows —
+holding valuations, cashflows, company values, balance sheets, investor flows,
+rates — exist because a document was loaded, and a gap in them is somebody
+else's to fill. Derived rows — the gross portfolio, allocation, look-through,
+the net tier, capital accounts, the report itself — are what the engine can
+build from those, and a gap in them is explained by the filed row above it.
+
+Four states, and the fourth is the one that earns the screen: filed for the
+quarter, partly filed, carried from an earlier quarter, and **no movement —
+complete**. A quarter with no capital call in it is a finished quarter, not a
+missing document, and a screen that renders both as an empty cell sends somebody
+looking for a file that was never going to exist.
+
+"The dashboard is empty" has at least four causes — nothing loaded, the manager
+has not reported, the administrator's pack has not arrived, only the investor
+side came in — and they need four different phone calls. This is the screen that
+tells them apart.
 
 ## Charts
 

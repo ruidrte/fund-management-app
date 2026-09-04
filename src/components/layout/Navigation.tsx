@@ -1,11 +1,12 @@
 import {
-  Activity, CalendarCheck, DatabaseZap, Download, FileText, HardDrive, KeyRound,
-  LayoutDashboard, PieChart, ShieldCheck, Users, Wallet,
+  Activity, CalendarCheck, DatabaseZap, Download, FileText, Grid3x3, HardDrive,
+  KeyRound, LayoutDashboard, PieChart, ShieldCheck, Users, Wallet,
 } from 'lucide-react';
 
 export type PageId =
   | 'dashboard' | 'portfolio' | 'exposure' | 'investors'
-  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'close' | 'storage' | 'access';
+  | 'reports' | 'quality' | 'esg' | 'intake' | 'export' | 'close' | 'coverage'
+  | 'storage' | 'access';
 
 import { useAuth } from '../../context/AuthContext';
 import type { Capability } from '../../auth/permissions';
@@ -28,6 +29,7 @@ const ITEMS: Item[] = [
   { id: 'reports', label: 'Reports', icon: FileText, hint: 'Predefined report layouts', needs: 'reports.generate' },
   { id: 'quality', label: 'Data quality', icon: ShieldCheck, hint: 'Coverage and identity checks', needs: 'audit.read' },
   { id: 'intake', label: 'Data intake', icon: DatabaseZap, hint: 'Load documents and events', needs: 'documents.upload' },
+  { id: 'coverage', label: 'What is loaded', icon: Grid3x3, hint: 'Every quarter, by kind' },
   { id: 'export', label: 'Export', icon: Download, hint: 'Historical extract', needs: 'export' },
   { id: 'esg', label: 'ESG', icon: Activity, hint: 'Sustainability metrics', needs: 'esg.read' },
   { id: 'storage', label: 'Storage', icon: HardDrive, hint: 'Where the data lives' },

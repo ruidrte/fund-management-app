@@ -20,6 +20,7 @@ import { Export } from './pages/Export';
 import { Access } from './pages/Access';
 import { Storage } from './pages/Storage';
 import { Close } from './pages/Close';
+import { Coverage } from './pages/Coverage';
 
 export default function App() {
   return (
@@ -63,7 +64,7 @@ function Gate() {
 const WITHOUT_DATA: PageId[] = ['storage', 'access'];
 
 /** Screens whose whole job is to get data in, or to describe where it lives. */
-const WITHOUT_FIGURES: PageId[] = [...WITHOUT_DATA, 'intake', 'export'];
+const WITHOUT_FIGURES: PageId[] = [...WITHOUT_DATA, 'intake', 'export', 'coverage'];
 
 function Shell() {
   const [page, setPage] = useState<PageId>('dashboard');
@@ -128,6 +129,7 @@ function Page({ page }: { page: PageId }) {
     case 'export': return <Export view={view} />;
     case 'esg': return <Esg view={view} />;
     case 'close': return <Close />;
+    case 'coverage': return <Coverage />;
     case 'dashboard':
     default: return <Dashboard view={view} />;
   }

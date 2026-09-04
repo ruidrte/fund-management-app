@@ -46,6 +46,7 @@ export * from './net';
 export * from './bridge';
 export * from './exposure';
 export * from './checks';
+export * from './inventory';
 
 export interface QuarterView {
   scope: Scope;
