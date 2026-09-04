@@ -61,12 +61,22 @@ export function ManualEvent({
   const [preview, setPreview] = useState<Candidate>();
   const [failure, setFailure] = useState<string>();
 
+  // Every product in scope, not the first of them. On a consolidated view the
+  // old filter silently offered one product's holdings, so a figure meant for
+  // Planetary Health Fund I could be filed against the identically named fund
+  // in Abendrot Impulse Fund without anything on screen disagreeing.
+  const consolidated = view.vehicles.length > 1;
+  const inScope = useMemo(() => new Set(view.vehicles.map((v) => v.id)), [view.vehicles]);
   const positions = useMemo(
-    () => (dataset?.positions ?? []).filter(
-      (p) => !view.vehicles[0] || p.vehicleId === view.vehicles[0].id,
-    ),
-    [dataset, view.vehicles],
+    () => (dataset?.positions ?? []).filter((p) => inScope.has(p.vehicleId)),
+    [dataset, inScope],
   );
+  const productOf = useMemo(
+    () => new Map(view.vehicles.map((v) => [v.id, v.shortName || v.name])),
+    [view.vehicles],
+  );
+
+  const [vehicleId, setVehicleId] = useState(view.vehicles[0]?.id ?? '');
 
   const position = positions.find((p) => p.id === positionId);
 
@@ -131,7 +141,7 @@ export function ManualEvent({
     }
 
     const target = kind === 'balance-sheet'
-      ? view.vehicles[0]
+      ? view.vehicles.find((v) => v.id === vehicleId) ?? view.vehicles[0]
       : position;
 
     return {
@@ -184,7 +194,15 @@ export function ManualEvent({
     void (async () => {
       try {
         const result = await file([{ ...preview, state: 'accepted' }], document);
-        onSubmitted(`${EVENT_LABEL[kind]} — ${result.message}`);
+        // Named back, because the two ways this goes wrong — the wrong holding
+        // and the wrong quarter — both look like success otherwise.
+        const against = kind === 'balance-sheet'
+          ? (view.vehicles.find((v) => v.id === vehicleId)?.name ?? 'the product')
+          : `${position?.name ?? 'the holding'}${consolidated && position
+            ? ` in ${productOf.get(position.vehicleId) ?? ''}` : ''}`;
+        onSubmitted(
+          `${EVENT_LABEL[kind]} for ${against}, ${formatPeriod(view.period)} — ${result.message}`,
+        );
       } catch (cause) {
         setFailure(cause instanceof Error ? cause.message : String(cause));
       }
@@ -224,8 +242,23 @@ export function ManualEvent({
               <select className="field" value={positionId} required
                 onChange={(event) => setPositionId(event.target.value)}>
                 <option value="">Select…</option>
-                {positions.map((position) => (
-                  <option key={position.id} value={position.id}>{position.name}</option>
+                {positions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {consolidated
+                      ? `${productOf.get(option.vehicleId) ?? '?'} — ${option.name}`
+                      : option.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {kind === 'balance-sheet' && consolidated && (
+            <Field label="Product">
+              <select className="field" value={vehicleId} required
+                onChange={(event) => setVehicleId(event.target.value)}>
+                {view.vehicles.map((vehicle) => (
+                  <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>
                 ))}
               </select>
             </Field>
