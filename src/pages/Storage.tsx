@@ -166,8 +166,20 @@ export function Storage() {
                 page loads. There is no way to recover it.
               </Line>
               <div className="flex flex-wrap items-end gap-2">
+                {/*
+                  A password manager needs an identity to file the entry under,
+                  and a form it recognises. Giving it both is what lets the
+                  passphrase be long: a phrase nobody types is free to be one
+                  nobody can guess either.
+                */}
+                <input
+                  type="text" name="username" autoComplete="username" readOnly
+                  tabIndex={-1} aria-hidden value={folderName ?? 'book'}
+                  className="absolute h-0 w-0 opacity-0"
+                />
                 <input
                   type="password" className="field max-w-xs" autoFocus
+                  name="passphrase" autoComplete="current-password"
                   placeholder="Passphrase" value={passphrase}
                   onChange={(event) => setPassphrase(event.target.value)}
                 />
@@ -215,13 +227,20 @@ export function Storage() {
                 {protectNew && (
                   <div className="flex flex-wrap items-end gap-2">
                     <input
+                      type="text" name="username" autoComplete="username" readOnly
+                      tabIndex={-1} aria-hidden value={folderName ?? 'book'}
+                      className="absolute h-0 w-0 opacity-0"
+                    />
+                    <input
                       type="password" className="field max-w-xs"
+                      name="new-passphrase" autoComplete="new-password"
                       placeholder={`Passphrase — at least ${MINIMUM_PASSPHRASE} characters`}
                       value={passphrase}
                       onChange={(event) => setPassphrase(event.target.value)}
                     />
                     <input
                       type="password" className="field max-w-xs"
+                      name="confirm-passphrase" autoComplete="new-password"
                       placeholder="Again"
                       value={confirmation}
                       onChange={(event) => setConfirmation(event.target.value)}
@@ -233,6 +252,12 @@ export function Storage() {
                           : 'The two do not match'}
                       </span>
                     )}
+                    <p className="m-0 w-full text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      Four ordinary words are the right shape: quick to type, and past anything a
+                      guessing machine can work through. A short one is not — the folder is the whole
+                      secret, so whoever holds a copy can try every candidate offline, at thousands a
+                      second on one graphics card. Six digits fall in under two minutes.
+                    </p>
                   </div>
                 )}
               </div>
@@ -269,7 +294,9 @@ export function Storage() {
                   clients this book holds — the client folders are named with random ids for that
                   reason. What stays readable is <code>book.json</code>: the schema version and how
                   the key is derived from the passphrase, which says nothing about the contents.
-                  The passphrase is held in memory only and is asked for again after a reload.
+                  The passphrase is held in memory only and is asked for again after a reload — so
+                  it is worth saving in a password manager, which is also what makes a long one
+                  cost nothing to use.
                 </Line>
               )}
 
