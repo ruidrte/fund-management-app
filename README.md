@@ -41,6 +41,12 @@ opens from a link, an email attachment or a local disk with no server at all.
 Everything works in that build except reading PDFs, which needs the pdf.js
 worker as a separate file; it says so rather than failing obscurely.
 
+On Windows, `start.bat` does the daily version of that in one double-click:
+update, install anything new, open the browser, start the server. It stops at
+the browser on purpose — the folder permission and the passphrase are asked for
+every time, and a script that remembered either would defeat the encryption it
+is protecting.
+
 ### Getting to your own data, from nothing
 
 On a machine that has never run it, in order. Chrome or Edge — folder access
