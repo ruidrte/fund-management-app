@@ -21,7 +21,10 @@ import { throughPeriod, forPeriod } from './asof';
 import type { RateLookup } from './fx';
 import { flowRateKind } from './fx';
 import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples } from './metrics';
-import { resolvePositionStates, weakest, type CoverageSummary, type PositionState } from './completeness';
+import {
+  resolvePositionStates, weakest,
+  type CoverageSummary, type PositionState, type Translate,
+} from './completeness';
 import type { ReportingConventions } from '../domain/types';
 
 export interface PositionResult {
@@ -103,13 +106,24 @@ export function computeGross(inputs: GrossInputs): GrossResult {
   const policy: DraftPolicy = conventions.draftPolicy;
   const prior = previousPeriod(period);
 
+  // Coverage and the cohort return are shares and ratios over the whole
+  // portfolio, so they are computed on one scale rather than by adding
+  // Swedish kronor to dollars. Both sides of a ratio use the same period's
+  // rate, so translation cancels and what is left is the local value change.
+  const currencyOf = new Map(positions.map((p) => [p.id, p.currency]));
+  const onto = (at: PeriodId): Translate => (positionId, amount) => {
+    const local = currencyOf.get(positionId);
+    if (!local) return amount;
+    return amount * (rates.tryRate(local, presentationCurrency, at) ?? 1);
+  };
+
   const current = resolvePositionStates(
-    positions, valuations, cashflows, period, policy, knowledgeDate,
+    positions, valuations, cashflows, period, policy, knowledgeDate, onto(period),
   );
   // The comparative is resolved through the same machinery, so a restated prior
   // quarter shows the same number the current-quarter bridge opens from.
   const priorResolved = resolvePositionStates(
-    positions, valuations, cashflows, prior, policy, knowledgeDate,
+    positions, valuations, cashflows, prior, policy, knowledgeDate, onto(prior),
   );
   const priorByPosition = new Map(priorResolved.states.map((s) => [s.positionId, s]));
 

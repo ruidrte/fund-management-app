@@ -137,6 +137,19 @@ function periodOfDate(date: string): PeriodId {
  * that have not reported — an estimate anchored to this quarter's actual
  * experience rather than to a house assumption.
  */
+/**
+ * Restates an amount held in one position's own currency into the currency
+ * everything is being measured in.
+ *
+ * Coverage and the cohort return are both ratios over sums across positions,
+ * and a sum across currencies is not a quantity: 27,000 SEK and 2,000 USD add
+ * to nothing meaningful, and the Swedish holding would dominate a share it
+ * accounts for a third of. Every amount handed to this uses the same period's
+ * rate, so translation cancels within a position and the return that comes out
+ * is the local value change, weighted by size on one scale.
+ */
+export type Translate = (positionId: string, amount: number) => number;
+
 export function resolvePositionStates(
   positions: Position[],
   valuations: PositionValuation[],
@@ -144,6 +157,7 @@ export function resolvePositionStates(
   period: PeriodId,
   policy: DraftPolicy,
   knowledgeDate?: string,
+  translate?: Translate,
 ): DraftResult {
   const expected = positions.filter((p) => isExpectedToReport(p, period));
 
@@ -187,13 +201,13 @@ export function resolvePositionStates(
     const reported = [...reportedStates.values()].filter((state) =>
       expected.find((p) => p.id === state.positionId)?.vehicleId === vehicleId);
     byVehicle.set(vehicleId, reportedCohortReturn(
-      reported, valuations, cashflows, period, knowledgeDate,
+      reported, valuations, cashflows, period, knowledgeDate, translate,
     ));
   }
 
   // Falls back to the whole scope when a vehicle has nothing reported at all.
   const overallReturn = reportedCohortReturn(
-    [...reportedStates.values()], valuations, cashflows, period, knowledgeDate,
+    [...reportedStates.values()], valuations, cashflows, period, knowledgeDate, translate,
   );
 
   // Pass 2 — fill the gaps.
@@ -208,7 +222,7 @@ export function resolvePositionStates(
 
   states.sort((a, b) => a.positionId.localeCompare(b.positionId));
 
-  return summarise(states, expected.length, policy, overallReturn);
+  return summarise(states, expected.length, policy, overallReturn, translate);
 }
 
 function fillGap(
@@ -326,6 +340,7 @@ function reportedCohortReturn(
   cashflows: Cashflow[],
   period: PeriodId,
   knowledgeDate?: string,
+  translate?: Translate,
 ): number | undefined {
   if (reported.length === 0) return undefined;
 
@@ -348,8 +363,10 @@ function reportedCohortReturn(
       period,
       knowledgeDate,
     );
-    base += prior.nav + flow;
-    closing += state.nav;
+    const into = (amount: number) =>
+      (translate ? translate(state.positionId, amount) : amount);
+    base += into(prior.nav + flow);
+    closing += into(state.nav);
   }
 
   if (base <= 0) return undefined;
@@ -406,14 +423,17 @@ function summarise(
   expected: number,
   policy: DraftPolicy,
   cohortReturn: number | undefined,
+  translate?: Translate,
 ): DraftResult {
   const count = (p: Provenance) => states.filter((s) => s.provenance === p).length;
   const positions = (n: number) => `${n} position${n === 1 ? '' : 's'}`;
 
-  const totalNav = states.reduce((sum, s) => sum + Math.abs(s.nav), 0);
+  const weigh = (s: PositionState) =>
+    Math.abs(translate ? translate(s.positionId, s.nav) : s.nav);
+  const totalNav = states.reduce((sum, s) => sum + weigh(s), 0);
   const reportedNav = states
     .filter((s) => s.provenance === 'reported')
-    .reduce((sum, s) => sum + Math.abs(s.nav), 0);
+    .reduce((sum, s) => sum + weigh(s), 0);
   const navCoverage = totalNav > 0 ? reportedNav / totalNav : 0;
 
   const provenance = weakest(states.map((s) => s.provenance));

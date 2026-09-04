@@ -111,7 +111,11 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         kind: 'fund-of-funds',
         currency: 'EUR',
         inception: '2022-06-30',
-        investorCommitment: 95_000,
+        // GLS is the fund's only limited partner, and this is what it
+        // subscribed. A total larger than the register makes the engine read
+        // the register as incomplete and refuse to allocate the last unit of
+        // net asset value to anybody.
+        investorCommitment: 10_000,
         status: 'Investing',
         domicile: 'Luxembourg',
         administrator: 'Northgate Fund Services',

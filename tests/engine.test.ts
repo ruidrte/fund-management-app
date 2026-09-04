@@ -679,3 +679,87 @@ describe('where a book gets its conventions', () => {
     expect(marked.totals.nav).toBeGreaterThan(flat.totals.nav);
   });
 });
+
+describe('coverage across currencies', () => {
+  // Two holdings of similar size, one quoted in a currency whose numbers are an
+  // order of magnitude larger. Adding the two NAVs as though they were the same
+  // quantity makes the krona holding look like almost the whole portfolio, and
+  // the share of NAV that reported comes out at a fraction of the truth — which
+  // then refuses a quarter that should publish.
+  const rate = (quote: string, value: number): FxRate => ({
+    id: `fx-${quote}`, base: 'EUR', quote, rate: value, period: '2026Q1',
+    date: '2026-03-31', recordedAt: '2026-04-10T00:00:00Z', kind: 'closing', source: 'test',
+  });
+
+  const twoCurrencies = (): DataSet => {
+    const base = buildDemoDataSet('client-ebg');
+    const vehicle = { ...base.vehicles[0], currency: 'EUR' };
+    const position = (id: string, currency: string) => ({
+      id, vehicleId: vehicle.id, kind: 'fund' as const, name: id, currency,
+      vintage: 2020, commitmentDate: '2020-01-01', commitment: 1000, ownership: 1,
+      assetClass: 'PE', region: 'Europe', status: 'Investing' as const,
+    });
+    const valued = (id: string, period: string, nav: number) => ({
+      id: `val-${id}-${period}`, positionId: id, period, nav,
+      recordedAt: '2026-04-10T00:00:00Z', source: 'test',
+    });
+
+    return {
+      ...base,
+      vehicles: [vehicle],
+      positions: [position('krona', 'SEK'), position('euro', 'EUR')],
+      assets: [],
+      assetValuations: [],
+      investors: [],
+      cashflows: [],
+      balanceSheets: [],
+      esgMetrics: [],
+      // Roughly 11 SEK to the euro: the two holdings are worth about the same.
+      fxRates: [rate('SEK', 11), rate('USD', 1.1)],
+      positionValuations: [
+        valued('krona', '2025Q4', 11_000),
+        valued('euro', '2025Q4', 1_000),
+        // Only the euro holding reports for the quarter.
+        valued('euro', '2026Q1', 1_020),
+      ],
+    } as DataSet;
+  };
+
+  it('measures the reported share on one scale, not by adding currencies', () => {
+    const view = analyse(twoCurrencies(), {
+      clientId: 'client-ebg', vehicleId: 'veh-abif', period: '2026Q1',
+      presentationCurrency: 'EUR',
+    });
+
+    // One of two holdings reported, and it is half the portfolio by value.
+    expect(view.gross.coverage.reported).toBe(1);
+    expect(view.gross.coverage.expected).toBe(2);
+    expect(view.gross.coverage.navCoverage).toBeGreaterThan(0.45);
+    expect(view.gross.coverage.navCoverage).toBeLessThan(0.55);
+    // Which is above the floor, so the quarter is publishable.
+    expect(view.gross.coverage.publishable).toBe(true);
+  });
+
+  it('reads the same in any presentation currency', () => {
+    const dataset = twoCurrencies();
+    const scoped = (presentationCurrency: string) => analyse(dataset, {
+      clientId: 'client-ebg', vehicleId: 'veh-abif', period: '2026Q1', presentationCurrency,
+    }).gross.coverage.navCoverage;
+
+    expect(scoped('SEK')).toBeCloseTo(scoped('EUR'), 6);
+  });
+
+  it('takes the value change from what reported, not from the largest number', () => {
+    const view = analyse(twoCurrencies(), {
+      clientId: 'client-ebg', vehicleId: 'veh-abif', period: '2026Q1',
+      presentationCurrency: 'EUR',
+    });
+
+    // The euro holding moved 1,000 -> 1,020. The krona holding is carried at
+    // that same 2%, so it lands on 11,220 SEK, not on a rate diluted by having
+    // been averaged against a number eleven times its size.
+    const carried = view.gross.positions.find((p) => p.position.id === 'krona')!;
+    expect(carried.provenance).toBe('estimated');
+    expect(carried.nav).toBeCloseTo(11_220 / 11, 2);
+  });
+});
