@@ -31,7 +31,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 235 tests over the engine, permissions, ingestion, storage and export
+npm test               # 249 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -100,7 +100,7 @@ the application's reach.
 |---|---|---|---|---|---|
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund I | fund-of-funds | EUR | 2021-06-30 | Investing |
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund II | fund-of-funds | EUR | 2024-09-30 | Fundraising |
-| PAM | PAS Infra | fund-of-funds | CHF | 2019-12-31 | Harvesting |
+| PAM | PAS Infra | fund-of-funds | EUR | 2024-02-27 | Investing |
 | EBG | Abendrot Impulse Fund | fund-of-funds | EUR | 2020-03-31 | Investing |
 | EBG | Planetary Health Fund I | fund-of-funds | EUR | 2022-06-30 | Investing |
 | EBG | PK TG | fund-of-funds | CHF | 2018-09-30 | Harvesting |

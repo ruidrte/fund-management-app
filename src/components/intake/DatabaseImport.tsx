@@ -17,7 +17,10 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
-import { planImport, similarity, type DatabaseOutcome, type ImportPlan, type ProgramSummary } from '../../ingest';
+import {
+  planImport, planSupportImport, similarity,
+  type DatabaseOutcome, type ImportPlan, type ProgramSummary,
+} from '../../ingest';
 import { useImport } from '../../context/filing';
 import { useScope } from '../../context/ScopeContext';
 import type { Vehicle } from '../../domain/types';
@@ -65,10 +68,19 @@ export function DatabaseImport({
   const { vehicles } = useScope();
   const { apply, canImport, destination } = useImport();
 
+  // A quarterly reporting workbook describes one product; a portfolio database
+  // describes every programme a manager runs. The screen is the same — choose
+  // where each thing goes, see what would be written, commit once — because the
+  // question a person is answering is the same.
+  const support = outcome.support;
+
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
-  const portfolios = outcome.programs.filter((p) => !p.investorIn);
-  const partners = outcome.programs.filter((p) => p.investorIn);
+  const portfolios = support
+    ? [{ program: support.fund, funds: support.holdings, transactions: support.movements,
+      companies: 0, first: support.first, last: support.last } as ProgramSummary]
+    : outcome.programs.filter((p) => !p.investorIn);
+  const partners = support ? [] : outcome.programs.filter((p) => p.investorIn);
 
   const [targets, setTargets] = useState<Target[]>(() => {
     const taken = new Set<string>();
@@ -96,12 +108,14 @@ export function DatabaseImport({
 
   const plans = useMemo<ImportPlan[]>(() => {
     try {
-      return chosen.map((target) => planImport(outcome.sheets, {
-        program: target.program,
-        vehicleId: target.vehicleId,
-        investorProgram: target.investorProgram || undefined,
-        investorName: target.investorProgram || undefined,
-      }));
+      return chosen.map((target) => (support
+        ? planSupportImport(outcome.sheets, { vehicleId: target.vehicleId })
+        : planImport(outcome.sheets, {
+          program: target.program,
+          vehicleId: target.vehicleId,
+          investorProgram: target.investorProgram || undefined,
+          investorName: target.investorProgram || undefined,
+        })));
     } catch (cause) {
       setFailure(cause instanceof Error ? cause.message : String(cause));
       return [];
@@ -109,7 +123,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, JSON.stringify(chosen)]);
+  }, [outcome.sheets, support, JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
   // same one would silently replace each other's holdings.
@@ -136,11 +150,19 @@ export function DatabaseImport({
   return (
     <div className="flex flex-col gap-4">
       <Card
-        title="This is a portfolio database, not a document"
-        subtitle={outcome.document.name}
+        title={support
+          ? 'This is a quarterly reporting workbook, not a document'
+          : 'This is a portfolio database, not a document'}
+        subtitle={support
+          ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
+          : outcome.document.name}
         actions={
           <div className="flex items-center gap-2">
-            <StatusPill tone="serious">{outcome.programs.length} programme(s)</StatusPill>
+            <StatusPill tone="serious">
+              {support
+                ? `${support.holdings} holding(s), ${support.investors} investor(s)`
+                : `${outcome.programs.length} programme(s)`}
+            </StatusPill>
             <button
               type="button" onClick={onClose}
               className="rounded px-2 py-1 text-xs"
@@ -150,9 +172,13 @@ export function DatabaseImport({
             </button>
           </div>
         }
-        note="Five related sheets rather than a list of facts, so it is imported as a whole rather than
-              reviewed row by row. Every figure still carries this file's hash, and the file itself is
-              kept beside them."
+        note={support
+          ? `Read as a whole rather than row by row: the ledger of movements, the balance sheet quarter `
+            + `by quarter, and the investors' own ledger. It carries the two things a portfolio `
+            + `database cannot — the cash and accruals outside the portfolio, and the capital accounts.`
+          : `Five related sheets rather than a list of facts, so it is imported as a whole rather than `
+            + `reviewed row by row. Every figure still carries this file's hash, and the file itself is `
+            + `kept beside them.`}
       >
         <DataTable
           rows={outcome.programs}
@@ -168,7 +194,10 @@ export function DatabaseImport({
             },
             { key: 'funds', header: 'Funds', align: 'right', render: (row) => row.funds },
             { key: 'tx', header: 'Movements', align: 'right', render: (row) => row.transactions },
-            { key: 'companies', header: 'Companies', align: 'right', render: (row) => row.companies },
+            ...(support ? [] : [{
+              key: 'companies', header: 'Companies', align: 'right' as const,
+              render: (row: ProgramSummary) => row.companies,
+            }]),
             {
               key: 'span', header: 'Covering',
               render: (row) => (row.first && row.last
@@ -180,10 +209,12 @@ export function DatabaseImport({
       </Card>
 
       <Card
-        title="Where each programme goes"
+        title={support ? 'Which product this is' : 'Where each programme goes'}
         subtitle={chosen.length === 0
           ? 'Nothing selected'
-          : `${chosen.length} of ${portfolios.length} programme(s), in one write`}
+          : support
+            ? 'One product, in one write'
+            : `${chosen.length} of ${portfolios.length} programme(s), in one write`}
         actions={
           <button
             type="button" onClick={commit}
@@ -193,7 +224,9 @@ export function DatabaseImport({
             style={{ background: 'var(--series-1)', color: '#fff' }}
           >
             {busy ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Database size={13} aria-hidden />}
-            {chosen.length > 1 ? `Import ${chosen.length} programmes` : `Import ${chosen[0]?.program ?? 'nothing'}`}
+            {chosen.length > 1
+              ? `Import ${chosen.length} programmes`
+              : support ? 'Import this workbook' : `Import ${chosen[0]?.program ?? 'nothing'}`}
           </button>
         }
       >
@@ -221,7 +254,10 @@ export function DatabaseImport({
                 />
               ),
             },
-            { key: 'program', header: 'Programme', render: (row) => row.program },
+            {
+              key: 'program', header: support ? 'Workbook' : 'Programme',
+              render: (row) => row.program,
+            },
             {
               key: 'vehicle', header: 'Into which product',
               render: (row) => (
@@ -240,9 +276,10 @@ export function DatabaseImport({
                 </select>
               ),
             },
-            {
-              key: 'investor', header: 'Its limited partner',
-              render: (row) => (
+            ...(support ? [] : [{
+              key: 'investor',
+              header: 'Its limited partner',
+              render: (row: Target) => (
                 <select
                   className="field" value={row.investorProgram}
                   onChange={(event) => set(row.program, { investorProgram: event.target.value })}
@@ -255,7 +292,7 @@ export function DatabaseImport({
                   ))}
                 </select>
               ),
-            },
+            }]),
           ]}
         />
 
@@ -268,9 +305,12 @@ export function DatabaseImport({
         )}
 
         <p className="mt-2 mb-0 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          The limited partner&rsquo;s programme is that vehicle seen from the investor&rsquo;s side: its rows
-          become the capital account and the fees charged to it, never portfolio holdings. Choosing it
-          fills the net tier as well as the gross one.
+          {support
+            ? 'The investors come from the workbook itself, with their commitments and their calls, '
+              + 'so the net tier and the capital accounts fill alongside the portfolio.'
+            : 'The limited partner’s programme is that vehicle seen from the investor’s side: its rows '
+              + 'become the capital account and the fees charged to it, never portfolio holdings. '
+              + 'Choosing it fills the net tier as well as the gross one.'}
         </p>
 
         {plans.length > 0 && (
@@ -279,8 +319,10 @@ export function DatabaseImport({
               <Count label="Holdings" value={total((p) => p.positions)} />
               <Count label="Valuations" value={total((p) => p.valuations)} />
               <Count label="Cashflows" value={total((p) => p.cashflows)} />
-              <Count label="Companies" value={total((p) => p.assets)} />
-              <Count label="Company values" value={total((p) => p.assetValuations)} />
+              <Count label={support ? 'Investors' : 'Companies'}
+                value={support ? total((p) => p.investors) : total((p) => p.assets)} />
+              <Count label={support ? 'Balance sheets' : 'Company values'}
+                value={support ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
               <Count label="Rates" value={plans[0].fxRates.length} />
             </div>
 

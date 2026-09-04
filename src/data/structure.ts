@@ -74,10 +74,12 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         name: 'PAS Infra',
         shortName: 'PAS Infra',
         kind: 'fund-of-funds',
-        currency: 'CHF',
-        inception: '2019-12-31',
-        investorCommitment: 250_000,
-        status: 'Harvesting',
+        // Its books, its capital accounts and its reporting workbook are all
+        // in euro, whatever the currency of the foundation behind it.
+        currency: 'EUR',
+        inception: '2024-02-27',
+        investorCommitment: 27_900_000,
+        status: 'Investing',
         domicile: 'Switzerland',
         administrator: 'Helvetia Fund Administration',
       },

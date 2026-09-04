@@ -39,7 +39,7 @@
 import { periodForDate, type PeriodId } from '../domain/period';
 import type {
   Asset, AssetValuation, Cashflow, CashflowType, CurrencyCode, FxRate, Investor,
-  Position, PositionKind, PositionValuation,
+  Position, PositionKind, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
@@ -95,6 +95,8 @@ export interface ImportPlan {
   investors: Investor[];
   assets: Asset[];
   assetValuations: AssetValuation[];
+  /** Cash, other assets, liabilities and accruals at product level. */
+  balanceSheets: VehicleBalanceSheet[];
   fxRates: FxRate[];
   /** Rows that could not be read, each naming its sheet and line. */
   problems: string[];
@@ -668,6 +670,9 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
     investors,
     assets,
     assetValuations,
+    // A portfolio database says nothing about the vehicle's own cash and
+    // accruals; those come from the administrator, not from the manager.
+    balanceSheets: [],
     fxRates,
     problems,
     periods: [...periods].sort(),

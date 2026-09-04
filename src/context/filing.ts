@@ -122,6 +122,7 @@ export function useImport() {
         positionValuations: all((plan) => plan.valuations),
         assetValuations: all((plan) => plan.assetValuations),
         cashflows: all((plan) => plan.cashflows),
+        balanceSheets: all((plan) => plan.balanceSheets),
         fxRates: rates,
       },
       document: { ...document, status: 'committed' },
@@ -139,6 +140,8 @@ export function useImport() {
         ? `${all((plan) => plan.assets).length} company(ies)` : '',
       all((plan) => plan.assetValuations).length > 0
         ? `${all((plan) => plan.assetValuations).length} company valuation(s)` : '',
+      all((plan) => plan.balanceSheets).length > 0
+        ? `${all((plan) => plan.balanceSheets).length} balance sheet(s)` : '',
       rates.length > 0 ? `${rates.length} rate(s)` : '',
     ].filter(Boolean);
 

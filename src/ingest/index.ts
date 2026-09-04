@@ -14,6 +14,7 @@ import {
 } from './workbook';
 import { extractorFor } from './extractors';
 import { isPortfolioDatabase, programsIn, type ProgramSummary } from './pfdb';
+import { isSupportWorkbook, summariseSupport, type SupportSummary } from './support';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -24,6 +25,10 @@ export {
   isPortfolioDatabase, planImport, programsIn,
   type ImportPlan, type PfdbOptions, type ProgramSummary,
 } from './pfdb';
+export {
+  isSupportWorkbook, planSupportImport, summariseSupport,
+  type SupportOptions, type SupportSummary,
+} from './support';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
 export { validateAll, canCommit, stringField, numberField, booleanField } from './validate';
@@ -80,7 +85,10 @@ export async function openDatabase(
 
   const bytes = new Uint8Array(await file.arrayBuffer());
   const workbook = parseXlsx(bytes);
-  if (!isPortfolioDatabase(workbook.sheets)) return undefined;
+  const support = isSupportWorkbook(workbook.sheets)
+    ? summariseSupport(workbook.sheets)
+    : undefined;
+  if (!isPortfolioDatabase(workbook.sheets) && !support) return undefined;
 
   return {
     document: {
@@ -97,7 +105,8 @@ export async function openDatabase(
     },
     bytes,
     sheets: workbook.sheets,
-    programs: programsIn(workbook.sheets),
+    programs: isPortfolioDatabase(workbook.sheets) ? programsIn(workbook.sheets) : [],
+    support,
   };
 }
 
@@ -106,7 +115,10 @@ export interface DatabaseOutcome {
   /** Kept so the file itself can be stored beside the figures it produced. */
   bytes: Uint8Array;
   sheets: TableData[];
+  /** Programmes, when the file is a portfolio database. */
   programs: ProgramSummary[];
+  /** The product, when it is one product's quarterly reporting workbook. */
+  support?: SupportSummary;
 }
 
 export async function ingest(
