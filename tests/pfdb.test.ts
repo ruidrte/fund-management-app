@@ -301,3 +301,75 @@ describe('funds whose names differ only at the end', () => {
     expect(built().positions.map((p) => p.id)).toEqual(built().positions.map((p) => p.id));
   });
 });
+
+describe('a workbook holding more than one product', () => {
+  // The real one holds every programme a house runs. Loading them one at a time
+  // files the same rate table twice and leaves the book half-migrated if the
+  // second pass never happens, so they are planned together and committed once.
+  const sheets = (): TableData[] => [
+    {
+      sheetName: 'FundDB',
+      rows: [
+        ['Progid', 'Program', 'Fund', 'CCY', 'Size (Mio)', 'Vintage'],
+        ['1', 'ABIF', 'Baltic Wind Partners II', 'EUR', 200, 2021],
+        ['2', 'PHF', 'Nordic Health Fund I', 'EUR', 300, 2022],
+      ],
+    },
+    {
+      sheetName: 'FundTX',
+      rows: [
+        ['Program', 'Fund', 'Date', 'CCY', 'Commitment', 'Capital Calls', 'NAV', 'DCash'],
+        ['ABIF', 'Baltic Wind Partners II', serial('2021-06-30'), 'EUR', 8000, null, null, 0],
+        ['ABIF', 'Baltic Wind Partners II', serial('2022-03-31'), 'EUR', null, 2000, 2100, -2000],
+        ['PHF', 'Nordic Health Fund I', serial('2022-06-30'), 'EUR', 5000, null, null, 0],
+        ['PHF', 'Nordic Health Fund I', serial('2022-09-30'), 'EUR', null, 1200, 1250, -1200],
+      ],
+    },
+    {
+      sheetName: 'FX',
+      rows: [
+        ['Date', 'USD', 'EUR', 'CHF'],
+        [serial('2022-03-31'), 1.1101, 1, 0.9932],
+        [serial('2022-06-30'), 1.0387, 1, 0.9967],
+      ],
+    },
+  ];
+
+  const both = () => [
+    planImport(sheets(), { program: 'ABIF', vehicleId: 'veh-abif' }),
+    planImport(sheets(), { program: 'PHF', vehicleId: 'veh-phf-i' }),
+  ];
+
+  it('keeps each programme to its own product', () => {
+    const [abif, phf] = both();
+
+    expect(abif.positions.map((p) => p.name)).toEqual(['Baltic Wind Partners II']);
+    expect(phf.positions.map((p) => p.name)).toEqual(['Nordic Health Fund I']);
+    expect(abif.positions.every((p) => p.vehicleId === 'veh-abif')).toBe(true);
+    expect(phf.positions.every((p) => p.vehicleId === 'veh-phf-i')).toBe(true);
+  });
+
+  it('gives the two no holding, valuation or cashflow in common', () => {
+    const [abif, phf] = both();
+    const ids = (plan: typeof abif) => [
+      ...plan.positions.map((r) => r.id),
+      ...plan.valuations.map((r) => r.id),
+      ...plan.cashflows.map((r) => r.id),
+    ];
+    const shared = ids(abif).filter((id) => ids(phf).includes(id));
+
+    expect(shared).toEqual([]);
+  });
+
+  it('reads the one rate table identically, so the duplicates collapse', () => {
+    const [abif, phf] = both();
+
+    // Same ids, because a rate's id names its pair and its date — not the
+    // programme that happened to carry it. That is what lets one commit file
+    // the table once.
+    expect(abif.fxRates.map((r) => r.id)).toEqual(phf.fxRates.map((r) => r.id));
+    const merged = new Map([...abif.fxRates, ...phf.fxRates].map((r) => [r.id, r]));
+    expect(merged.size).toBe(abif.fxRates.length);
+    expect(abif.fxRates.length).toBeGreaterThan(0);
+  });
+});

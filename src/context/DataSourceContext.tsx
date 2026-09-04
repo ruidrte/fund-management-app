@@ -9,7 +9,9 @@
  *   A folder   chosen by the user, on their own disk. Real data, no server,
  *              no account — and no row-level security either, so it is exactly
  *              as private as the folder is.
- *   Sample     the built-in dataset. Real structure, invented figures.
+ *   None       the structure and nothing measured, until one of the above is
+ *              connected. There is no built-in dataset: a screen of plausible
+ *              figures nobody filed can be screenshotted, sent and believed.
  *
  * The application above this is identical in all three. What changes is who is
  * responsible for the data, which is why the current source is named in the
@@ -20,7 +22,7 @@ import {
   createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode,
 } from 'react';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { demoRepository } from '../data/demoRepository';
+import { unopenedRepository } from '../data/unopenedRepository';
 import { supabaseRepository } from '../data/supabaseRepository';
 import type { Repository } from '../data/repository';
 import {
@@ -33,9 +35,9 @@ import {
 } from '../data/workspace/store';
 import { unlock, WrongPassphrase, type Cipher } from '../data/workspace/crypto';
 import { manifestOf, openBook, type LocalBook } from '../data/workspace/repository';
-import { buildClientStructure } from '../data/demo';
+import { buildClientStructure } from '../data/structure';
 
-export type SourceKind = 'supabase' | 'folder' | 'sample';
+export type SourceKind = 'supabase' | 'folder' | 'none';
 
 export type FolderStatus =
   /** Looking for a folder this browser already knows about. */
@@ -226,14 +228,14 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
 
   const startBook = useCallback(async (clientId: string, passphrase?: string) => {
     if (!handle) throw new Error('No folder is connected.');
-    const { client, vehicles } = buildClientStructure(clientId);
+    const { client, vehicles, reporting } = buildClientStructure(clientId);
 
     let key = cipher;
     if (!await manifestOf(handle)) {
       const started = await initialiseBook(handle, passphrase || undefined);
       key = started.cipher;
     }
-    await createClientFolder(vaultFor(handle, key), client, vehicles, key);
+    await createClientFolder(vaultFor(handle, key), client, vehicles, key, reporting);
     await adopt(handle, key);
   }, [handle, cipher, adopt]);
 
@@ -242,11 +244,11 @@ export function DataSourceProvider({ children }: { children: ReactNode }) {
     setSummary(await summarise(handle));
   }, [handle]);
 
-  const kind: SourceKind = backend ? 'supabase' : book ? 'folder' : 'sample';
+  const kind: SourceKind = backend ? 'supabase' : book ? 'folder' : 'none';
 
   const value = useMemo<DataSourceValue>(() => ({
     kind,
-    repository: backend ? supabaseRepository : book ?? demoRepository,
+    repository: backend ? supabaseRepository : book ?? unopenedRepository,
     folderStatus: status,
     locked: status === 'locked',
     folderName: handle?.name,

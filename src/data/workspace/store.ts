@@ -434,6 +434,7 @@ export async function readClient(
 /** Creates the folder for a client that is not in the book yet. */
 export async function createClient(
   vault: Vault, client: Client, vehicles: Vehicle[], cipher?: Cipher,
+  reporting?: ReportingProfile,
 ): Promise<BookManifest> {
   const now = new Date().toISOString();
   const existing = await readManifest(vault.root);
@@ -449,7 +450,11 @@ export async function createClient(
 
   const dir = clientDir(slug);
   await vault.writeText(`${dir}/client.json`, JSON.stringify(client, null, 2));
-  await replaceReference(vault, slug, { vehicles, positions: [], assets: [], investors: [] });
+  // The default pack goes in with the structure, so a book can produce a
+  // report the day it is started; it is a layout to edit, not a fixed one.
+  await replaceReference(vault, slug, {
+    vehicles, positions: [], assets: [], investors: [], reporting,
+  });
 
   const manifest = await withClients(base, [
     ...held,

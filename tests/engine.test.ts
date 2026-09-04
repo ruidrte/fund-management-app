@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engine';
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
-import { buildClientStructure, buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
+import { buildClientStructure } from '../src/data/structure';
+import { buildDemoDataSet, DEMO_TIMELINE } from './fixtures/portfolio';
 import {
   DEFAULT_CONVENTIONS,
   type DataSet, type DraftPolicy, type FxRate, type PositionValuation, type Scope,

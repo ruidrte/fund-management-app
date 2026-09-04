@@ -1,4 +1,4 @@
-import { demoRepository } from './demoRepository';
+import { unopenedRepository } from './unopenedRepository';
 import { supabaseRepository } from './supabaseRepository';
 import { isSupabaseConfigured } from '../lib/supabase';
 import type { Repository } from './repository';
@@ -6,10 +6,10 @@ import type { Repository } from './repository';
 export type { Repository, ClientSummary } from './repository';
 
 /**
- * Supabase when it is configured, the demo dataset otherwise. The application
- * is fully usable either way, which is what keeps the demo path honest: it runs
- * the same engine and the same screens, not a cut-down version of them.
+ * Supabase when it is configured; otherwise the structure with nothing in it,
+ * until a folder is connected under Storage. There is no third, invented
+ * source: the application shows what was filed or it shows nothing.
  */
 export function getRepository(): Repository {
-  return isSupabaseConfigured() ? supabaseRepository : demoRepository;
+  return isSupabaseConfigured() ? supabaseRepository : unopenedRepository;
 }

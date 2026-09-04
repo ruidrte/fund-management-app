@@ -1,34 +1,23 @@
 /**
- * Sample dataset.
+ * A synthetic portfolio, for tests.
  *
- * The **structure** is real: three clients and the seven vehicles they run.
- * Every **figure** is synthetic, and so is every holding name — commitments,
- * valuations, cashflows and investors are invented to exercise the engine, not
- * taken from any fund's records.
+ * The client and product names are the real ones — that is what makes a test
+ * over this readable — and every figure is invented. It lives under `tests/`
+ * on purpose: the application must never be able to reach it, because a screen
+ * of plausible numbers nobody filed is worse than an empty one.
  *
- * That split is deliberate. Real vehicle names make the application recognisable
- * to the people who will use it; invented figures make it impossible for a
- * screenshot to be mistaken for a report. Loading the real numbers is what the
- * intake pipeline is for.
- *
- * The data is deliberately awkward in the ways real data is awkward: four
- * currencies, vehicles at different stages of their life, a latest quarter where
- * part of one portfolio has not reported, and a prior quarter restated after
- * publication. A clean fixture would prove nothing about the parts of the engine
- * that exist to handle mess.
- *
- * **Attributes marked `TO CONFIRM` are assumptions.** Vehicle kind, currency,
- * inception and status were inferred from the strategy, not supplied. Correcting
- * them means editing this one table.
+ * What it is built to exercise: several currencies, an administrator rate that
+ * outranks the published fixing, quarters where a holding did not report, and
+ * restatements that arrive after a draft went out.
  */
 
 import {
   DEFAULT_CONVENTIONS,
-  type Cashflow, type Client, type CurrencyCode, type DataSet, type FxRate,
+  type Cashflow, type CurrencyCode, type DataSet, type FxRate,
   type Investor, type Vehicle,
-} from '../domain/types';
-import { periodEndDate, periodRange, type PeriodId } from '../domain/period';
-import type { ReportingProfile } from '../domain/report';
+} from '../../src/domain/types';
+import { periodEndDate, periodRange, type PeriodId } from '../../src/domain/period';
+import type { ReportingProfile } from '../../src/domain/report';
 
 const PERIODS: PeriodId[] = periodRange('2024Q1', '2026Q1');
 const LATEST: PeriodId = '2026Q1';
@@ -574,24 +563,7 @@ const COUNTRIES = [
  * Building a dataset
  * ------------------------------------------------------------------ */
 
-export const DEMO_CLIENTS = CLIENTS.map((client) => ({
-  id: `client-${client.key}`,
-  name: client.name,
-  shortName: client.shortName,
-}));
-
-/**
- * The real structure of a client and its vehicles, with none of the figures.
- *
- * What a new book starts from. The client and vehicle definitions are the real
- * ones — that is why they are recognisable — and everything measured is left
- * out, so an empty book cannot be mistaken for a populated one.
- */
-export function buildClientStructure(clientId: string): { client: Client; vehicles: Vehicle[] } {
-  const demo = buildDemoDataSet(clientId);
-  return { client: demo.client, vehicles: demo.vehicles };
-}
-
+/** A client's whole invented history, ready to hand to the engine. */
 export function buildDemoDataSet(clientId: string): DataSet {
   sequence = 0;
   const seed = CLIENTS.find((c) => `client-${c.key}` === clientId) ?? CLIENTS[0];

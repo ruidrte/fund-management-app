@@ -293,7 +293,6 @@ export function Intake({ view }: { view: QuarterView }) {
       {database && (
         <DatabaseImport
           outcome={database}
-          view={view}
           onClose={() => setDatabase(undefined)}
           onImported={(message) => { setCommitted(message); setDatabase(undefined); }}
         />

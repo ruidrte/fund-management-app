@@ -63,7 +63,7 @@ A role that can promote itself is not a role.
 ### Authentication
 
 A session is required before any client data is requested. Without a backend
-configured the application runs on the demo dataset and says so, rather than
+configured the application runs with no book and says so, rather than
 presenting a login that would accept anything. Sign-in failures do not
 distinguish an unknown account from a wrong password, which is a distinction
 only useful to someone enumerating accounts.

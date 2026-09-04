@@ -4,7 +4,7 @@ import { buildExtract } from '../src/export/extract';
 import {
   columnLetter, neutralise, sheetName, toCsv, toCsvBundle, toXlsx,
 } from '../src/export/serialise';
-import { buildDemoDataSet, DEMO_TIMELINE } from '../src/data/demo';
+import { buildDemoDataSet, DEMO_TIMELINE } from './fixtures/portfolio';
 
 const dataset = buildDemoDataSet('client-ebg');
 

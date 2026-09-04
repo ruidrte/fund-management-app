@@ -17,7 +17,7 @@ import { useAuth } from '../context/AuthContext';
 import { Card } from '../components/common/Card';
 import { StatusPill } from '../components/common/Badges';
 import { DataTable } from '../components/common/DataTable';
-import { DEMO_CLIENTS } from '../data/demo';
+import { KNOWN_CLIENTS } from '../data/structure';
 
 export function Storage() {
   const {
@@ -51,7 +51,7 @@ export function Storage() {
   // does not already hold.
   const startable = useMemo(() => {
     const held = new Set(book?.clients.map((c) => c.id) ?? []);
-    return DEMO_CLIENTS.filter((c) => !held.has(c.id));
+    return KNOWN_CLIENTS.filter((c) => !held.has(c.id));
   }, [book]);
 
   const firstClient = book === undefined;
@@ -88,7 +88,7 @@ export function Storage() {
         >
           <p className="m-0 text-xs" style={{ color: 'var(--text-secondary)' }}>
             This build is configured against Supabase, so that is the book. Clear the environment
-            variables to run against a folder or the sample data instead.
+            variables to run against a folder instead.
           </p>
         </Card>
       ) : (
@@ -138,8 +138,8 @@ export function Storage() {
 
           {folderStatus === 'unsupported' && (
             <Line tone="var(--status-warning)" icon={AlertTriangle}>
-              {unsupportedReason} The sample data still works, and so does export — but a book cannot be
-              kept from this browser.
+              {unsupportedReason} The application still runs, and so does export — but a book cannot
+              be kept from this browser.
             </Line>
           )}
 
@@ -368,7 +368,8 @@ export function Storage() {
       {clients.length === 0 && kind !== 'supabase' && (
         <Card title="Nothing to show yet" subtitle="No client is loaded">
           <Line tone="var(--text-muted)" icon={Info}>
-            Connect a folder and start a book, or clear the connection to go back to the sample data.
+            Connect a folder and start a book. Until then there is nothing to show: this
+            application has no data of its own.
           </Line>
         </Card>
       )}
@@ -379,13 +380,13 @@ export function Storage() {
 const LABEL: Record<string, string> = {
   supabase: 'Supabase',
   folder: 'A folder on this computer',
-  sample: 'Sample data',
+  none: 'No book connected',
 };
 
 const TONE: Record<string, 'good' | 'warning' | 'neutral'> = {
   supabase: 'good',
   folder: 'good',
-  sample: 'warning',
+  none: 'warning',
 };
 
 const DESCRIPTION: Record<string, { headline: string; body: string }> = {
@@ -403,12 +404,12 @@ const DESCRIPTION: Record<string, { headline: string; body: string }> = {
       + 'spreadsheets and PDFs are parsed in this browser, and what is filed is written into that '
       + 'folder. It is exactly as private as the folder is.',
   },
-  sample: {
-    headline: 'Nothing is saved',
+  none: {
+    headline: 'The clients and their products, and nothing else',
     body:
-      'The structure is real — the clients and vehicles are the ones that exist — and every figure '
-      + 'is invented. Anything filed here lasts until the page reloads. Connect a folder below to keep '
-      + 'real data instead.',
+      'There is no built-in dataset: every figure this application shows came from a document '
+      + 'somebody loaded, so until a book is connected the screens are empty rather than plausible. '
+      + 'Connect a folder below and start a book to put real data in it.',
   },
 };
 

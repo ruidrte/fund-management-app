@@ -60,7 +60,7 @@ const ScopeContext = createContext<ScopeValue | undefined>(undefined);
 
 export function ScopeProvider({ children }: { children: ReactNode }) {
   // The source can change while the application is running — connecting a
-  // folder replaces the sample data in place — so it is read from context
+  // folder puts a book behind the same screens — so it is read from context
   // rather than resolved once.
   const { repository } = useDataSource();
   const { principal } = useAuth();

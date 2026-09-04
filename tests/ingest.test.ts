@@ -13,7 +13,7 @@ import { buildRateLookup } from '../src/engine/fx';
 import { toXlsx } from '../src/export/serialise';
 import { buildTemplate } from '../src/ingest/template';
 import { buildExtract } from '../src/export/extract';
-import { buildDemoDataSet } from '../src/data/demo';
+import { buildDemoDataSet } from './fixtures/portfolio';
 import type { MatchContext, SourceDocument } from '../src/ingest/types';
 
 const dataset = buildDemoDataSet('client-ebg');

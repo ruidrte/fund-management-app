@@ -45,7 +45,7 @@ export function useReportingProfile() {
       throw new Error(
         kind === 'supabase'
           ? 'Writing to the database is not built yet, so a profile cannot be saved.'
-          : 'The sample dataset is not persisted. Connect a folder under Storage to keep a profile.',
+          : 'No book is connected, so there is nowhere to keep a profile. Connect a folder under Storage.',
       );
     }
     await book.commit(clientId, { reference: { reporting: next } });
@@ -59,7 +59,7 @@ export function useReportingProfile() {
     destination: folderName,
     reason: canSave ? undefined : kind === 'supabase'
       ? 'Writing to the database is not built yet.'
-      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+      : 'No book is connected — connect a folder under Storage.',
   };
 }
 
@@ -70,6 +70,11 @@ export function useReportingProfile() {
  * that belong together and are worth nothing apart. So it commits as one write
  * — reference data replaced, facts appended, the workbook itself kept beside
  * them — instead of passing through a review list built for a dozen candidates.
+ *
+ * Several programmes commit together for the same reason. One workbook holds
+ * every product a house runs, and loading them one at a time would file the
+ * same rate table twice and leave the book half-migrated if the second pass
+ * never happened.
  */
 export function useImport() {
   const { kind, book, folderName, rescan } = useDataSource();
@@ -78,37 +83,46 @@ export function useImport() {
   const canImport = kind === 'folder' && Boolean(book);
 
   const apply = useCallback(async (
-    plan: ImportPlan, document: SourceDocument, bytes?: Uint8Array,
+    plans: ImportPlan[], document: SourceDocument, bytes?: Uint8Array,
   ): Promise<string> => {
     if (!dataset) throw new Error('No client is loaded.');
+    if (plans.length === 0) throw new Error('Nothing was selected to import.');
     if (!book || kind !== 'folder') {
       throw new Error(
         kind === 'supabase'
           ? 'Writing to the database is not built yet, so a book cannot be imported.'
-          : 'The sample dataset is not persisted. Connect a folder under Storage to import into it.',
+          : 'No book is connected, so there is nowhere to import into. Connect a folder under Storage.',
       );
     }
 
     // Reference data is replaced rather than appended: importing the same
     // programme twice should leave one set of holdings, not two.
-    const keep = <T extends { id: string; vehicleId?: string; positionId?: string }>(
-      existing: T[], incoming: T[],
-    ): T[] => {
+    const keep = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
       const replaced = new Set(incoming.map((row) => row.id));
       return [...existing.filter((row) => !replaced.has(row.id)), ...incoming];
     };
+    const all = <T,>(pick: (plan: ImportPlan) => T[]): T[] => plans.flatMap(pick);
+
+    // Every programme in a workbook reads the same rate table, so the same
+    // rate arrives once per programme. Filing it two or three times over is not
+    // wrong — the lookup would still pick one — but it triples the log and
+    // makes the rate history unreadable. Deduplicated by id, which for a rate
+    // names its pair and its date rather than the programme that carried it.
+    const rates = [...new Map(
+      all((plan) => plan.fxRates).map((rate) => [rate.id, rate]),
+    ).values()];
 
     await book.commit(clientId, {
       reference: {
-        positions: keep(dataset.positions, plan.positions),
-        assets: keep(dataset.assets, plan.assets),
-        investors: keep(dataset.investors, plan.investors),
+        positions: keep(dataset.positions, all((plan) => plan.positions)),
+        assets: keep(dataset.assets, all((plan) => plan.assets)),
+        investors: keep(dataset.investors, all((plan) => plan.investors)),
       },
       facts: {
-        positionValuations: plan.valuations,
-        assetValuations: plan.assetValuations,
-        cashflows: plan.cashflows,
-        fxRates: plan.fxRates,
+        positionValuations: all((plan) => plan.valuations),
+        assetValuations: all((plan) => plan.assetValuations),
+        cashflows: all((plan) => plan.cashflows),
+        fxRates: rates,
       },
       document: { ...document, status: 'committed' },
       bytes,
@@ -118,15 +132,18 @@ export function useImport() {
     refresh();
 
     const counts = [
-      `${plan.positions.length} holding(s)`,
-      `${plan.valuations.length} valuation(s)`,
-      `${plan.cashflows.length} cashflow(s)`,
-      plan.assets.length > 0 ? `${plan.assets.length} company(ies)` : '',
-      plan.assetValuations.length > 0 ? `${plan.assetValuations.length} company valuation(s)` : '',
-      plan.fxRates.length > 0 ? `${plan.fxRates.length} rate(s)` : '',
+      `${all((plan) => plan.positions).length} holding(s)`,
+      `${all((plan) => plan.valuations).length} valuation(s)`,
+      `${all((plan) => plan.cashflows).length} cashflow(s)`,
+      all((plan) => plan.assets).length > 0
+        ? `${all((plan) => plan.assets).length} company(ies)` : '',
+      all((plan) => plan.assetValuations).length > 0
+        ? `${all((plan) => plan.assetValuations).length} company valuation(s)` : '',
+      rates.length > 0 ? `${rates.length} rate(s)` : '',
     ].filter(Boolean);
 
-    return `${plan.program} written to ${folderName}: ${counts.join(', ')}.`;
+    const named = plans.map((plan) => plan.program).join(' and ');
+    return `${named} written to ${folderName}: ${counts.join(', ')}.`;
   }, [dataset, book, kind, clientId, folderName, rescan, refresh]);
 
   return { apply, canImport, destination: folderName };
@@ -155,7 +172,7 @@ export function useProductCurrency() {
       throw new Error(
         kind === 'supabase'
           ? 'Writing to the database is not built yet, so the currency cannot be saved.'
-          : 'The sample dataset is not persisted. Connect a folder under Storage to keep it.',
+          : 'No book is connected, so there is nowhere to keep it. Connect a folder under Storage.',
       );
     }
 
@@ -176,7 +193,7 @@ export function useProductCurrency() {
     destination: folderName,
     reason: canSave ? undefined : kind === 'supabase'
       ? 'Writing to the database is not built yet.'
-      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+      : 'No book is connected — connect a folder under Storage.',
   };
 }
 
@@ -203,7 +220,7 @@ export function useConventions() {
       throw new Error(
         kind === 'supabase'
           ? 'Writing to the database is not built yet, so conventions cannot be saved.'
-          : 'The sample dataset is not persisted. Connect a folder under Storage to keep them.',
+          : 'No book is connected, so there is nowhere to keep them. Connect a folder under Storage.',
       );
     }
     await book.commit(clientId, {
@@ -219,7 +236,7 @@ export function useConventions() {
     destination: folderName,
     reason: canSave ? undefined : kind === 'supabase'
       ? 'Writing to the database is not built yet.'
-      : 'Nothing is persisted in the sample dataset — connect a folder under Storage.',
+      : 'No book is connected — connect a folder under Storage.',
   };
 }
 
@@ -273,8 +290,8 @@ export function useFiling() {
       message: kind === 'supabase'
         ? `${count} record(s) validated against "${document.name}". Writing to the database is not built yet, `
           + 'so nothing was inserted.'
-        : `${count} record(s) filed against "${document.name}" in the sample dataset, which is not persisted — `
-          + 'connect a folder under Storage to keep them.',
+        : `${count} record(s) read from "${document.name}" and validated. No book is connected, so `
+          + 'nothing was written — connect a folder under Storage to keep them.',
     };
   }, [dataset, book, kind, clientId, folderName, rescan, refresh]);
 

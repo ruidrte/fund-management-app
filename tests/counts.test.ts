@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { analyse } from '../src/engine';
-import { buildDemoDataSet } from '../src/data/demo';
+import { buildDemoDataSet } from './fixtures/portfolio';
 
 /**
  * The README and the methodology document both state how many identity checks

@@ -91,7 +91,7 @@ applies it decides the matter.
 SharePoint lists have a 5,000-item view threshold, no transactions, no foreign
 keys, no check constraints and no row-level security in the sense this
 application depends on. The bitemporal fact tables would exceed the threshold
-within a few quarters of one fund-of-funds — the demo dataset alone is 537 rows
+within a few quarters of one fund-of-funds — the test fixture alone is 537 rows
 for a single vehicle over thirteen quarters.
 
 More fundamentally: every integrity guarantee in this system is a database

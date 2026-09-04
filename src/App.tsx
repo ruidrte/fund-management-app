@@ -62,10 +62,21 @@ function Gate() {
 /** Screens that work with no data at all — and must, or an empty book traps you. */
 const WITHOUT_DATA: PageId[] = ['storage', 'access'];
 
+/** Screens whose whole job is to get data in, or to describe where it lives. */
+const WITHOUT_FIGURES: PageId[] = [...WITHOUT_DATA, 'intake', 'export'];
+
 function Shell() {
   const [page, setPage] = useState<PageId>('dashboard');
-  const { loading, error, view, clientId } = useScope();
+  const { loading, error, view, dataset, clientId } = useScope();
   const standalone = WITHOUT_DATA.includes(page);
+
+  // Nothing has been filed for this client. Every figure below would be zero,
+  // and a page of zeros reads like a portfolio that lost everything rather than
+  // one that was never loaded — so it is said once, plainly, instead.
+  const bare = Boolean(dataset)
+    && dataset!.positions.length === 0
+    && dataset!.cashflows.length === 0
+    && !WITHOUT_FIGURES.includes(page);
 
   return (
     <div className="flex h-full flex-col">
@@ -85,7 +96,16 @@ function Shell() {
               body="No client with data is loaded. Storage shows where the data is and how to connect a folder."
             />
           )}
-          {(standalone || (!error && view)) && <Page page={page} />}
+          {!error && !loading && bare && (
+            <Notice
+              tone="var(--status-warning)"
+              title="Nothing has been filed for this client yet"
+              body={'The products are here; no figure is. Load a portfolio database or a document '
+                + 'under Data intake, and connect a folder under Storage first if you have not — '
+                + 'this application has no data of its own.'}
+            />
+          )}
+          {(standalone || (!error && view && !bare)) && <Page page={page} />}
         </main>
       </div>
     </div>

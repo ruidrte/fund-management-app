@@ -31,7 +31,7 @@ any date:
 ```bash
 npm install
 npm run dev            # http://localhost:5173
-npm test               # 218 tests over the engine, permissions, ingestion, storage and export
+npm test               # 221 tests over the engine, permissions, ingestion, storage and export
 npm run build          # dist/ — deploy anywhere static (netlify.toml included)
 npm run build:single   # dist-single/index.html — the whole app in one file
 ```
@@ -75,27 +75,27 @@ deliberately awkward in the ways real documents are awkward — four number
 conventions in one column, an ambiguous date, a fund that matches nothing, a
 total row — and `samples/README.md` says what each row should do.
 
-With no configuration it runs against a built-in sample dataset. From the
-**Storage** screen you can point it at a folder on your own disk instead — real
-data, no server, no account, and the files stay yours, encrypted under a
-passphrase if you choose; `docs/STORAGE.md`
-describes what is written there and what a folder does not give you. Setting
-`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` runs it against a database. The
-engine and the screens are the same in all three.
+There is no built-in dataset. With nothing connected the application knows the
+clients and their products and not one figure, because a screen of plausible
+numbers nobody filed can be screenshotted, sent and believed. From the
+**Storage** screen you point it at a folder on your own disk — real data, no
+server, no account, and the files stay yours, encrypted under a passphrase if
+you choose; `docs/STORAGE.md` describes what is written there and what a folder
+does not give you. Setting `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` runs
+it against a database instead. The engine and the screens are the same either
+way.
 
-### The sample dataset
+The synthetic portfolio the tests run on lives under `tests/fixtures/`, out of
+the application's reach.
 
-The **structure** is real — three clients and the seven vehicles they run. Every
-**figure** is synthetic, and so is every holding name. Real vehicle names make
-the application recognisable to the people who will use it; invented figures
-make it impossible for a screenshot to be mistaken for a report.
+### The structure a book starts from
 
 | Client | Vehicle | Kind | Currency | Inception | Status |
 |---|---|---|---|---|---|
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund I | fund-of-funds | EUR | 2021-06-30 | Investing |
 | PAM | Patrimonium Climate Infrastructure Opportunity Fund II | fund-of-funds | EUR | 2024-09-30 | Fundraising |
 | PAM | PAS Infra | fund-of-funds | CHF | 2019-12-31 | Harvesting |
-| EBG | Abendrot Impulse Fund | fund-of-funds | CHF | 2020-03-31 | Investing |
+| EBG | Abendrot Impulse Fund | fund-of-funds | EUR | 2020-03-31 | Investing |
 | EBG | Planetary Health Fund I | fund-of-funds | EUR | 2022-06-30 | Investing |
 | EBG | PK TG | fund-of-funds | CHF | 2018-09-30 | Harvesting |
 | UT | Una Terra Early Growth Fund | direct-fund | EUR | 2022-03-31 | Investing |
@@ -105,11 +105,13 @@ fund-of-funds structures, and each holds a mix: fund commitments, secondaries,
 co-investments and assets held outright. That mix is a property of the holding,
 not of the vehicle — the `positionKind` exposure breakdown shows it.
 
-**Currency, inception and status are assumptions**, inferred from each vehicle's
-strategy rather than supplied. Correcting them means editing the one table at the
-top of `src/data/demo.ts`.
+**Inception and status are starting points**, inferred from each vehicle's
+strategy rather than supplied; the table lives at the top of
+`src/data/structure.ts`. The **reporting currency** is not one of them: it is
+set per product on the data quality screen and kept in the client's own book
+from then on, so correcting it is a change somebody makes, not a release.
 
-The dataset is deliberately awkward in the ways real data is awkward: four
+The test fixture is deliberately awkward in the ways real data is awkward: four
 currencies, vehicles at different stages of life, a latest quarter where part of
 several portfolios has not reported, and a prior quarter restated after
 publication. PK TG is the one vehicle that is complete and final; the rest are
@@ -209,9 +211,9 @@ investor login is bound to exactly one account by a check constraint.
 `docs/SHAREPOINT.md` separates the four different things "SharePoint
 compatibility" turns out to mean, and recommends two of them.
 
-`docs/STORAGE.md` sets out the three places a book can live — the sample data,
-a folder on the user's own disk, or Supabase — what each does and does not
-guarantee, and what is written where.
+`docs/STORAGE.md` sets out where a book can live — a folder on the user's own
+disk, or Supabase — what each does and does not guarantee, and what is written
+where.
 
 ## Layout
 
@@ -229,7 +231,7 @@ src/
     exposure        allocation and look-through
     checks          identity assertions
     index           analyse(dataset, scope) -> QuarterView
-  data/        repository boundary; demo and Supabase implementations
+  data/        repository boundary; the client structure and Supabase
   context/     scope and theme
   components/  layout, shared UI, charts
   pages/       one per section
@@ -305,8 +307,8 @@ baseline and prints a signed value; provenance carries an icon and a word.
   rather than appearing to succeed with nothing in it.
 - **Writing to Supabase** — reading from the database is implemented; the
   inserts from the intake screen are not. Against a folder, intake writes: the
-  facts are appended and the document is kept beside them. Against the sample
-  data nothing is persisted, and the screen says so rather than reporting a
+  facts are appended and the document is kept beside them. With no book
+  connected nothing is persisted, and the screen says so rather than reporting a
   successful commit.
 - **Hedging** — currency exposure is shown before hedging. Hedge instruments are
   not modelled, so a hedged vehicle's reported exposure overstates what it

@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { analyse } from '../src/engine';
-import { buildDemoDataSet } from '../src/data/demo';
+import { buildDemoDataSet } from './fixtures/portfolio';
 import { LAYOUTS, layoutsFor } from '../src/reports/layouts';
 import { renderReport } from '../src/reports/render';
 import type { ReportingProfile } from '../src/domain/report';

@@ -14,7 +14,7 @@ import {
 } from '../src/data/workspace/store';
 import { unlock, WrongPassphrase } from '../src/data/workspace/crypto';
 import { openBook } from '../src/data/workspace/repository';
-import { buildClientStructure } from '../src/data/demo';
+import { buildClientStructure } from '../src/data/structure';
 import { factsFrom } from '../src/ingest';
 import type { Candidate, SourceDocument } from '../src/ingest/types';
 import type { DataSet, PositionValuation } from '../src/domain/types';
