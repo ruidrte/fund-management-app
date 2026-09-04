@@ -16,7 +16,7 @@ import { DraftBanner } from '../components/common/DraftBanner';
 import { money, percent, PROVENANCE_DESCRIPTION, PROVENANCE_LABEL } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
 import { Conventions } from '../components/quality/Conventions';
-import { ProductCurrency } from '../components/quality/ProductCurrency';
+import { ProductTerms } from '../components/quality/ProductTerms';
 import type { CurrencyCode, Provenance } from '../domain/types';
 
 const PROVENANCES: Provenance[] = ['reported', 'rolled-forward', 'estimated', 'stale', 'missing'];
@@ -141,7 +141,7 @@ export function DataQuality({ view }: { view: QuarterView }) {
 
       <FxCard view={view} />
 
-      <ProductCurrency />
+      <ProductTerms />
 
       <Conventions />
 

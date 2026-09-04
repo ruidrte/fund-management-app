@@ -150,28 +150,36 @@ export function useImport() {
 }
 
 /**
- * The currency a product reports in.
+ * A product's own terms.
  *
- * A fund's reporting currency is a fact about the fund, not a view setting: the
- * financial statements, the capital accounts and every figure the investor
- * reads are in it. So it is set once, kept in the book, and the currency
- * selector on the scope bar translates *away* from it — which is a simulation,
- * and says so — rather than deciding the basis quietly.
+ * Its reporting currency and what its investors subscribed are facts about the
+ * fund, not view settings: the financial statements, the capital accounts and
+ * every figure an investor reads are stated in that currency, and the total
+ * subscribed is what the register has to add up to. They are set once, kept in
+ * the book, and correcting one is a change somebody makes rather than a
+ * release — a book started before a correction should not have to be rebuilt
+ * for it.
  */
-export function useProductCurrency() {
+export interface ProductTerms {
+  currency?: CurrencyCode;
+  /** Total subscribed to the product, in its own currency and units. */
+  investorCommitment?: number;
+}
+
+export function useProductTerms() {
   const { kind, book, folderName } = useDataSource();
   const { clientId, dataset, refresh } = useScope();
 
   const canSave = kind === 'folder' && Boolean(book);
 
-  const save = useCallback(async (vehicleId: string, currency: CurrencyCode) => {
+  const save = useCallback(async (vehicleId: string, terms: ProductTerms) => {
     if (!dataset) throw new Error('No client is loaded.');
     const vehicle = dataset.vehicles.find((v) => v.id === vehicleId);
     if (!vehicle) throw new Error('That product is not in this book.');
     if (!book || kind !== 'folder') {
       throw new Error(
         kind === 'supabase'
-          ? 'Writing to the database is not built yet, so the currency cannot be saved.'
+          ? 'Writing to the database is not built yet, so this cannot be saved.'
           : 'No book is connected, so there is nowhere to keep it. Connect a folder under Storage.',
       );
     }
@@ -179,7 +187,7 @@ export function useProductCurrency() {
     await book.commit(clientId, {
       reference: {
         vehicles: dataset.vehicles.map(
-          (v) => (v.id === vehicleId ? { ...v, currency } : v),
+          (v) => (v.id === vehicleId ? { ...v, ...terms } : v),
         ),
       },
     });

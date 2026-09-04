@@ -309,8 +309,8 @@ describe('a client\u2019s report layouts live in its own book', () => {
   });
 });
 
-describe('the currency a product reports in', () => {
-  it('is kept in the book, so it survives a reload rather than a rebuild', async () => {
+describe('a product\u2019s own terms', () => {
+  it('are kept in the book, so they survive a reload rather than a rebuild', async () => {
     const { vault, slug, vehicles } = await bookWith('client-ebg');
     const abif = vehicles.find((v) => v.shortName === 'AbIF')!;
     expect(abif.currency).toBe('EUR');
@@ -327,6 +327,20 @@ describe('the currency a product reports in', () => {
     expect(read!.dataset.vehicles.filter((v) => v.currency === 'CHF')).toHaveLength(
       vehicles.filter((v) => v.currency === 'CHF').length + 1,
     );
+  });
+
+  it('correct the subscribed total without touching anything measured', async () => {
+    const { vault, slug, vehicles } = await bookWith('client-ebg');
+    const phf = vehicles.find((v) => v.shortName === 'PHF I')!;
+
+    await replaceReference(vault, slug, {
+      vehicles: vehicles.map((v) => (v.id === phf.id ? { ...v, investorCommitment: 12_500 } : v)),
+    });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.vehicles.find((v) => v.id === phf.id)!.investorCommitment).toBe(12_500);
+    expect(read!.dataset.positionValuations).toEqual([]);
+    expect(read!.dataset.cashflows).toEqual([]);
   });
 });
 
