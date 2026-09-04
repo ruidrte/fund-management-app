@@ -16,7 +16,9 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import type { QuarterView } from '../../engine';
-import { formatPeriod, periodForDate, periodEndDate } from '../../domain/period';
+import {
+  comparePeriods, formatPeriod, periodForDate, periodEndDate,
+} from '../../domain/period';
 import { useScope } from '../../context/ScopeContext';
 import { useAuth } from '../../context/AuthContext';
 import { useFiling } from '../../context/filing';
@@ -66,6 +68,25 @@ export function ManualEvent({
     [dataset, view.vehicles],
   );
 
+  const position = positions.find((p) => p.id === positionId);
+
+  // A valuation is stored in the holding's own currency — the one the manager
+  // reports in — and translated on the way out. The field said "EUR" because
+  // that was the currency of the view, which is exactly the mistake it invites:
+  // a Swedish fund's net asset value typed as though it were euro is out by an
+  // order of magnitude and ties to nothing.
+  const localCurrency = position?.currency ?? view.currency;
+
+  /** The last figure filed for this holding, whatever period it belongs to. */
+  const lastKnown = useMemo(() => {
+    if (!dataset || !position) return undefined;
+    return [...dataset.positionValuations]
+      .filter((v) => v.positionId === position.id && !v.supersededBy)
+      .sort((a, b) => comparePeriods(a.period, b.period)
+        || Date.parse(a.recordedAt) - Date.parse(b.recordedAt))
+      .pop();
+  }, [dataset, position]);
+
   const set = (name: string, value: string) => setValues((current) => ({ ...current, [name]: value }));
   const num = (name: string) => {
     const parsed = Number(values[name]);
@@ -75,7 +96,6 @@ export function ManualEvent({
   const build = (): Candidate | undefined => {
     if (!dataset) return undefined;
 
-    const position = positions.find((p) => p.id === positionId);
     const period = kind === 'cashflow' ? periodForDate(date) : view.period;
 
     const fields: Candidate['fields'] = {};
@@ -239,16 +259,16 @@ export function ManualEvent({
 
           {kind === 'valuation' && (
             <>
-              <Field label={`NAV (${view.currency})`}>
+              <Field label={`NAV (${localCurrency})`}>
                 <input type="number" step="any" className="field tabular" required
                   value={values.nav ?? ''} onChange={(event) => set('nav', event.target.value)} />
               </Field>
-              <Field label="Drawn to date">
+              <Field label={`Drawn to date (${localCurrency})`}>
                 <input type="number" step="any" className="field tabular"
                   value={values.drawnCumulative ?? ''}
                   onChange={(event) => set('drawnCumulative', event.target.value)} />
               </Field>
-              <Field label="Distributed to date">
+              <Field label={`Distributed to date (${localCurrency})`}>
                 <input type="number" step="any" className="field tabular"
                   value={values.distributedCumulative ?? ''}
                   onChange={(event) => set('distributedCumulative', event.target.value)} />
@@ -274,6 +294,22 @@ export function ManualEvent({
         {kind === 'balance-sheet' && (
           <p className="m-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
             Liabilities and accruals are entered positive; the engine subtracts them.
+          </p>
+        )}
+
+        {kind === 'valuation' && position && (
+          <p className="m-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            In {position.name}&rsquo;s own currency, as the manager reports it — not in the currency
+            on screen.
+            {lastKnown && (
+              <>
+                {' '}It was last valued at{' '}
+                <strong style={{ color: 'var(--text-secondary)' }}>
+                  {lastKnown.nav.toLocaleString('en-GB')} {localCurrency}
+                </strong>{' '}
+                for {formatPeriod(lastKnown.period)}, which is the scale to match.
+              </>
+            )}
           </p>
         )}
 
