@@ -20,6 +20,7 @@ import {
 } from './allocation';
 import { isMandateWorkbook, summariseMandate, type MandateSummary } from './mandate';
 import { isMasterWorkbook, summariseMaster, type MasterSummary } from './master';
+import { isSupportModel, summariseModel, type ModelSummary } from './model';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -46,6 +47,10 @@ export {
   isMasterWorkbook, planMasterImport, summariseMaster,
   type MasterOptions, type MasterSummary,
 } from './master';
+export {
+  isSupportModel, planModelImport, summariseModel,
+  type ModelOptions, type ModelSummary,
+} from './model';
 export { slug } from './ids';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
@@ -115,7 +120,11 @@ export async function openDatabase(
   const master = isMasterWorkbook(workbook.sheets)
     ? summariseMaster(workbook.sheets)
     : undefined;
-  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation && !mandate && !master) {
+  const model = isSupportModel(workbook.sheets)
+    ? summariseModel(workbook.sheets)
+    : undefined;
+  if (!isPortfolioDatabase(workbook.sheets)
+    && !support && !allocation && !mandate && !master && !model) {
     return undefined;
   }
 
@@ -139,6 +148,7 @@ export async function openDatabase(
     allocation,
     mandate,
     master,
+    model,
   };
 }
 
@@ -157,6 +167,8 @@ export interface DatabaseOutcome {
   mandate?: MandateSummary;
   /** The register, the investments and the accounts, when it is an LP capital master. */
   master?: MasterSummary;
+  /** The published figures and their basis, when it is a report support model. */
+  model?: ModelSummary;
 }
 
 export async function ingest(

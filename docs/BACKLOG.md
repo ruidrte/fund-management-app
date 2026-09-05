@@ -36,6 +36,7 @@ the facts must be the same.
 | Advisory monitoring workbook (PK TG) | yes | yes | yes |
 | Quarterly reporting workbook (PAS Infra) | yes | yes | yes |
 | LP capital master (UT) | yes | no | no |
+| Report support model (AbIF) | yes | no | no |
 | Portfolio database (AbIF, PHF) | no | no | no |
 | Asset allocation database (look-through) | partly | no | no |
 | Administrator NAV pack (UT, and AbIF's is a different one) | no | n/a | n/a |
@@ -44,6 +45,14 @@ The NAV pack is the administrator's own statement rather than the fund's book,
 so it has no writer and needs none: it is read to reconcile against, not to
 reproduce. UT's is CACEIS; AbIF's is RSM and is a different file with different
 tabs, so one reader does not serve both.
+
+The report support model is the file the AbIF deck is built from: the figures as
+published, quarter by quarter, with the working that produced them. The reader
+keeps the published figures as their own facts — `published.netAssetValue` and
+the rest — so that what the system computes can be set beside what was reported
+rather than overwrite it. It has no writer yet, and a writer for it is a
+different question from the two that are done, because most of the file is the
+working rather than the result.
 
 The portfolio database is the one left, and it is a different problem from the
 two that are done. Those are each one product's own file. A portfolio database
@@ -80,8 +89,12 @@ every quarter. In the report editor they are one.
   is also amended: the current one is the second amendment to a letter approved
   a month earlier, same valuation date, different split. Reading it is what
   makes the fair-value history auditable rather than typed.
-- **The RSM NAV pack for AbIF.** The only piece keeping the AbIF net tier from
-  tying to 124,355.4 EURk. Nothing else is blocked on it.
+- **The RSM NAV pack for AbIF.** No longer what the AbIF net tier waits on: the
+  report support model states the same quarter's balance sheet, and the identity
+  closes on it — 2,357.89 cash plus 122,084.63 portfolio less 87.16 other net
+  liabilities is the 124,355.36 EURk published. The NAV pack would be a second,
+  independent statement of the same figures, which is worth having as a check
+  and is not blocking anything.
 - **Capital account statements and financial statements** have no structural
   reader. Their figures go in through New event, against the document, which
   records them exactly as a parsed figure would be — but somebody types them.

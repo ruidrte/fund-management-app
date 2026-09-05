@@ -18,8 +18,8 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import {
-  planAllocationImport, planImport, planMandateImport, planMasterImport, planSupportImport,
-  similarity,
+  planAllocationImport, planImport, planMandateImport, planMasterImport, planModelImport,
+  planSupportImport, similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
 import { useImport } from '../../context/filing';
@@ -89,7 +89,8 @@ export function DatabaseImport({
   const support = outcome.support;
   const mandate = outcome.mandate;
   const master = outcome.master;
-  const single = support ?? mandate ?? master;
+  const model = outcome.model;
+  const single = support ?? mandate ?? master ?? model;
 
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
@@ -99,8 +100,16 @@ export function DatabaseImport({
       first: allocation.first, last: allocation.last,
     } as ProgramSummary))
     : single
-      ? [{ program: single.fund, funds: single.holdings, transactions: single.movements,
-        companies: mandate?.companies ?? 0, first: single.first, last: single.last } as ProgramSummary]
+      ? [{
+        program: single.fund,
+        funds: single.holdings,
+        // A model states figures rather than movements; its lines are what it
+        // has instead.
+        transactions: 'movements' in single ? single.movements : single.lines,
+        companies: mandate?.companies ?? 0,
+        first: single.first,
+        last: single.last,
+      } as ProgramSummary]
       : outcome.programs.filter((p) => !p.investorIn);
   const partners = single ? [] : outcome.programs.filter((p) => p.investorIn);
 
@@ -169,9 +178,11 @@ export function DatabaseImport({
           problems: read.problems, periods: read.periods, notes: read.notes,
         }];
       }
-      return chosen.map((target) => (mandate
-        ? planMandateImport(outcome.sheets, { vehicleId: target.vehicleId })
-        : master
+      return chosen.map((target) => (model
+        ? planModelImport(outcome.sheets, { vehicleId: target.vehicleId })
+        : mandate
+          ? planMandateImport(outcome.sheets, { vehicleId: target.vehicleId })
+          : master
           ? planMasterImport(outcome.sheets, { vehicleId: target.vehicleId })
           : support
           ? planSupportImport(outcome.sheets, { vehicleId: target.vehicleId })
@@ -188,7 +199,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, mandate, master, allocation, vehicleId, dataset,
+  }, [outcome.sheets, support, mandate, master, model, allocation, vehicleId, dataset,
     JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
@@ -222,7 +233,9 @@ export function DatabaseImport({
             ? 'This is an advisory monitoring workbook, not a document'
             : master
               ? 'This is an LP capital master, not a document'
-              : support
+              : model
+                ? 'This is a report support model, not a document'
+                : support
               ? 'This is a quarterly reporting workbook, not a document'
               : 'This is a portfolio database, not a document'}
         subtitle={allocation
@@ -232,7 +245,10 @@ export function DatabaseImport({
               + `${mandate.reportingDate ? `, as at ${mandate.reportingDate}` : ''}`
             : master
               ? `${master.fund}${master.reportingDate ? `, as at ${master.reportingDate}` : ''}`
-              : support
+              : model
+                ? `${model.fund} — ${model.quarters} quarter(s) to `
+                  + `${formatPeriod(model.last ?? '')}`
+                : support
               ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
               : outcome.document.name}
         actions={
@@ -245,7 +261,9 @@ export function DatabaseImport({
                   : master
                     ? `${master.holdings} compan(ies), ${master.instruments} instrument(s), `
                       + `${master.investors} investor(s)`
-                    : support
+                    : model
+                      ? `${model.lines} published line(s), ${model.holdings} fund(s)`
+                      : support
                     ? `${support.holdings} holding(s), ${support.investors} investor(s)`
                     : `${outcome.programs.length} programme(s)`}
             </StatusPill>
@@ -263,6 +281,14 @@ export function DatabaseImport({
             + `quarter. It is what makes look-through possible — the portfolio stops at the funds, `
             + `and this is what is in them. The exposure is read as the sheet files it, so the `
             + `totals sum to the holdings rather than to a second calculation of the same thing.`
+          : model
+            ? `The layer a desk builds over its records to produce a quarter's report: one `
+            + `figure per line per quarter, each with a note saying which file it came from. It `
+            + `carries the two things the records cannot — the cash and accruals beside the `
+            + `portfolio, which is what lets the net tier close on the accounts, and what was `
+            + `actually published, so that and what this application computes can be put side `
+            + `by side. It describes the portfolio database rather than being one, so it creates `
+            + `no holdings.`
           : master
             ? `A fund's whole record in one file: the investors' register and every movement in `
             + `it, the investments tranche by tranche and share class by share class, and the `
