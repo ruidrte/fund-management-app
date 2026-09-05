@@ -99,6 +99,51 @@ export function toXlsx(extract: Extract): Uint8Array {
   return zipSync(files, { level: 6 });
 }
 
+/**
+ * A workbook of arbitrary grids.
+ *
+ * `toXlsx` writes tables: a header row and rows under it. A workbook this
+ * system emits for somebody to work in is not a table — it has a title block, a
+ * banner over each group of columns, headings two lines deep, and a legend
+ * under the last row. So this takes the cells as they are and writes them where
+ * they are put, with no header of its own and nothing frozen.
+ */
+export function toWorkbook(sheets: Array<{ sheetName: string; rows: CellValue[][] }>): Uint8Array {
+  const named = sheets.map((sheet) => ({
+    name: sheet.sheetName,
+    description: '',
+    columns: [] as string[],
+    rows: sheet.rows,
+  }));
+
+  const files: Record<string, Uint8Array> = {
+    '[Content_Types].xml': strToU8(contentTypes(named.length)),
+    '_rels/.rels': strToU8(rootRels()),
+    'xl/workbook.xml': strToU8(workbook(named)),
+    'xl/_rels/workbook.xml.rels': strToU8(workbookRels(named.length)),
+    'xl/styles.xml': strToU8(styles()),
+  };
+
+  named.forEach((sheet, index) => {
+    files[`xl/worksheets/sheet${index + 1}.xml`] = strToU8(grid(sheet.rows));
+  });
+
+  return zipSync(files, { level: 6 });
+}
+
+function grid(rows: CellValue[][]): string {
+  const body = rows.map((row, rowIndex) =>
+    `<row r="${rowIndex + 1}">${row
+      .map((value, columnIndex) => cell(columnIndex, rowIndex + 1, neutralise(value), false))
+      .join('')}</row>`,
+  ).join('');
+
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<sheetData>${body}</sheetData>
+</worksheet>`;
+}
+
 function manifestSheet(extract: Extract): Sheet {
   return {
     name: 'manifest',

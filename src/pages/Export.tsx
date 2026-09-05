@@ -18,7 +18,8 @@ import { DataTable } from '../components/common/DataTable';
 import { StatusPill } from '../components/common/Badges';
 import { formatTimestamp } from '../components/common/format';
 import { buildExtract, type ExtractWindow } from '../export/extract';
-import { toCsvBundle, toXlsx, download } from '../export/serialise';
+import { buildMandateWorkbook } from '../export/mandateWorkbook';
+import { toCsvBundle, toWorkbook, toXlsx, download } from '../export/serialise';
 
 type WindowKind = 'since-inception' | 'period' | 'range';
 
@@ -66,8 +67,81 @@ export function Export({ view }: { view: QuarterView }) {
 
   const totalRows = extract?.sheets.reduce((sum, sheet) => sum + sheet.rows.length, 0) ?? 0;
 
+  // The support workbook is a different thing from an extract: the same shape
+  // as the file this product's quarter arrives in, so whatever reads that — a
+  // person, or the deck — needs no change once the book produces it instead.
+  const mandate = view.vehicles.length === 1 && view.vehicles[0].kind === 'mandate'
+    ? view.vehicles[0]
+    : undefined;
+  const support = useMemo(() => {
+    if (!dataset || !mandate) return undefined;
+    try {
+      return buildMandateWorkbook({
+        dataset, vehicleId: mandate.id, period: view.period, knowledgeDate,
+      });
+    } catch {
+      return undefined;
+    }
+  }, [dataset, mandate, view.period, knowledgeDate]);
+
+  const emitSupport = () => {
+    if (!support || !allowed.allowed) return;
+    setBusy(true);
+    try {
+      download(
+        toWorkbook(support.sheets),
+        `${support.filename}.xlsx`,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
+      {support && (
+        <Card
+          title="The support workbook"
+          subtitle={`${mandate!.name} · ${formatPeriod(view.period)} · `
+            + `${support.sheets.length} sheets`}
+          actions={
+            <button
+              type="button" onClick={emitSupport} disabled={busy || !allowed.allowed}
+              title={allowed.reason}
+              className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+              style={{ background: 'var(--series-1)', color: '#fff' }}
+            >
+              <FileSpreadsheet size={13} aria-hidden /> Write the workbook
+            </button>
+          }
+          note="The same shape as the file this quarter arrives in — the register, the fill
+                surface, the histories and the capital account — written from the book rather
+                than kept by hand. It is what the report is built from, so nothing that reads it
+                has to change. Sheet 05 names every figure that was not reported for its own
+                quarter, because a workbook that looks hand-kept must not pass an estimate off
+                as a reported number."
+        >
+          <div className="flex flex-wrap gap-1.5">
+            {support.sheets.map((sheet) => (
+              <span
+                key={sheet.sheetName}
+                className="rounded px-2 py-1 text-[11px]"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+              >
+                {sheet.sheetName}
+                <span style={{ color: 'var(--text-muted)' }}> · {sheet.rows.length}</span>
+              </span>
+            ))}
+          </div>
+          {support.problems.length > 0 && (
+            <ul className="mt-3 mb-0 list-disc pl-5 text-[11px]" style={{ color: 'var(--status-warning)' }}>
+              {support.problems.map((problem) => <li key={problem}>{problem}</li>)}
+            </ul>
+          )}
+        </Card>
+      )}
+
       <Card
         title="Historical extract"
         subtitle={`${view.vehicles[0]?.name ?? 'All vehicles'} · ${extract?.periods.length ?? 0} quarter(s) · ${totalRows.toLocaleString('en-GB')} rows`}

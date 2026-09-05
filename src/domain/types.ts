@@ -138,6 +138,17 @@ export interface Asset {
   country: Attribution;
   status: 'Held' | 'Partially Realised' | 'Realised' | 'Written Off';
   esg?: EsgClassification;
+  /**
+   * Standing facts the source states that this model has no column for: a city
+   * and a state, a property manager, a valuation basis. Reference data rather
+   * than measurement — what changes rarely, as against the metric table, which
+   * is what changes every quarter.
+   *
+   * Kept because a source has to survive a round trip through the book. A
+   * column read, used once and dropped cannot be written back, and a workbook
+   * this system emits should be the workbook it was given.
+   */
+  attributes?: Record<string, string | number>;
 }
 
 /**
@@ -231,6 +242,14 @@ export interface Cashflow {
   positionId?: string;
   /** Set for product (net) flows: investor <-> vehicle. */
   investorId?: string;
+  /**
+   * The holding this flow was charged for, where it is not a flow with that
+   * holding. An advisory fee is paid by the investor and is not a portfolio
+   * movement, but it is charged for one fund rather than another, and nothing
+   * else in the row records which. Read by reports and by the workbook writer;
+   * never by the engine, which would double-count it as a portfolio flow.
+   */
+  chargedFor?: string;
   vehicleId: string;
   type: CashflowType;
   /** Signed from the vehicle's perspective: calls out negative, receipts positive. */

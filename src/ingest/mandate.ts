@@ -392,9 +392,19 @@ function ratePair(sheets: TableData[]): { base: CurrencyCode; quote: CurrencyCod
  * Fund-level figures
  * ------------------------------------------------------------------ */
 
-const NAV = 'Total Net Asset Value (NAV)';
-const PAID_IN = 'Cumulative Paid In Capital';
-const PORTFOLIO = 'Total Portfolio fair value';
+/**
+ * The three fund-level figures this reader depends on, by name rather than by
+ * label.
+ *
+ * A row label is written by whoever built the sheet — `Total Net Asset Value
+ * (NAV)` in one and `Total net asset value` in the next — so it is normalised
+ * to a name before anything looks it up. That is what lets a workbook this
+ * system emits be read back: the label it writes is readable rather than
+ * identical, and both reduce to the same name.
+ */
+const NAV = 'totalNetAssetValueNav';
+const PAID_IN = 'cumulativePaidInCapital';
+const PORTFOLIO = 'totalPortfolioFairValue';
 
 /** `metric -> fund key -> period -> value`, from the history and open quarters. */
 type FundSeries = Map<string, Map<string, Map<PeriodId, number>>>;
@@ -433,8 +443,8 @@ function readFundSeries(sheets: TableData[]): { series: FundSeries; names: Map<s
       for (let i = header + 1; i < history.rows.length; i += 1) {
         const row = history.rows[i];
         const fund = at.text(row, 'Fund').toUpperCase();
-        const metric = at.text(row, 'Metric');
-        if (!fund || !metric) continue;
+        const metric = camel(at.text(row, 'Metric'));
+        if (!fund || !at.text(row, 'Metric')) continue;
         for (const column of periods) {
           const value = toNumber(row[column.index]);
           if (value !== undefined) put(series, metric, fund, column.period, value);
@@ -464,8 +474,8 @@ function readFundSeries(sheets: TableData[]): { series: FundSeries; names: Map<s
       });
       for (let i = header + 1; i < quarter.rows.length; i += 1) {
         const row = quarter.rows[i];
-        const metric = at.text(row, 'Metric');
-        if (!metric) continue;
+        const metric = camel(at.text(row, 'Metric'));
+        if (!at.text(row, 'Metric')) continue;
         for (const column of fundColumns) {
           const value = toNumber(row[column.index]);
           if (value !== undefined) put(series, metric, column.fund, column.period, value);
@@ -491,6 +501,8 @@ interface RegisterRow {
   tenantType: string;
   units?: number;
   acquired?: string;
+  /** Every other column of the register, by its own heading. */
+  rest: Record<string, string | number>;
 }
 
 function readRegister(sheets: TableData[]): RegisterRow[] {
@@ -499,6 +511,13 @@ function readRegister(sheets: TableData[]): RegisterRow[] {
   const header = headerRow(sheet, REGISTER_HEADINGS);
   if (header < 0) return [];
   const at = columns(sheet.rows[header]);
+  // Which columns are read into a field of their own, so the rest can be kept
+  // without keeping any of them twice.
+  const claimed = new Set(
+    ['ID', 'Asset — report name', 'Asset', 'Fund', 'City', 'State', 'Region', 'Tenant type',
+      'Units', 'Acquisition'].map((name) => name.toLowerCase()),
+  );
+  const headings = sheet.rows[header].map(text);
 
   const rows: RegisterRow[] = [];
   for (let i = header + 1; i < sheet.rows.length; i += 1) {
@@ -506,7 +525,15 @@ function readRegister(sheets: TableData[]): RegisterRow[] {
     const id = at.text(row, 'ID');
     const fund = at.text(row, 'Fund').toUpperCase();
     if (!IDENTIFIER.test(id) || !fund) continue;
+    const rest: Record<string, string | number> = {};
+    headings.forEach((heading, index) => {
+      const name = heading.replace(/\s+/g, ' ').trim();
+      if (!name || claimed.has(name.toLowerCase())) return;
+      const value = toNumber(row[index]) ?? text(row[index]);
+      if (value !== '') rest[name] = value;
+    });
     rows.push({
+      rest,
       id,
       fund,
       name: at.text(row, 'Asset — report name') || at.text(row, 'Asset') || id,
@@ -825,8 +852,11 @@ function frontMatter(sheets: TableData[]): { subject: string; holder: string } {
     .map((cells) => cells[0]);
 
   // The subject line names the funds and, after a separator, whose mandate it
-  // is: "…Fund V and VI · Pensionskasse Thurgau".
-  const subject = lines.find((line) => line.includes('·')) ?? lines[1] ?? lines[0] ?? 'This mandate';
+  // is: "…Fund V and VI · Pensionskasse Thurgau". The last such line, not the
+  // first: a sheet whose own banner carries the same separator would otherwise
+  // be read as the subject, and the workbook this system emits has one.
+  const subject = [...lines].reverse().find((line) => line.includes('·'))
+    ?? lines[1] ?? lines[0] ?? 'This mandate';
   const parts = subject.split('·').map((part) => part.trim()).filter(Boolean);
   return {
     subject: parts[0] ?? subject,
@@ -909,7 +939,12 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   const register = readRegister(sheets);
   const quarters = readQuarterSheets(sheets);
   const history = readAssetHistory(sheets);
-  const book = slug(summary.fund, 16);
+  // Identity comes from whose mandate it is, not from the line describing what
+  // it holds. That line is prose — it names the funds, and it can be reworded
+  // without anything changing — and an identifier derived from it moves when
+  // somebody rewrites it, which would file a second set of holdings beside the
+  // first on the next import.
+  const book = slug(summary.holder, 16);
 
   let sequence = 0;
   const id = (prefix: string) => `${prefix}-${book}-${(sequence += 1)}`;
@@ -978,6 +1013,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       vehicleId,
       positionId: side === 'position' ? positionOf.get(row.fund)?.id : undefined,
       investorId: side === 'investor' ? investor.id : undefined,
+      chargedFor: side === 'investor' ? positionOf.get(row.fund)?.id : undefined,
       type,
       amount,
       currency,
@@ -1020,7 +1056,9 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       flow(row, 'Equalisation', row.interest, false, 'position');
     }
     // The adviser's fee is not a portfolio flow. It is what the holder pays for
-    // the advice, so it is filed against them and not against the funds.
+    // the advice, so it is filed against them and not against the funds — but
+    // the ledger charges it for a fund, and that is worth keeping: without it
+    // nothing could say which fund a fee was for, here or on the way back out.
     if (row.fee !== undefined && row.fee !== 0) {
       flow(row, 'Fee', row.fee, false, 'investor');
     }
@@ -1214,9 +1252,11 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     if (!position) continue;
     for (const [name, byFund] of series) {
       for (const [period, value] of byFund.get(fund.key) ?? []) {
+        // The series is already keyed by name rather than by label, so it is
+        // namespaced and not renamed again.
         metric(
           { kind: 'position', id: position.id }, period,
-          `fund.${camel(name)}`, { value },
+          `fund.${name}`, { value },
           `${fund.name} statements, as the manager reports them`,
         );
       }
@@ -1306,6 +1346,16 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
         region: entry.region || 'Unclassified',
         country: countryOf(entry.state),
         status: 'Held',
+        // What the register says that this model has no column for, so the
+        // sheet it came from can be written back as it was given.
+        attributes: {
+          id: entry.id,
+          ...(entry.city ? { City: entry.city } : {}),
+          ...(entry.state ? { State: entry.state } : {}),
+          ...(entry.tenantType ? { 'Tenant type': entry.tenantType } : {}),
+          ...(entry.units !== undefined ? { Units: entry.units } : {}),
+          ...entry.rest,
+        },
       };
       assets.push(asset);
 
