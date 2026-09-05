@@ -405,6 +405,14 @@ function ratePair(sheets: TableData[]): { base: CurrencyCode; quote: CurrencyCod
 const NAV = 'totalNetAssetValueNav';
 const PAID_IN = 'cumulativePaidInCapital';
 const PORTFOLIO = 'totalPortfolioFairValue';
+/**
+ * The fund's own equity at fair value, at 100%, summed across its properties.
+ *
+ * Not a figure the manager states on the fund sheet — it is the total of the
+ * property sheet — but it is filed like one, because it is the denominator of
+ * the share every look-through figure is scaled by and it has to stay put.
+ */
+const GESAMT_EQUITY = 'gesamtEquityAtFairValue';
 
 /** `metric -> fund key -> period -> value`, from the history and open quarters. */
 type FundSeries = Map<string, Map<string, Map<PeriodId, number>>>;
@@ -1243,6 +1251,17 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     });
   };
 
+  // The fund's own equity at fair value, where the sheets do not already carry
+  // it. Put into the series rather than filed directly, so it is written out by
+  // the same path as every other fund figure and is filed exactly once.
+  for (const fund of summary.funds) {
+    const quarter = quarters.get(fund.key);
+    if (!quarter?.period) continue;
+    if (get(series, GESAMT_EQUITY, fund.key, quarter.period) !== undefined) continue;
+    const counted = quarter.rows.reduce((sum, row) => sum + (row.equity ?? 0), 0);
+    if (counted > 0) put(series, GESAMT_EQUITY, fund.key, quarter.period, counted);
+  }
+
   // What the manager reports about each fund beside its net asset value: the
   // multiples and returns as they state them, the leverage, the operations.
   // They are not what the engine computes from the ledger and are not meant to
@@ -1270,9 +1289,22 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
 
     // The properties are reported at 100% of the whole fund; the vehicle the
     // mandate invests through holds a slice of it. That slice is what the fund
-    // sheet's portfolio fair value is of the register's total equity, and it is
-    // the missing step between a property's figures and the holder's exposure.
-    const equityTotal = quarter.rows.reduce((sum, row) => sum + (row.equity ?? 0), 0);
+    // sheet's portfolio fair value is of the fund's total equity, and it is the
+    // missing step between a property's figures and the holder's exposure.
+    //
+    // The denominator is the whole fund, including any property whose row the
+    // register does not have. Leaving such a property out of it would spread
+    // its value across the ones that are there, and the house convention is the
+    // opposite: a look-through that falls short of the portfolio says so, as
+    // coverage, rather than making up the difference.
+    //
+    // Which is why the total is filed rather than recomputed. Recomputed from
+    // the rows that survived, it moves the moment one does not — and a ratio
+    // every look-through figure is scaled by must not depend on which rows a
+    // reader could use.
+    const equityTotal = (quarter.period
+      ? get(series, GESAMT_EQUITY, fund.key, quarter.period)
+      : undefined) ?? 0;
     const vehiclePortfolio = quarter.period
       ? get(series, PORTFOLIO, fund.key, quarter.period)
       : undefined;

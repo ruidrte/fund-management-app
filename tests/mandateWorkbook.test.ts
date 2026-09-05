@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { planMandateImport } from '../src/ingest/mandate';
 import { buildMandateWorkbook } from '../src/export/mandateWorkbook';
 import { toWorkbook } from '../src/export/serialise';
+import { summariseVerification, verifyMandateWorkbook } from '../src/export/verify';
 import { parseXlsx } from '../src/ingest/workbook';
 import type { ImportPlan } from '../src/ingest/pfdb';
 import type { DataSet } from '../src/domain/types';
@@ -164,5 +165,94 @@ describe('the file itself', () => {
     const again = planMandateImport(reopened.sheets, { vehicleId: VEHICLE });
     expect(again.positions).toHaveLength(2);
     expect(again.assets).toHaveLength(3);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The check, and what it is worth
+ *
+ * A check that cannot fail is not a check. These put things in the book that
+ * the workbook has no column for, and expect to be told.
+ * ------------------------------------------------------------------ */
+
+describe('the check the application runs on a real book', () => {
+  const dataset = book(first);
+
+  it('passes on a book that came from a workbook, and says how much it looked at', () => {
+    const result = verifyMandateWorkbook({ dataset, vehicleId: VEHICLE, period: PERIOD });
+    expect(result.failure).toBeUndefined();
+    expect(result.compared).toBeGreaterThanOrEqual(first.metrics.length);
+    expect(result.differences).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(summariseVerification(result, PERIOD)).toContain('read back unchanged');
+  });
+
+  it('reports a movement of a kind the ledger has no column for', () => {
+    const result = verifyMandateWorkbook({
+      dataset: {
+        ...dataset,
+        cashflows: [...dataset.cashflows, {
+          id: 'cf-odd',
+          vehicleId: VEHICLE,
+          positionId: dataset.positions[0].id,
+          type: 'Return of Capital',
+          amount: 250_000,
+          currency: 'USD',
+          date: '2024-05-02',
+          period: PERIOD,
+          recordedAt: '2024-07-01T00:00:00.000Z',
+          affectsCommitment: false,
+          status: 'Settled',
+        }],
+      },
+      vehicleId: VEHICLE,
+      period: PERIOD,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.differences.some((d) => /movement.*does not carry/.test(d.what))).toBe(true);
+    expect(result.differences.flatMap((d) => d.examples).join(' ')).toContain('Return of Capital');
+  });
+
+  it('reports a balance sheet, which an adviser’s workbook has nowhere to put', () => {
+    const result = verifyMandateWorkbook({
+      dataset: {
+        ...dataset,
+        balanceSheets: [{
+          vehicleId: VEHICLE,
+          period: PERIOD,
+          recordedAt: '2024-07-01T00:00:00.000Z',
+          cash: 100_000,
+          otherAssets: 0,
+          currentLiabilities: 0,
+          accruedExpenses: 0,
+          source: 'Typed in',
+        }],
+      },
+      vehicleId: VEHICLE,
+      period: PERIOD,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.differences.some((d) => /balance sheet.*does not carry/.test(d.what))).toBe(true);
+  });
+
+  it('reports a figure filed against the product itself, which has no column', () => {
+    const result = verifyMandateWorkbook({
+      dataset: {
+        ...dataset,
+        metrics: [...dataset.metrics, {
+          id: 'met-odd',
+          scope: { kind: 'vehicle', id: VEHICLE },
+          period: PERIOD,
+          recordedAt: '2024-07-01T00:00:00.000Z',
+          metric: 'esg.scope1',
+          value: 42,
+          source: 'Typed in',
+        }],
+      },
+      vehicleId: VEHICLE,
+      period: PERIOD,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.differences.flatMap((d) => d.examples).join(' ')).toContain('esg.scope1');
   });
 });

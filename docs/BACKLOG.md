@@ -23,12 +23,34 @@ Four groups, and every section belongs to exactly one:
 the wide one and the narrow one. A group whose every section is closed to the
 role should disappear with them, the way a section already does.
 
+## The workbook, for every product
+
+This is the near-term goal, and the deck below waits for it. Each product's
+quarter arrives in a shape of its own, and for each shape there are two pieces:
+a reader that keeps everything the file states, and a writer that puts it back.
+Neither is done until the round trip is: write the book out, read it back, and
+the facts must be the same.
+
+| Shape | Reader keeps everything | Writer | Round trip |
+| --- | --- | --- | --- |
+| Advisory monitoring workbook (PK TG) | yes | yes | yes |
+| Quarterly reporting workbook (PAS Infra) | no | no | no |
+| Portfolio database (AbIF, PHF) | no | no | no |
+| Asset allocation database (look-through) | partly | no | no |
+
+"Reader keeps everything" is the part that is easy to believe is done and is
+not. Before the metric table existed, the advisory reader read about sixty
+columns per property and stored four. The other three readers are still in that
+position: they read what the engine computes on and drop the rest, and the rest
+is most of what a report page prints.
+
 ## The deck
 
-The workbook the book now writes is the contract; the deck is what is built from
-it. The sheet that joins the two is `50 REPORT MAP` — every figure the report
-needs, by page, with where it comes from — which this system can fill in
-completely, including the value column the hand-kept file leaves blank.
+Deferred deliberately: the documents and decks vary a great deal by product, and
+the workbook above is what they are built from. When it comes back, the sheet
+that joins the two is `50 REPORT MAP` — every figure the report needs, by page,
+with where it comes from — which this system can fill in completely, including
+the value column the hand-kept file leaves blank.
 
 The layout feedback on the current PK TG deck is all presentation and none of it
 is about a number: background colour, title and figure sizes, missing colour

@@ -19,6 +19,7 @@ import { StatusPill } from '../components/common/Badges';
 import { formatTimestamp } from '../components/common/format';
 import { buildExtract, type ExtractWindow } from '../export/extract';
 import { buildMandateWorkbook } from '../export/mandateWorkbook';
+import { summariseVerification, verifyMandateWorkbook } from '../export/verify';
 import { toCsvBundle, toWorkbook, toXlsx, download } from '../export/serialise';
 
 type WindowKind = 'since-inception' | 'period' | 'range';
@@ -84,6 +85,17 @@ export function Export({ view }: { view: QuarterView }) {
     }
   }, [dataset, mandate, view.period, knowledgeDate]);
 
+  // Written, read back with the same reader that reads the manager's own file,
+  // and compared. A figure that quietly does not survive the write is worse
+  // than one that fails loudly: the report is built from the file, and nobody
+  // opens the book again to check.
+  const verified = useMemo(() => {
+    if (!dataset || !mandate) return undefined;
+    return verifyMandateWorkbook({
+      dataset, vehicleId: mandate.id, period: view.period, knowledgeDate,
+    });
+  }, [dataset, mandate, view.period, knowledgeDate]);
+
   const emitSupport = () => {
     if (!support || !allowed.allowed) return;
     setBusy(true);
@@ -122,6 +134,35 @@ export function Export({ view }: { view: QuarterView }) {
                 quarter, because a workbook that looks hand-kept must not pass an estimate off
                 as a reported number."
         >
+          {verified && (
+            <div
+              className="mb-3 rounded p-2.5 text-xs"
+              style={{
+                background: 'var(--surface-2)',
+                color: verified.ok ? 'var(--status-good)' : 'var(--status-critical)',
+              }}
+            >
+              <span className="font-medium">
+                {verified.ok ? 'Checked · ' : 'Not carried in full · '}
+              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {summariseVerification(verified, view.period)}
+              </span>
+              {verified.differences.length > 0 && (
+                <ul className="mt-2 mb-0 list-disc pl-5" style={{ color: 'var(--text-secondary)' }}>
+                  {verified.differences.map((difference) => (
+                    <li key={difference.what}>
+                      {difference.count} {difference.what}
+                      <ul className="m-0 list-none p-0 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {difference.examples.map((example) => <li key={example}>{example}</li>)}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-1.5">
             {support.sheets.map((sheet) => (
               <span
