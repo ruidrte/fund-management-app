@@ -642,7 +642,7 @@ export function buildDemoDataSet(clientId: string): DataSet {
     cashflows,
     balanceSheets,
     fxRates: fxRates(),
-    esgMetrics: [],
+    metrics: [],
     reporting: reportingFor(seed, clientKey),
   };
 }

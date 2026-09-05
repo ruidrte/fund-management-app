@@ -50,7 +50,10 @@ export function Esg({ view }: { view: QuarterView }) {
 
   const metrics = useMemo(() => {
     if (!dataset) return [];
-    return forPeriod(dataset.esgMetrics, view.period, view.scope.knowledgeDate);
+    // The metric table holds everything measured about anything; this screen is
+    // about the sustainability part of it, which is what the namespace is for.
+    return forPeriod(dataset.metrics, view.period, view.scope.knowledgeDate)
+      .filter((metric) => metric.metric.startsWith('esg.'));
   }, [dataset, view.period, view.scope.knowledgeDate]);
 
   return (
@@ -81,8 +84,13 @@ export function Esg({ view }: { view: QuarterView }) {
           columns={[
             { key: 'metric', header: 'Metric', render: (row) => row.metric },
             { key: 'scope', header: 'Level', render: (row) => row.scope.kind },
-            { key: 'value', header: 'Value', align: 'right', render: (row) => row.value.toLocaleString('en-GB') },
-            { key: 'unit', header: 'Unit', render: (row) => row.unit },
+            {
+              key: 'value', header: 'Value', align: 'right',
+              render: (row) => (row.value === undefined
+                ? row.text ?? '—'
+                : row.value.toLocaleString('en-GB')),
+            },
+            { key: 'unit', header: 'Unit', render: (row) => row.unit ?? '' },
             {
               key: 'coverage', header: 'Coverage', align: 'right',
               render: (row) => (row.coverage === undefined ? 'Not stated' : percent(row.coverage, 0)),

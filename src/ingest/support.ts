@@ -658,6 +658,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     assets: [],
     assetValuations: [],
     balanceSheets,
+    metrics: [],
     fxRates: [...rates.values()],
     problems,
     periods: [...periods].sort(),

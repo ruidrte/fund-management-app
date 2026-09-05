@@ -34,7 +34,7 @@
  */
 
 import type {
-  Asset, AssetValuation, Cashflow, Client, DataSet, EsgMetric, FxRate, Investor,
+  Asset, AssetValuation, Cashflow, Client, DataSet, Metric, FxRate, Investor,
   Position, PositionValuation, Vehicle, VehicleBalanceSheet,
 } from '../../domain/types';
 import type { ReportingProfile } from '../../domain/report';
@@ -80,7 +80,7 @@ const FACT_FILES = {
   cashflows: 'cashflows.jsonl',
   balanceSheets: 'balance_sheets.jsonl',
   fxRates: 'fx_rates.jsonl',
-  esgMetrics: 'esg_metrics.jsonl',
+  metrics: 'metrics.jsonl',
 } as const;
 
 type FactKey = keyof typeof FACT_FILES;
@@ -101,7 +101,7 @@ export type FactBatch = Partial<{
   cashflows: Cashflow[];
   balanceSheets: VehicleBalanceSheet[];
   fxRates: FxRate[];
-  esgMetrics: EsgMetric[];
+  metrics: Metric[];
 }>;
 
 /** Reference data that can be replaced wholesale. */
@@ -425,7 +425,7 @@ export async function readClient(
       cashflows: facts.cashflows as Cashflow[],
       balanceSheets: facts.balanceSheets as VehicleBalanceSheet[],
       fxRates: facts.fxRates as FxRate[],
-      esgMetrics: facts.esgMetrics as EsgMetric[],
+      metrics: facts.metrics as Metric[],
     },
     problems,
   };

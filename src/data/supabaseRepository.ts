@@ -10,7 +10,7 @@
 import { getSupabase } from '../lib/supabase';
 import type { ClientSummary, Repository } from './repository';
 import type {
-  Asset, AssetValuation, Cashflow, Client, DataSet, EsgMetric, FxRate,
+  Asset, AssetValuation, Cashflow, Client, DataSet, Metric, FxRate,
   Investor, Position, PositionValuation, Vehicle, VehicleBalanceSheet,
 } from '../domain/types';
 
@@ -62,7 +62,7 @@ export const supabaseRepository: Repository = {
     ]);
 
     const assetIds = assets.map((a: Row) => str(a.id));
-    const [assetValuations, esgMetrics] = await Promise.all([
+    const [assetValuations, metrics] = await Promise.all([
       assetIds.length ? select('asset_valuations', (q) => q.in('asset_id', assetIds)) : [],
       select('esg_metrics', (q) => q.eq('client_id', clientId)),
     ]);
@@ -78,7 +78,7 @@ export const supabaseRepository: Repository = {
       cashflows: cashflows.map(toCashflow),
       balanceSheets: balanceSheets.map(toBalanceSheet),
       fxRates: fxRates.map(toFxRate),
-      esgMetrics: esgMetrics.map(toEsgMetric),
+      metrics: metrics.map(toMetric),
     };
   },
 };
@@ -103,7 +103,7 @@ function emptyDataSet(client: Client): DataSet {
   return {
     client, vehicles: [], positions: [], assets: [], investors: [],
     positionValuations: [], assetValuations: [], cashflows: [],
-    balanceSheets: [], fxRates: [], esgMetrics: [],
+    balanceSheets: [], fxRates: [], metrics: [],
   };
 }
 
@@ -270,11 +270,11 @@ function toFxRate(row: Row): FxRate {
   };
 }
 
-function toEsgMetric(row: Row): EsgMetric {
+function toMetric(row: Row): Metric {
   return {
     id: str(row.id),
     scope: {
-      kind: str(row.scope_kind, 'vehicle') as EsgMetric['scope']['kind'],
+      kind: str(row.scope_kind, 'vehicle') as Metric['scope']['kind'],
       id: str(row.scope_id),
     },
     period: str(row.period),

@@ -163,7 +163,7 @@ export function DatabaseImport({
           vehicleId,
           positions: [], valuations: [], cashflows: [], investors: [],
           assets: read.assets, assetValuations: read.assetValuations, balanceSheets: [],
-          fxRates: [],
+          metrics: [], fxRates: [],
           problems: read.problems, periods: read.periods, notes: read.notes,
         }];
       }
@@ -439,7 +439,9 @@ export function DatabaseImport({
                     value={support ? total((p) => p.investors) : total((p) => p.assets)} />
                   <Count label={support ? 'Balance sheets' : 'Company values'}
                     value={support ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
-                  <Count label="Rates" value={plans[0].fxRates.length} />
+                  {total((p) => p.metrics) > 0
+                    ? <Count label="Reported figures" value={total((p) => p.metrics)} />
+                    : <Count label="Rates" value={plans[0].fxRates.length} />}
                 </>
               )}
             </div>

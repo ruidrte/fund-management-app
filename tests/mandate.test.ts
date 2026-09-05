@@ -92,9 +92,10 @@ const REGISTER: Cell[][] = [
 ];
 
 const QUARTER_HEADER = [
-  'ID', 'Asset', 'Asset FMV\nQ1 2024', 'Asset FMV\nQ2 2024',
+  'ID', 'Asset', 'Asset FMV\nQ1 2024', 'Asset FMV\nQ2 2024', 'Δ $',
   'Fund equity FV\ngesamt-fund · Q1 2024', 'Fund equity FV\ngesamt-fund · Q2 2024',
   'Cap rate', 'NOI', 'Rehabilitation', 'Invested capital', 'Realised proceeds',
+  'Occupancy', 'Principal driver of the change', 'Roof age',
   'Section 8', '<50% AMI', '<60% AMI', '<80% AMI', 'Restricted', 'Market rate',
 ];
 
@@ -107,11 +108,15 @@ const QUARTER_I: Cell[][] = [
   [],
   QUARTER_HEADER,
   // Ties: 1,000,000 of movement, explained by 400,000 + 600,000.
-  ['A1', 'Rowan Court', 20_000_000, 21_000_000, 58_000_000, 60_000_000,
-    400_000, 600_000, 0, 40_000_000, 1_000_000, 75, 0, 0, 0, 0, 25],
+  ['A1', 'Rowan Court', 20_000_000, 21_000_000, 1_000_000, 58_000_000, 60_000_000,
+    400_000, 600_000, 0, 40_000_000, 1_000_000,
+    0.95, 'Cap rate held; the lift is operating income.', 12,
+    75, 0, 0, 0, 0, 25],
   // Does not tie: 2,000,000 of movement, explained by 200,000.
-  ['A2', 'Alder Place', 10_000_000, 12_000_000, 28_000_000, 30_000_000,
-    100_000, 100_000, 0, 25_000_000, 0, 50, 0, 0, 0, 0, 0],
+  ['A2', 'Alder Place', 10_000_000, 12_000_000, 2_000_000, 28_000_000, 30_000_000,
+    100_000, 100_000, 0, 25_000_000, 0,
+    0.88, 'Reappraised on the new rent roll.', 30,
+    50, 0, 0, 0, 0, 0],
   [null, 'Total'],
   [],
   [FOOTNOTE],
@@ -122,10 +127,12 @@ const QUARTER_II: Cell[][] = [
   ['21  Q2 2024 — Fund II'],
   [],
   QUARTER_HEADER,
-  ['B1', 'Birch Terrace', 18_000_000, 19_000_000, 19_000_000, 20_000_000,
-    500_000, 500_000, 0, 15_000_000, 0, 40, 0, 0, 0, 0, 0],
+  ['B1', 'Birch Terrace', 18_000_000, 19_000_000, 1_000_000, 19_000_000, 20_000_000,
+    500_000, 500_000, 0, 15_000_000, 0,
+    0.91, 'Stabilising after the rehabilitation.', 5,
+    40, 0, 0, 0, 0, 0],
   // A property in the quarter that nobody put in the register.
-  ['B9', 'Ghost House', 1_000_000, 1_000_000, 1_000_000, 1_000_000],
+  ['B9', 'Ghost House', 1_000_000, 1_000_000, 0, 1_000_000, 1_000_000],
   [null, 'Total'],
 ];
 
@@ -369,6 +376,62 @@ describe('the properties inside the funds', () => {
   it('does not read the sheet’s own footnote as a property', () => {
     expect(plan().assets.map((asset) => asset.id)).toHaveLength(3);
     expect(plan().problems.join(' ')).not.toContain('Ties?');
+  });
+});
+
+describe('what the manager reports beside the valuation', () => {
+  const of = (id: string, metric: string) => plan().metrics
+    .find((m) => m.scope.id.endsWith(id) && m.metric === metric && m.period === '2024Q2');
+
+  it('keeps the figures nothing computed depends on', () => {
+    expect(of('a1', 'operations.occupancy')?.value).toBe(0.95);
+    expect(of('a1', 'value.capRate')?.value).toBe(400_000);
+    expect(of('a1', 'value.netOperatingIncome')?.value).toBe(600_000);
+    expect(of('a1', 'units.section8')?.value).toBe(75);
+    expect(of('a1', 'units.marketRate')?.value).toBe(25);
+  });
+
+  it('keeps what was written as text rather than losing it to a number field', () => {
+    const driver = of('a1', 'narrative.driver')!;
+    expect(driver.text).toBe('Cap rate held; the lift is operating income.');
+    expect(driver.value).toBeUndefined();
+  });
+
+  it('measures a paired column once per quarter it is headed with', () => {
+    const fmv = plan().metrics
+      .filter((m) => m.scope.id.endsWith('a1') && m.metric === 'value.fairMarketValue')
+      .sort((a, b) => a.period.localeCompare(b.period));
+    expect(fmv.map((m) => [m.period, m.value]))
+      .toEqual([['2024Q1', 20_000_000], ['2024Q2', 21_000_000]]);
+  });
+
+  it('keeps a column nobody mapped rather than dropping it, and says it did', () => {
+    expect(of('a1', 'reported.roofAge')?.value).toBe(12);
+    expect(plan().notes.some((note) => /not ones this reader knows by name/.test(note)))
+      .toBe(true);
+  });
+
+  it('does not keep a difference between two figures it already has', () => {
+    expect(plan().metrics.some((m) => /δ|delta/i.test(m.metric))).toBe(false);
+  });
+
+  it('keeps the manager’s own fund figures against the fund, not the properties', () => {
+    const nav = plan().metrics.find((m) =>
+      m.metric === 'fund.totalNetAssetValueNav' && m.period === '2024Q2'
+      && m.scope.id === plan().positions[0].id);
+    expect(nav?.scope.kind).toBe('position');
+    expect(nav?.value).toBe(46_000_000);
+    // The engine's own figure for the same quarter is the capital account, and
+    // is deliberately a different number from the manager's fund-level one.
+    expect(plan().valuations.find((v) =>
+      v.positionId === plan().positions[0].id && v.period === '2024Q2')?.nav).toBe(9_000_000);
+  });
+
+  it('does not keep as a metric what is already a fact', () => {
+    const names = new Set(plan().metrics.map((m) => m.metric));
+    expect(names.has('reported.investedCapital')).toBe(false);
+    expect(names.has('reported.realisedProceeds')).toBe(false);
+    expect(names.has('reported.fundEquityFv')).toBe(false);
   });
 });
 

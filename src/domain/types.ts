@@ -315,7 +315,7 @@ export interface FxRate {
 }
 
 /* ------------------------------------------------------------------ *
- * ESG — the schema is present from day one; the analytics come later
+ * ESG classification, and the open set of everything else measured
  * ------------------------------------------------------------------ */
 
 export interface EsgClassification {
@@ -325,15 +325,37 @@ export interface EsgClassification {
   exclusionsBreached?: string[];
 }
 
-export interface EsgMetric {
+/**
+ * Anything measured or written about something, for a period.
+ *
+ * The three fact tables above carry what the engine computes on: valuations,
+ * flows, the balance sheet. This carries everything else a report needs and
+ * none of them holds — occupancy, a loan-to-value, income against budget, a
+ * rehabilitation programme, a carbon figure, and the sentence explaining what
+ * moved a property's value this quarter.
+ *
+ * One table rather than a column per thing, because the set is open: a manager
+ * adds a column to their quarterly pack and the book has to keep it without a
+ * schema change and without a release. It is bitemporal like every other fact,
+ * so a restated occupancy is a new row and the quarter as published still
+ * reproduces.
+ *
+ * `metric` is a dotted name from a stable namespace — `operations.occupancy`,
+ * `debt.ltv`, `narrative.driver`, `esg.scope1` — so a report layout can ask for
+ * one by name and an emitted workbook can put it back in its own column.
+ */
+export interface Metric {
   id: string;
   /** Whichever level the metric was collected at. */
-  scope: { kind: 'vehicle' | 'position' | 'asset'; id: string };
+  scope: { kind: 'vehicle' | 'position' | 'asset' | 'investor'; id: string };
   period: PeriodId;
   recordedAt: string;
-  metric: string; // e.g. "scope1_tco2e"
-  value: number;
-  unit: string;
+  metric: string;
+  /** Set when the metric was measured. Exactly one of `value` and `text`. */
+  value?: number;
+  /** Set when it was written rather than measured — a narrative, a status. */
+  text?: string;
+  unit?: string;
   coverage?: number; // fraction of the portfolio the metric covers
   source: string;
 }
@@ -424,5 +446,5 @@ export interface DataSet {
   cashflows: Cashflow[];
   balanceSheets: VehicleBalanceSheet[];
   fxRates: FxRate[];
-  esgMetrics: EsgMetric[];
+  metrics: Metric[];
 }

@@ -39,7 +39,7 @@
 import { periodForDate, type PeriodId } from '../domain/period';
 import type {
   Asset, AssetValuation, Cashflow, CashflowType, CurrencyCode, FxRate, Investor,
-  Position, PositionKind, PositionValuation, VehicleBalanceSheet,
+  Metric, Position, PositionKind, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
@@ -97,6 +97,12 @@ export interface ImportPlan {
   assetValuations: AssetValuation[];
   /** Cash, other assets, liabilities and accruals at product level. */
   balanceSheets: VehicleBalanceSheet[];
+  /**
+   * Everything the source states that is not a valuation, a flow or a balance
+   * sheet: operations, debt, rehabilitation, sustainability, and the narrative.
+   * A report page can need a figure that nothing computed does.
+   */
+  metrics: Metric[];
   fxRates: FxRate[];
   /** Rows that could not be read, each naming its sheet and line. */
   problems: string[];
@@ -673,6 +679,7 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
     // A portfolio database says nothing about the vehicle's own cash and
     // accruals; those come from the administrator, not from the manager.
     balanceSheets: [],
+    metrics: [],
     fxRates,
     problems,
     periods: [...periods].sort(),

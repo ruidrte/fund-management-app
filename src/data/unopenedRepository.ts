@@ -31,7 +31,7 @@ export const unopenedRepository: Repository = {
       cashflows: [],
       balanceSheets: [],
       fxRates: [],
-      esgMetrics: [],
+      metrics: [],
     };
   },
 };

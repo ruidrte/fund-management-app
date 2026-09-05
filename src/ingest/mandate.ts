@@ -39,7 +39,7 @@
 import { makePeriod, periodForDate, type PeriodId } from '../domain/period';
 import type {
   Asset, AssetValuation, Attribution, Cashflow, CashflowType, CurrencyCode, FxRate,
-  Investor, Position, PositionValuation,
+  Investor, Metric, Position, PositionValuation,
 } from '../domain/types';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
@@ -107,6 +107,14 @@ function periodInHeading(heading: string): PeriodId | undefined {
     if (period) return period;
   }
   return undefined;
+}
+
+/** A metric name from a row label: `Cumulative Paid In Capital` -> `cumulativePaidInCapital`. */
+function camel(value: string): string {
+  const words = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ');
+  return words
+    .map((word, i) => (i === 0 ? word : word[0].toUpperCase() + word.slice(1)))
+    .join('') || 'unnamed';
 }
 
 /** The one value a list agrees on, or `Unclassified` when it does not agree. */
@@ -524,6 +532,131 @@ function countryOf(state: string): string {
   return /^[A-Z]{2}\b/.test(state.trim()) ? 'United States' : 'Unclassified';
 }
 
+/* ------------------------------------------------------------------ *
+ * The columns beside the valuation
+ *
+ * A quarter sheet is about sixty columns wide per property. Four of them are
+ * facts the engine computes on — equity at fair value, invested, realised, and
+ * the affordability split that becomes the sector. Everything else is what the
+ * manager reports beside a valuation: what moved the value, the debt, the
+ * operations against budget, the rehabilitation programme, the rents, and the
+ * sentence explaining the quarter. A report page needs those and nothing
+ * computed does, so they are kept as metrics rather than read and dropped.
+ *
+ * Known headings get a stable name, so a layout can ask for one and an emitted
+ * workbook can put it back in its own column. A heading nobody has mapped is
+ * kept anyway under a name derived from itself: a manager who adds a column
+ * should not have it silently discarded, and a round trip through this book
+ * should give back the sheet that went in.
+ * ------------------------------------------------------------------ */
+
+/** Read as a fact, or derived from two that are — not kept twice. */
+const NOT_A_METRIC = [
+  /^id$/, /^asset$/, /^fund equity fv/, /^invested capital$/, /^realised proceeds$/,
+  // Any column headed with a delta is the difference between two that are
+  // already kept, whatever it goes on to name.
+  /^δ/, /^ties\?$/, /^total$/, /^total cap \+ noi \+ rehab$/,
+];
+
+/** The headings this format is known to use, and what each one is. */
+const METRIC_NAMES: Array<[RegExp, string]> = [
+  [/^ownership ?%$/, 'holding.ownership'],
+  [/^asset fmv/, 'value.fairMarketValue'],
+  [/^cap rate$/, 'value.capRate'],
+  [/^noi$/, 'value.netOperatingIncome'],
+  [/^rehabilitation$/, 'value.rehabilitation'],
+  [/^other/, 'value.other'],
+  [/^principal driver/, 'narrative.driver'],
+  [/^total committed$/, 'capital.committed'],
+  [/^uncalled$/, 'capital.uncalled'],
+  [/^total proceeds$/, 'capital.proceeds'],
+  [/^gross multiple$/, 'capital.grossMultiple'],
+  [/^gain/, 'capital.gain'],
+  [/^capital in/, 'capital.movement'],
+  [/^principal mortgage$/, 'debt.principal'],
+  [/^fmv debt/, 'debt.fairValue'],
+  [/^ltv$/, 'debt.loanToValue'],
+  [/^status$/, 'operations.status'],
+  [/^occupancy$/, 'operations.occupancy'],
+  [/^3y high$/, 'operations.occupancyHigh'],
+  [/^3y low$/, 'operations.occupancyLow'],
+  [/^income actual$/, 'operations.income.actual'],
+  [/^income budget$/, 'operations.income.budget'],
+  [/^expense actual$/, 'operations.expense.actual'],
+  [/^expense budget$/, 'operations.expense.budget'],
+  [/^noi actual$/, 'operations.noi.actual'],
+  [/^noi budget$/, 'operations.noi.budget'],
+  [/^debt service actual$/, 'operations.debtService.actual'],
+  [/^debt service budget$/, 'operations.debtService.budget'],
+  [/^cfads actual$/, 'operations.cfads.actual'],
+  [/^cfads budget$/, 'operations.cfads.budget'],
+  [/^rehab strategy$/, 'rehab.strategy'],
+  [/^rehab planned$/, 'rehab.planned'],
+  [/^rehab executed$/, 'rehab.executed'],
+  [/^%$/, 'rehab.progress'],
+  [/^rehab status$/, 'rehab.status'],
+  [/^green certification$/, 'esg.greenCertification'],
+  [/^retrofit$/, 'esg.retrofit'],
+  [/^rsc$/, 'esg.residentServices'],
+  [/^section 8$/, 'units.section8'],
+  [/^<50% ami$/, 'units.below50Ami'],
+  [/^<60% ami$/, 'units.below60Ami'],
+  [/^<80% ami$/, 'units.below80Ami'],
+  [/^restricted$/, 'units.restricted'],
+  [/^market rate$/, 'units.marketRate'],
+  [/^avg total rent$/, 'rent.average'],
+  [/^avg market rent$/, 'rent.market'],
+];
+
+/** A heading nobody mapped, kept under a name derived from what it says. */
+function derivedName(heading: string): string {
+  const words = heading.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ');
+  const camel = words
+    .map((word, i) => (i === 0 ? word : word[0].toUpperCase() + word.slice(1)))
+    .join('');
+  return `reported.${camel || 'unnamed'}`;
+}
+
+interface MetricColumn {
+  index: number;
+  metric: string;
+  /** Set where the heading names its own quarter, as the paired value columns do. */
+  period?: PeriodId;
+  /** Whether this column was recognised or kept under a derived name. */
+  known: boolean;
+}
+
+function metricColumns(header: Cell[]): MetricColumn[] {
+  const found: MetricColumn[] = [];
+  const seen = new Set<string>();
+
+  header.forEach((cell, index) => {
+    const heading = text(cell);
+    if (!heading) return;
+    // The quarter is part of the heading, not part of what is being measured.
+    const period = periodInHeading(heading);
+    const name = heading
+      .split(/\r?\n|\u00b7/)
+      .filter((part) => !toPeriod(part.trim()))
+      .join(' ')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!name || NOT_A_METRIC.some((pattern) => pattern.test(name))) return;
+
+    const known = METRIC_NAMES.find(([pattern]) => pattern.test(name));
+    const metric = known ? known[1] : derivedName(name);
+    // A heading repeated for two quarters is one metric measured twice; the
+    // same heading repeated without a quarter is one column, read once.
+    const key = `${metric}/${period ?? ''}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    found.push({ index, metric, period, known: Boolean(known) });
+  });
+
+  return found;
+}
+
 /** What an identifier looks like, so a footnote in the same column is not one. */
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._-]{0,11}$/;
 
@@ -544,10 +677,20 @@ interface QuarterRow {
   invested?: number;
   realised?: number;
   units: Record<string, number>;
+  /** Everything else the row states, by metric name and the quarter it is for. */
+  reported: Array<{ metric: string; period?: PeriodId; value?: number; text?: string }>;
 }
 
-function readQuarterSheets(sheets: TableData[]): Map<string, { rows: QuarterRow[]; period?: PeriodId; before?: PeriodId }> {
-  const found = new Map<string, { rows: QuarterRow[]; period?: PeriodId; before?: PeriodId }>();
+interface QuarterSheet {
+  rows: QuarterRow[];
+  period?: PeriodId;
+  before?: PeriodId;
+  /** Columns kept under a derived name, because nothing had mapped them. */
+  unmapped: string[];
+}
+
+function readQuarterSheets(sheets: TableData[]): Map<string, QuarterSheet> {
+  const found = new Map<string, QuarterSheet>();
 
   for (const sheet of sheetsLike(sheets, QUARTER)) {
     const key = QUARTER.exec(tail(sheet.sheetName))?.[1]?.toUpperCase();
@@ -572,6 +715,7 @@ function readQuarterSheets(sheets: TableData[]): Map<string, { rows: QuarterRow[
     equity.sort((a, b) => a.period.localeCompare(b.period));
     fmv.sort((a, b) => a.period.localeCompare(b.period));
 
+    const reported = metricColumns(sheet.rows[header]);
     const rows: QuarterRow[] = [];
     for (let i = header + 1; i < sheet.rows.length; i += 1) {
       const row = sheet.rows[i];
@@ -597,6 +741,18 @@ function readQuarterSheets(sheets: TableData[]): Map<string, { rows: QuarterRow[
         invested: at.number(row, 'Invested capital'),
         realised: at.number(row, 'Realised proceeds'),
         units,
+        reported: reported.flatMap((column) => {
+          const cell = row[column.index];
+          const value = toNumber(cell);
+          const written = text(cell);
+          if (value === undefined && !written) return [];
+          return [{
+            metric: column.metric,
+            period: column.period,
+            value,
+            text: value === undefined ? written : undefined,
+          }];
+        }),
       });
     }
 
@@ -604,6 +760,7 @@ function readQuarterSheets(sheets: TableData[]): Map<string, { rows: QuarterRow[
       rows,
       period: equity[equity.length - 1]?.period,
       before: equity.length > 1 ? equity[0].period : undefined,
+      unmapped: reported.filter((column) => !column.known).map((column) => column.metric),
     });
   }
 
@@ -1026,7 +1183,45 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
 
   const assets: Asset[] = [];
   const assetValuations: AssetValuation[] = [];
+  const metrics: Metric[] = [];
   const bridgeBreaks: string[] = [];
+  const unmapped = new Set<string>();
+
+  const metric = (
+    scope: Metric['scope'], period: PeriodId, name: string,
+    figure: { value?: number; text?: string }, source: string,
+  ) => {
+    if (figure.value === undefined && !figure.text) return;
+    periods.add(period);
+    metrics.push({
+      id: `met-${scope.id}-${period}-${name}`,
+      scope,
+      period,
+      recordedAt,
+      metric: name,
+      value: figure.value,
+      text: figure.text,
+      source,
+    });
+  };
+
+  // What the manager reports about each fund beside its net asset value: the
+  // multiples and returns as they state them, the leverage, the operations.
+  // They are not what the engine computes from the ledger and are not meant to
+  // be — a report page prints the manager's figure and says so.
+  for (const fund of summary.funds) {
+    const position = positionOf.get(fund.key);
+    if (!position) continue;
+    for (const [name, byFund] of series) {
+      for (const [period, value] of byFund.get(fund.key) ?? []) {
+        metric(
+          { kind: 'position', id: position.id }, period,
+          `fund.${camel(name)}`, { value },
+          `${fund.name} statements, as the manager reports them`,
+        );
+      }
+    }
+  }
 
   for (const fund of summary.funds) {
     const position = positionOf.get(fund.key);
@@ -1086,6 +1281,16 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
         }
       }
 
+      for (const figure of row.reported) {
+        metric(
+          { kind: 'asset', id: `ast-${book}-${slug(row.id, 12)}` },
+          figure.period ?? quarter.period ?? control.period ?? recordedAt.slice(0, 7),
+          figure.metric, figure,
+          `${fund.name} quarterly report, at 100% of the fund`,
+        );
+      }
+      for (const name of quarter.unmapped) unmapped.add(name);
+
       const asset: Asset = {
         id: `ast-${book}-${slug(row.id, 12)}`,
         positionId: position.id,
@@ -1142,6 +1347,22 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     );
   }
 
+  if (unmapped.size > 0) {
+    notes.push(
+      `${unmapped.size} column(s) of the quarter sheets are not ones this reader knows by name, `
+      + 'so they are kept under a name derived from their own heading rather than dropped: '
+      + `${[...unmapped].slice(0, 6).map((name) => name.replace('reported.', '')).join(', ')}`
+      + `${unmapped.size > 6 ? ', and others' : ''}.`,
+    );
+  }
+  if (metrics.length > 0) {
+    notes.push(
+      `${metrics.length} figure(s) beside the valuations — what moved each value, the debt, the `
+      + 'operations against budget, the rehabilitation and the narrative — are kept as reported. '
+      + 'Nothing computed depends on them; the report pages do.',
+    );
+  }
+
   notes.push(
     'An adviser runs no vehicle, so there is no product net asset value here and no balance '
     + 'sheet to read. What the mandate is worth is the capital account, and the advisory fee is '
@@ -1158,6 +1379,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     assets,
     assetValuations,
     balanceSheets: [],
+    metrics,
     fxRates: [...new Map(fxRates.map((rate) => [rate.id, rate])).values()],
     problems,
     periods: [...periods].sort(),

@@ -112,7 +112,7 @@ export function buildExtract(options: ExtractOptions): Extract {
   ).filter((b) => inWindow(b.period));
 
   const fxRates = visibleAt(dataset.fxRates, knowledgeDate).filter((r) => inWindow(r.period));
-  const esgMetrics = visibleAt(dataset.esgMetrics, knowledgeDate).filter((m) => inWindow(m.period));
+  const metrics = visibleAt(dataset.metrics, knowledgeDate).filter((m) => inWindow(m.period));
 
   const periods = sortPeriods(
     [...new Set([
@@ -248,15 +248,17 @@ export function buildExtract(options: ExtractOptions): Extract {
     },
   ];
 
-  if (esgMetrics.length > 0) {
+  if (metrics.length > 0) {
     sheets.push({
-      name: 'esg_metrics',
-      description: 'Sustainability metrics, each with the share of the scope it actually covers.',
+      name: 'metrics',
+      description:
+        'Everything measured or written about something for a period, beyond the valuations and '
+        + 'flows: operations, debt, rehabilitation, sustainability, and the narrative.',
       columns: ['metric_id', 'scope_kind', 'scope_id', 'period', 'period_label',
-        'recorded_at', 'metric', 'value', 'unit', 'coverage_fraction', 'source'],
-      rows: esgMetrics.sort(byPeriodThenRecorded).map((m) => [
+        'recorded_at', 'metric', 'value', 'text', 'unit', 'coverage_fraction', 'source'],
+      rows: metrics.sort(byPeriodThenRecorded).map((m) => [
         m.id, m.scope.kind, m.scope.id, m.period, formatPeriod(m.period), m.recordedAt,
-        m.metric, m.value, m.unit, m.coverage ?? null, m.source,
+        m.metric, m.value ?? null, m.text ?? null, m.unit ?? null, m.coverage ?? null, m.source,
       ]),
     });
   }

@@ -418,7 +418,7 @@ describe('a book loaded from statements, with no cashflow ledger', () => {
       assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
     }],
     assets: [], investors: [], assetValuations: [], cashflows: [], balanceSheets: [],
-    esgMetrics: [],
+    metrics: [],
     fxRates: [],
     positionValuations: [{
       id: 'val', positionId: 'p', period: '2026Q1', recordedAt: '2026-04-20T09:00:00Z',
@@ -511,7 +511,7 @@ describe('the house convention for a holding that has not reported', () => {
         assetClass: 'PE', region: 'Europe', status: 'Investing',
       },
     ],
-    assets: [], investors: [], assetValuations: [], balanceSheets: [], esgMetrics: [], fxRates: [],
+    assets: [], investors: [], assetValuations: [], balanceSheets: [], metrics: [], fxRates: [],
     cashflows: [],
     positionValuations: [
       { id: 'a', positionId: 'reporting', period: '2025Q4', recordedAt: '2026-01-20T09:00:00Z', nav: 1_000, source: 'GP' },
@@ -713,7 +713,7 @@ describe('coverage across currencies', () => {
       investors: [],
       cashflows: [],
       balanceSheets: [],
-      esgMetrics: [],
+      metrics: [],
       // Roughly 11 SEK to the euro: the two holdings are worth about the same.
       fxRates: [rate('SEK', 11), rate('USD', 1.1)],
       positionValuations: [

@@ -114,9 +114,11 @@ export function takeInventory(dataset: DataSet, scope: InventoryScope): Inventor
   const cashflows = at(dataset.cashflows.filter((c) => vehicleIds.has(c.vehicleId)));
   const balanceSheets = at(dataset.balanceSheets.filter((b) => vehicleIds.has(b.vehicleId)));
   const rates = at(dataset.fxRates);
-  const esg = at(dataset.esgMetrics).filter(
+  const metrics = at(dataset.metrics).filter(
     (m) => positionIds.has(m.scope.id) || assetIds.has(m.scope.id) || vehicleIds.has(m.scope.id),
   );
+  const esg = metrics.filter((m) => m.metric.startsWith('esg.'));
+  const operating = metrics.filter((m) => !m.metric.startsWith('esg.'));
 
   const portfolioFlows = cashflows.filter((c) => c.positionId);
   const investorFlows = cashflows.filter((c) => c.investorId);
@@ -304,6 +306,13 @@ export function takeInventory(dataset: DataSet, scope: InventoryScope): Inventor
         };
       }),
     },
+    simple(
+      'operating', 'Operating detail',
+      'What a manager reports beside a valuation: occupancy, income against budget, debt, '
+      + 'rehabilitation, and the sentence explaining the quarter. A report page can need it '
+      + 'even where nothing computed does.',
+      operating.map((m) => ({ period: m.period })), 'figure(s)',
+    ),
     simple(
       'esg', 'ESG metrics',
       'Sustainability figures per holding or company. Nothing else depends on them.',
