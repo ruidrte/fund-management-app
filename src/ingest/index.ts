@@ -15,6 +15,9 @@ import {
 import { extractorFor } from './extractors';
 import { isPortfolioDatabase, programsIn, type ProgramSummary } from './pfdb';
 import { isSupportWorkbook, summariseSupport, type SupportSummary } from './support';
+import {
+  isAllocationWorkbook, summariseAllocation, type AllocationSummary,
+} from './allocation';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -29,6 +32,10 @@ export {
   isSupportWorkbook, planSupportImport, summariseSupport,
   type SupportOptions, type SupportSummary,
 } from './support';
+export {
+  isAllocationWorkbook, planAllocationImport, summariseAllocation,
+  type AllocationOptions, type AllocationPlan, type AllocationSummary,
+} from './allocation';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
 export { validateAll, canCommit, stringField, numberField, booleanField } from './validate';
@@ -88,7 +95,10 @@ export async function openDatabase(
   const support = isSupportWorkbook(workbook.sheets)
     ? summariseSupport(workbook.sheets)
     : undefined;
-  if (!isPortfolioDatabase(workbook.sheets) && !support) return undefined;
+  const allocation = isAllocationWorkbook(workbook.sheets)
+    ? summariseAllocation(workbook.sheets)
+    : undefined;
+  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation) return undefined;
 
   return {
     document: {
@@ -107,6 +117,7 @@ export async function openDatabase(
     sheets: workbook.sheets,
     programs: isPortfolioDatabase(workbook.sheets) ? programsIn(workbook.sheets) : [],
     support,
+    allocation,
   };
 }
 
@@ -119,6 +130,8 @@ export interface DatabaseOutcome {
   programs: ProgramSummary[];
   /** The product, when it is one product's quarterly reporting workbook. */
   support?: SupportSummary;
+  /** The companies inside the funds, when it is an allocation database. */
+  allocation?: AllocationSummary;
 }
 
 export async function ingest(

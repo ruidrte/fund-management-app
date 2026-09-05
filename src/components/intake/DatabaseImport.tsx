@@ -18,12 +18,11 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import {
-  planImport, planSupportImport, similarity,
+  planAllocationImport, planImport, planSupportImport, similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
 import { useImport } from '../../context/filing';
 import { useScope } from '../../context/ScopeContext';
-import type { Vehicle } from '../../domain/types';
 import { Card } from '../common/Card';
 import { StatusPill } from '../common/Badges';
 import { DataTable } from '../common/DataTable';
@@ -45,9 +44,12 @@ interface Target {
  * is tried as well, and a weak match is left unset rather than guessed: filing
  * a portfolio into the wrong product is worse than picking from a list.
  */
-function suggest(program: string, vehicles: Vehicle[], taken: Set<string>): string {
+function suggest(
+  program: string, candidates: Array<{ id: string; name: string; shortName?: string }>,
+  taken: Set<string>,
+): string {
   let best: { id: string; score: number } | undefined;
-  for (const vehicle of vehicles) {
+  for (const vehicle of candidates) {
     if (taken.has(vehicle.id)) continue;
     const score = Math.max(
       similarity(program, vehicle.name),
@@ -65,8 +67,17 @@ export function DatabaseImport({
   onClose: () => void;
   onImported: (message: string) => void;
 }) {
-  const { vehicles } = useScope();
+  const { vehicles, vehicleId, dataset } = useScope();
   const { apply, canImport, destination } = useImport();
+
+  // An allocation database is different from the other two: it says what is
+  // inside holdings the book already has, so it is matched against those rather
+  // than against products, and it needs a product chosen before it can be read.
+  const allocation = outcome.allocation;
+  const holdings = useMemo(
+    () => (dataset?.positions ?? []).filter((p) => !vehicleId || p.vehicleId === vehicleId),
+    [dataset, vehicleId],
+  );
 
   // A quarterly reporting workbook describes one product; a portfolio database
   // describes every programme a manager runs. The screen is the same — choose
@@ -76,16 +87,31 @@ export function DatabaseImport({
 
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
-  const portfolios = support
-    ? [{ program: support.fund, funds: support.holdings, transactions: support.movements,
-      companies: 0, first: support.first, last: support.last } as ProgramSummary]
-    : outcome.programs.filter((p) => !p.investorIn);
+  const portfolios = allocation
+    ? allocation.funds.map((fund) => ({
+      program: fund.name, funds: 0, transactions: 0, companies: fund.companies,
+      first: allocation.first, last: allocation.last,
+    } as ProgramSummary))
+    : support
+      ? [{ program: support.fund, funds: support.holdings, transactions: support.movements,
+        companies: 0, first: support.first, last: support.last } as ProgramSummary]
+      : outcome.programs.filter((p) => !p.investorIn);
   const partners = support ? [] : outcome.programs.filter((p) => p.investorIn);
 
   const [targets, setTargets] = useState<Target[]>(() => {
     const taken = new Set<string>();
+    const against = allocation
+      ? holdings.map((p) => ({ id: p.id, name: p.name }))
+      : vehicles;
+    // A fund is named "MA 22" here and "Equitix MA22" in the book, so the
+    // manager is put in front before matching: on its own the code matches
+    // nothing.
+    const managerOf = new Map(allocation?.funds.map((f) => [f.name, f.manager]) ?? []);
     return portfolios.map((program) => {
-      const vehicleId = suggest(program.program, vehicles, taken);
+      const searchFor = managerOf.get(program.program)
+        ? `${managerOf.get(program.program)} ${program.program}`
+        : program.program;
+      const vehicleId = suggest(searchFor, against, taken);
       if (vehicleId) taken.add(vehicleId);
       return {
         program: program.program,
@@ -108,6 +134,30 @@ export function DatabaseImport({
 
   const plans = useMemo<ImportPlan[]>(() => {
     try {
+      if (allocation) {
+        if (!vehicleId) return [];
+        // What each matched holding is worth at the sheet's last quarter, so
+        // the reader can settle the units against the book rather than assume.
+        const reference: Record<string, number> = {};
+        for (const target of chosen) {
+          const filed = (dataset?.positionValuations ?? [])
+            .filter((v) => v.positionId === target.vehicleId && v.period === allocation.last)
+            .sort((a, b) => Date.parse(b.recordedAt) - Date.parse(a.recordedAt))[0];
+          if (filed) reference[target.vehicleId] = filed.nav;
+        }
+        const read = planAllocationImport(outcome.sheets, {
+          holdings: Object.fromEntries(chosen.map((t) => [t.program, t.vehicleId])),
+          reference,
+        });
+        return [{
+          program: allocation.product,
+          vehicleId,
+          positions: [], valuations: [], cashflows: [], investors: [],
+          assets: read.assets, assetValuations: read.assetValuations, balanceSheets: [],
+          fxRates: [],
+          problems: read.problems, periods: read.periods, notes: read.notes,
+        }];
+      }
       return chosen.map((target) => (support
         ? planSupportImport(outcome.sheets, { vehicleId: target.vehicleId })
         : planImport(outcome.sheets, {
@@ -123,7 +173,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, JSON.stringify(chosen)]);
+  }, [outcome.sheets, support, allocation, vehicleId, dataset, JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
   // same one would silently replace each other's holdings.
@@ -150,18 +200,24 @@ export function DatabaseImport({
   return (
     <div className="flex flex-col gap-4">
       <Card
-        title={support
-          ? 'This is a quarterly reporting workbook, not a document'
-          : 'This is a portfolio database, not a document'}
-        subtitle={support
-          ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
-          : outcome.document.name}
+        title={allocation
+          ? 'This is an asset allocation database, not a document'
+          : support
+            ? 'This is a quarterly reporting workbook, not a document'
+            : 'This is a portfolio database, not a document'}
+        subtitle={allocation
+          ? `${allocation.product} — ${allocation.companies} companies inside ${allocation.funds.length} funds`
+          : support
+            ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
+            : outcome.document.name}
         actions={
           <div className="flex items-center gap-2">
             <StatusPill tone="serious">
-              {support
-                ? `${support.holdings} holding(s), ${support.investors} investor(s)`
-                : `${outcome.programs.length} programme(s)`}
+              {allocation
+                ? `${allocation.rows} row(s), ${allocation.first} — ${allocation.last}`
+                : support
+                  ? `${support.holdings} holding(s), ${support.investors} investor(s)`
+                  : `${outcome.programs.length} programme(s)`}
             </StatusPill>
             <button
               type="button" onClick={onClose}
@@ -172,49 +228,61 @@ export function DatabaseImport({
             </button>
           </div>
         }
-        note={support
-          ? `Read as a whole rather than row by row: the ledger of movements, the balance sheet quarter `
+        note={allocation
+          ? `What is inside the holdings this book already has: one row per company, per fund, per `
+            + `quarter. It is what makes look-through possible — the portfolio stops at the funds, `
+            + `and this is what is in them. The exposure is read as the sheet files it, so the `
+            + `totals sum to the holdings rather than to a second calculation of the same thing.`
+          : support
+            ? `Read as a whole rather than row by row: the ledger of movements, the balance sheet quarter `
             + `by quarter, and the investors' own ledger. It carries the two things a portfolio `
             + `database cannot — the cash and accruals outside the portfolio, and the capital accounts.`
           : `Five related sheets rather than a list of facts, so it is imported as a whole rather than `
             + `reviewed row by row. Every figure still carries this file's hash, and the file itself is `
-            + `kept beside them.`}
+              + `kept beside them.`}
       >
-        <DataTable
-          rows={outcome.programs}
-          rowKey={(row: ProgramSummary) => row.program}
-          dense
-          columns={[
-            { key: 'program', header: 'Programme', render: (row) => row.program },
-            {
-              key: 'what', header: 'What it is',
-              render: (row) => (row.investorIn
-                ? <span style={{ color: 'var(--text-secondary)' }}>The limited partner of {row.investorIn}</span>
-                : 'A portfolio'),
-            },
-            { key: 'funds', header: 'Funds', align: 'right', render: (row) => row.funds },
-            { key: 'tx', header: 'Movements', align: 'right', render: (row) => row.transactions },
-            ...(support ? [] : [{
-              key: 'companies', header: 'Companies', align: 'right' as const,
-              render: (row: ProgramSummary) => row.companies,
-            }]),
-            {
-              key: 'span', header: 'Covering',
-              render: (row) => (row.first && row.last
-                ? `${formatPeriod(row.first)} — ${formatPeriod(row.last)}`
-                : '—'),
-            },
-          ]}
-        />
+        {!allocation && (
+          <DataTable
+            rows={allocation ? [] : outcome.programs}
+            rowKey={(row: ProgramSummary) => row.program}
+            dense
+            columns={[
+              { key: 'program', header: 'Programme', render: (row) => row.program },
+              {
+                key: 'what', header: 'What it is',
+                render: (row) => (row.investorIn
+                  ? <span style={{ color: 'var(--text-secondary)' }}>The limited partner of {row.investorIn}</span>
+                  : 'A portfolio'),
+              },
+              { key: 'funds', header: 'Funds', align: 'right', render: (row) => row.funds },
+              { key: 'tx', header: 'Movements', align: 'right', render: (row) => row.transactions },
+              ...(support ? [] : [{
+                key: 'companies', header: 'Companies', align: 'right' as const,
+                render: (row: ProgramSummary) => row.companies,
+              }]),
+              {
+                key: 'span', header: 'Covering',
+                render: (row) => (row.first && row.last
+                  ? `${formatPeriod(row.first)} — ${formatPeriod(row.last)}`
+                  : '—'),
+              },
+            ]}
+          />
+        )}
+
       </Card>
 
       <Card
-        title={support ? 'Which product this is' : 'Where each programme goes'}
+        title={allocation
+          ? 'Which holding each fund is'
+          : support ? 'Which product this is' : 'Where each programme goes'}
         subtitle={chosen.length === 0
           ? 'Nothing selected'
-          : support
-            ? 'One product, in one write'
-            : `${chosen.length} of ${portfolios.length} programme(s), in one write`}
+          : allocation
+            ? `${chosen.length} of ${portfolios.length} fund(s) matched, in one write`
+            : support
+              ? 'One product, in one write'
+              : `${chosen.length} of ${portfolios.length} programme(s), in one write`}
         actions={
           <button
             type="button" onClick={commit}
@@ -224,9 +292,11 @@ export function DatabaseImport({
             style={{ background: 'var(--series-1)', color: '#fff' }}
           >
             {busy ? <Loader2 size={13} className="animate-spin" aria-hidden /> : <Database size={13} aria-hidden />}
-            {chosen.length > 1
-              ? `Import ${chosen.length} programmes`
-              : support ? 'Import this workbook' : `Import ${chosen[0]?.program ?? 'nothing'}`}
+            {allocation
+              ? 'Import the look-through'
+              : chosen.length > 1
+                ? `Import ${chosen.length} programmes`
+                : support ? 'Import this workbook' : `Import ${chosen[0]?.program ?? 'nothing'}`}
           </button>
         }
       >
@@ -255,11 +325,12 @@ export function DatabaseImport({
               ),
             },
             {
-              key: 'program', header: support ? 'Workbook' : 'Programme',
+              key: 'program',
+              header: allocation ? 'Fund, as this sheet names it' : support ? 'Workbook' : 'Programme',
               render: (row) => row.program,
             },
             {
-              key: 'vehicle', header: 'Into which product',
+              key: 'vehicle', header: allocation ? 'Which holding it is' : 'Into which product',
               render: (row) => (
                 <select
                   className="field" value={row.vehicleId}
@@ -271,12 +342,14 @@ export function DatabaseImport({
                     include: Boolean(event.target.value),
                   })}
                 >
-                  <option value="">Choose a product…</option>
-                  {vehicles.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                  <option value="">{allocation ? 'Leave out…' : 'Choose a product…'}</option>
+                  {(allocation ? holdings : vehicles).map(
+                    (v) => <option key={v.id} value={v.id}>{v.name}</option>,
+                  )}
                 </select>
               ),
             },
-            ...(support ? [] : [{
+            ...(support || allocation ? [] : [{
               key: 'investor',
               header: 'Its limited partner',
               render: (row: Target) => (
@@ -305,10 +378,13 @@ export function DatabaseImport({
         )}
 
         <p className="mt-2 mb-0 text-[11px] leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-          {support
-            ? 'The investors come from the workbook itself, with their commitments and their calls, '
+          {allocation
+            ? 'A fund left out keeps whatever the book already knows about it: the holding shows on '
+              + 'its own attributes instead of the companies inside it.'
+            : support
+              ? 'The investors come from the workbook itself, with their commitments and their calls, '
               + 'so the net tier and the capital accounts fill alongside the portfolio.'
-            : 'The limited partner’s programme is that vehicle seen from the investor’s side: its rows '
+              : 'The limited partner’s programme is that vehicle seen from the investor’s side: its rows '
               + 'become the capital account and the fees charged to it, never portfolio holdings. '
               + 'Choosing it fills the net tier as well as the gross one.'}
         </p>
@@ -316,14 +392,23 @@ export function DatabaseImport({
         {plans.length > 0 && (
           <>
             <div className="mt-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              <Count label="Holdings" value={total((p) => p.positions)} />
-              <Count label="Valuations" value={total((p) => p.valuations)} />
-              <Count label="Cashflows" value={total((p) => p.cashflows)} />
-              <Count label={support ? 'Investors' : 'Companies'}
-                value={support ? total((p) => p.investors) : total((p) => p.assets)} />
-              <Count label={support ? 'Balance sheets' : 'Company values'}
-                value={support ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
-              <Count label="Rates" value={plans[0].fxRates.length} />
+              {allocation
+                ? <Count label="Companies" value={total((p) => p.assets)} />
+                : <Count label="Holdings" value={total((p) => p.positions)} />}
+              <Count
+                label={allocation ? 'Company values' : 'Valuations'}
+                value={total((p) => (allocation ? p.assetValuations : p.valuations))}
+              />
+              {!allocation && <Count label="Cashflows" value={total((p) => p.cashflows)} />}
+              {!allocation && (
+                <>
+                  <Count label={support ? 'Investors' : 'Companies'}
+                    value={support ? total((p) => p.investors) : total((p) => p.assets)} />
+                  <Count label={support ? 'Balance sheets' : 'Company values'}
+                    value={support ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
+                  <Count label="Rates" value={plans[0].fxRates.length} />
+                </>
+              )}
             </div>
 
             {plans.map((plan) => (
