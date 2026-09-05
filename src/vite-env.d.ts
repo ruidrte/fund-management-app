@@ -8,3 +8,6 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+/** Stamped in by vite.config.ts: the commit being served, and its date. */
+declare const __APP_VERSION__: string;

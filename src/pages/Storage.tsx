@@ -392,6 +392,20 @@ export function Storage() {
         </ul>
       </Card>
 
+      <Card
+        title="Which version is running"
+        subtitle="So the answer never needs a terminal"
+      >
+        <p className="m-0 flex items-center gap-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+          <span className="rounded px-2 py-1 font-mono text-[11px]"
+            style={{ background: 'var(--surface-2)', color: 'var(--text-primary)' }}>
+            {__APP_VERSION__}
+          </span>
+          Double-clicking <code>start.bat</code> brings this up to date before it opens the
+          application, so it is current unless something went wrong while it did.
+        </p>
+      </Card>
+
       {clients.length === 0 && kind !== 'supabase' && (
         <Card title="Nothing to show yet" subtitle="No client is loaded">
           <Line tone="var(--text-muted)" icon={Info}>
