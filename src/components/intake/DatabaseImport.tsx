@@ -19,6 +19,7 @@ import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import {
   planAllocationImport, planImport, planMandateImport, planMasterImport, planModelImport,
+  planStagedImport,
   planSupportImport, similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
@@ -90,7 +91,8 @@ export function DatabaseImport({
   const mandate = outcome.mandate;
   const master = outcome.master;
   const model = outcome.model;
-  const single = support ?? mandate ?? master ?? model;
+  const staged = outcome.staged;
+  const single = support ?? mandate ?? master ?? model ?? staged;
 
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
@@ -106,7 +108,7 @@ export function DatabaseImport({
         // A model states figures rather than movements; its lines are what it
         // has instead.
         transactions: 'movements' in single ? single.movements : single.lines,
-        companies: mandate?.companies ?? 0,
+        companies: mandate?.companies ?? staged?.companies ?? 0,
         first: single.first,
         last: single.last,
       } as ProgramSummary]
@@ -178,7 +180,9 @@ export function DatabaseImport({
           problems: read.problems, periods: read.periods, notes: read.notes,
         }];
       }
-      return chosen.map((target) => (model
+      return chosen.map((target) => (staged
+        ? planStagedImport(outcome.sheets, { vehicleId: target.vehicleId })
+        : model
         ? planModelImport(outcome.sheets, { vehicleId: target.vehicleId })
         : mandate
           ? planMandateImport(outcome.sheets, { vehicleId: target.vehicleId })
@@ -199,7 +203,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, mandate, master, model, allocation, vehicleId, dataset,
+  }, [outcome.sheets, support, mandate, master, model, staged, allocation, vehicleId, dataset,
     JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
@@ -233,6 +237,8 @@ export function DatabaseImport({
             ? 'This is an advisory monitoring workbook, not a document'
             : master
               ? 'This is an LP capital master, not a document'
+              : staged
+                ? 'This is a staged reporting support file, not a document'
               : model
                 ? 'This is a report support model, not a document'
                 : support
@@ -245,6 +251,9 @@ export function DatabaseImport({
               + `${mandate.reportingDate ? `, as at ${mandate.reportingDate}` : ''}`
             : master
               ? `${master.fund}${master.reportingDate ? `, as at ${master.reportingDate}` : ''}`
+              : staged
+                ? `${staged.fund} — ${staged.quarters} quarter(s) to `
+                  + `${formatPeriod(staged.last ?? '')}`
               : model
                 ? `${model.fund} — ${model.quarters} quarter(s) to `
                   + `${formatPeriod(model.last ?? '')}`
@@ -261,6 +270,9 @@ export function DatabaseImport({
                   : master
                     ? `${master.holdings} compan(ies), ${master.instruments} instrument(s), `
                       + `${master.investors} investor(s)`
+                    : staged
+                      ? `${staged.holdings} fund(s), ${staged.companies} compan(ies), `
+                        + `${staged.findings} open check(s)`
                     : model
                       ? `${model.lines} published line(s), ${model.holdings} fund(s)`
                       : support
@@ -281,6 +293,14 @@ export function DatabaseImport({
             + `quarter. It is what makes look-through possible — the portfolio stops at the funds, `
             + `and this is what is in them. The exposure is read as the sheet files it, so the `
             + `totals sum to the holdings rather than to a second calculation of the same thing.`
+          : staged
+            ? `A quarter built rather than kept: tabs numbered so that what arrived from `
+            + `outside sits apart from what is computed from it, with the reconciliations that `
+            + `have to pass before any of it is published. Only the input tabs are read — the `
+            + `computed ones hold no fact this application would not work out itself, and `
+            + `taking them as given would make the check of them circular. The checks that did `
+            + `not pass are read too, as findings: somebody has already established which two `
+            + `numbers disagree and why, and that is not derivable from the figures.`
           : model
             ? `The layer a desk builds over its records to produce a quarter's report: one `
             + `figure per line per quarter, each with a note saying which file it came from. It `

@@ -21,6 +21,7 @@ import {
 import { isMandateWorkbook, summariseMandate, type MandateSummary } from './mandate';
 import { isMasterWorkbook, summariseMaster, type MasterSummary } from './master';
 import { isSupportModel, summariseModel, type ModelSummary } from './model';
+import { isStagedSupport, summariseStaged, type StagedSummary } from './staged';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -51,6 +52,10 @@ export {
   isSupportModel, planModelImport, summariseModel,
   type ModelOptions, type ModelSummary,
 } from './model';
+export {
+  isStagedSupport, planStagedImport, summariseStaged,
+  type StagedOptions, type StagedSummary,
+} from './staged';
 export { slug } from './ids';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
@@ -123,8 +128,11 @@ export async function openDatabase(
   const model = isSupportModel(workbook.sheets)
     ? summariseModel(workbook.sheets)
     : undefined;
+  const staged = isStagedSupport(workbook.sheets)
+    ? summariseStaged(workbook.sheets)
+    : undefined;
   if (!isPortfolioDatabase(workbook.sheets)
-    && !support && !allocation && !mandate && !master && !model) {
+    && !support && !allocation && !mandate && !master && !model && !staged) {
     return undefined;
   }
 
@@ -149,6 +157,7 @@ export async function openDatabase(
     mandate,
     master,
     model,
+    staged,
   };
 }
 
@@ -169,6 +178,8 @@ export interface DatabaseOutcome {
   master?: MasterSummary;
   /** The published figures and their basis, when it is a report support model. */
   model?: ModelSummary;
+  /** The inputs a quarter was built from, when it is a staged support file. */
+  staged?: StagedSummary;
 }
 
 export async function ingest(

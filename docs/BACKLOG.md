@@ -37,6 +37,7 @@ the facts must be the same.
 | Quarterly reporting workbook (PAS Infra) | yes | yes | yes |
 | LP capital master (UT) | yes | no | no |
 | Report support model (AbIF) | yes | no | no |
+| Staged reporting support file (PHF) | yes | no | no |
 | Portfolio database (AbIF, PHF) | no | no | no |
 | Asset allocation database (look-through) | partly | no | no |
 | Administrator NAV pack (UT, and AbIF's is a different one) | no | n/a | n/a |
@@ -45,6 +46,16 @@ The NAV pack is the administrator's own statement rather than the fund's book,
 so it has no writer and needs none: it is read to reconcile against, not to
 reproduce. UT's is CACEIS; AbIF's is RSM and is a different file with different
 tabs, so one reader does not serve both.
+
+The staged support file is the one to learn from. Its tabs are numbered so
+that source comes before result — `0x` the quarter's parameters, `1x` what
+arrived from outside, `2x` what is computed from it, `9x` the reconciliations
+that must pass before anything is published — and its first sheet says which is
+which. That is why its reader is the only one that can state what it deliberately
+did not read: the computed tabs hold no fact this system would not work out
+itself, and taking them as given would make the check of them circular. Its
+`9x` tabs are read as findings rather than as figures, so a check somebody
+already ran and could not close arrives here as a problem in their own words.
 
 The report support model is the file the AbIF deck is built from: the figures as
 published, quarter by quarter, with the working that produced them. The reader
@@ -64,6 +75,21 @@ product in a shape the database reader can still read.
 
 The allocation database is the smaller piece and has no such question: one
 product, one sheet, one row per company per quarter.
+
+## One support file, harmonised
+
+Once every product is loaded, the shapes are worth reconciling into one: the
+best of each, kept where each product genuinely differs. The staged file is the
+starting point — numbered tabs, one source per number, reconciliations that gate
+publication, a colour code that says which cells a person may touch — and the
+others contribute what it does not have: the advisory workbook's value bridge
+tying on every asset, the quarterly reporting workbook's dated FX on every row,
+the LP capital master's register by share class, the report support model's
+published-beside-computed. What must stay product-specific is the report itself,
+which is why this waits: harmonising before every product is in would harmonise
+against a guess at what the missing ones need.
+
+Not now, and deliberately: the products have to be current first.
 
 ## The deck
 
