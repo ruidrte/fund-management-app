@@ -31,6 +31,7 @@ import {
 import type {
   Cashflow, DataSet, Investor, Metric, Position, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
+import { slug } from '../ingest/ids';
 import type { TableData } from '../ingest/types';
 
 export interface SupportWorkbookOptions {
@@ -72,9 +73,6 @@ function written(iso: string): string {
   return `${day}.${month}.${year}`;
 }
 
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
-}
 
 /* ------------------------------------------------------------------ */
 
@@ -382,7 +380,10 @@ function investorLedger(investors: Investor[], cashflows: Cashflow[]): TableData
     rows.push([
       slug(investor.name), investor.name, flow.date, flow.description ?? '',
       null,
-      flow.type === 'Capital Call' ? flow.amount : null,
+      // Turned round on the way out: this register is written from the
+      // investor's side, where a call is money they paid, and the book holds it
+      // from the fund's, where the same event is money in.
+      flow.type === 'Capital Call' ? -flow.amount : null,
       flow.type === 'Fee' ? flow.amount : null,
       null,
     ]);

@@ -35,8 +35,15 @@ the facts must be the same.
 | --- | --- | --- | --- |
 | Advisory monitoring workbook (PK TG) | yes | yes | yes |
 | Quarterly reporting workbook (PAS Infra) | yes | yes | yes |
+| LP capital master (UT) | yes | no | no |
 | Portfolio database (AbIF, PHF) | no | no | no |
 | Asset allocation database (look-through) | partly | no | no |
+| Administrator NAV pack (UT, and AbIF's is a different one) | no | n/a | n/a |
+
+The NAV pack is the administrator's own statement rather than the fund's book,
+so it has no writer and needs none: it is read to reconcile against, not to
+reproduce. UT's is CACEIS; AbIF's is RSM and is a different file with different
+tabs, so one reader does not serve both.
 
 The portfolio database is the one left, and it is a different problem from the
 two that are done. Those are each one product's own file. A portfolio database
@@ -66,6 +73,13 @@ every quarter. In the report editor they are one.
 
 ## Readers still to write
 
+- **The valuation approval letter.** Two pages, a signed table of fair value by
+  security, and the basis of each in a footnote. It is the authority the
+  portfolio sheet transcribes, and it is what splits a company held in several
+  share classes — which the master leaves unsplit rather than apportioned. It
+  is also amended: the current one is the second amendment to a letter approved
+  a month earlier, same valuation date, different split. Reading it is what
+  makes the fair-value history auditable rather than typed.
 - **The RSM NAV pack for AbIF.** The only piece keeping the AbIF net tier from
   tying to 124,355.4 EURk. Nothing else is blocked on it.
 - **Capital account statements and financial statements** have no structural

@@ -1,0 +1,174 @@
+/**
+ * Reading an LP capital master.
+ *
+ * What is pinned is the handful of judgements the workbook does not state, and
+ * each is a place where a plausible wrong answer is available: that a transfer
+ * between two investors nets to nothing at fund level, that a company held in
+ * several share classes is not apportioned across them, that two accounts whose
+ * names differ only in a suffix are two accounts, that a liability signed
+ * negative in the accounts is a positive amount to deduct, and that the price
+ * of a unit is worked out from the file rather than assumed.
+ */
+
+import { describe, expect, it } from 'vitest';
+import { isMasterWorkbook, planMasterImport, summariseMaster } from '../src/ingest/master';
+import { isSupportWorkbook } from '../src/ingest/support';
+import { isMandateWorkbook } from '../src/ingest/mandate';
+import { masterSheets as workbook, REGISTER, TRIAL_BALANCE } from './fixtures/master';
+
+const plan = () => planMasterImport(workbook(), { vehicleId: 'veh-nw' });
+
+describe('recognising the workbook', () => {
+  it('needs an investors’ register and an investments ledger', () => {
+    expect(isMasterWorkbook(workbook())).toBe(true);
+    expect(isMasterWorkbook([REGISTER])).toBe(false);
+    expect(isMasterWorkbook([TRIAL_BALANCE])).toBe(false);
+  });
+
+  it('is not mistaken for either of the other two workbook shapes', () => {
+    expect(isSupportWorkbook(workbook())).toBe(false);
+    expect(isMandateWorkbook(workbook())).toBe(false);
+  });
+
+  it('reads what it is about and when it was built for', () => {
+    const summary = summariseMaster(workbook())!;
+    expect(summary.fund).toBe('Northwind Ventures Fund SCA SICAV-RAIF');
+    expect(summary.reportingDate).toBe('2026-06-30');
+    expect(summary.holdings).toBe(2);
+    expect(summary.instruments).toBe(3);
+    expect(summary.investors).toBe(5);
+  });
+});
+
+describe('a company is a position and a share class is an asset', () => {
+  it('holds the companies, with the stake the portfolio sheet states', () => {
+    const positions = plan().positions;
+    expect(positions.map((p) => p.name).sort())
+      .toEqual(['Continuum Labs Inc.', 'Halyard Robotics']);
+    const halyard = positions.find((p) => p.name === 'Halyard Robotics')!;
+    expect(halyard.kind).toBe('direct-investment');
+    // Stated once on every tranche of the same company, so the largest is the
+    // commitment rather than the sum of them.
+    expect(halyard.commitment).toBe(900_000);
+    expect(halyard.ownership).toBe(0.0375);
+  });
+
+  it('holds a share class under the company that issued it', () => {
+    const built = plan();
+    const halyard = built.positions.find((p) => p.name === 'Halyard Robotics')!;
+    expect(built.assets.filter((a) => a.positionId === halyard.id).map((a) => a.name).sort())
+      .toEqual(['Common (CS)', 'Series A Preferred (SA)']);
+    expect(built.assets.every((a) => a.attributes?.company)).toBe(true);
+  });
+
+  it('matches a company across sheets through the suffix it is registered under', () => {
+    // The ledger writes `Continuum Labs Inc.` and the portfolio sheet the same;
+    // a suffix is not a different company, and a weaker match is not a match.
+    const built = plan();
+    const continuum = built.positions.find((p) => p.name === 'Continuum Labs Inc.')!;
+    expect(continuum.country ?? built.assets.find((a) => a.positionId === continuum.id)?.country)
+      .toBe('USA');
+  });
+
+  it('carries the rate a dollar tranche was converted at', () => {
+    expect(plan().fxRates.map((r) => `${r.base}/${r.quote}|${r.date}|${r.rate}`))
+      .toEqual(['USD/EUR|2025-08-20|1.1']);
+  });
+});
+
+describe('what each company is worth', () => {
+  it('takes the approved value where the company is held one way', () => {
+    const built = plan();
+    const continuum = built.positions.find((p) => p.name === 'Continuum Labs Inc.')!;
+    const valued = built.valuations.find((v) => v.positionId === continuum.id)!;
+    expect(valued.nav).toBe(260_000);
+    expect(valued.period).toBe('2026Q2');
+
+    const asset = built.assets.find((a) => a.positionId === continuum.id)!;
+    expect(built.assetValuations.find((v) => v.assetId === asset.id)?.unrealised).toBe(260_000);
+  });
+
+  it('refuses to split a company held in several classes, and names it', () => {
+    const built = plan();
+    const halyard = built.positions.find((p) => p.name === 'Halyard Robotics')!;
+    // The company is still valued; it is the split across its classes that is
+    // left to the approval letter rather than apportioned on a basis nobody
+    // chose.
+    expect(built.valuations.find((v) => v.positionId === halyard.id)?.nav).toBe(1_100_000);
+    const classes = built.assets.filter((a) => a.positionId === halyard.id).map((a) => a.id);
+    expect(built.assetValuations.filter((v) => classes.includes(v.assetId))).toEqual([]);
+    expect(built.problems.some((p) => /held in 2 share classes/.test(p))).toBe(true);
+  });
+});
+
+describe('the investors', () => {
+  it('keeps two accounts whose names differ only in a suffix apart', () => {
+    const built = plan();
+    const studio = built.investors.filter((i) => i.name.startsWith('NORTHWIND STUDIO AG'));
+    expect(studio).toHaveLength(2);
+    expect(new Set(studio.map((i) => i.id)).size).toBe(2);
+    expect(studio.map((i) => i.shareClass).sort()).toEqual(['Founder', 'LP']);
+  });
+
+  it('nets a transfer between two investors to nothing at fund level', () => {
+    const calls = plan().cashflows.filter((c) => c.investorId && c.type === 'Capital Call');
+    // 300,000 + 200,000 + 29,000 + 1,000 called, then 100,000 moved from one
+    // account to another. The fund called 530,000, not 730,000.
+    expect(calls.reduce((sum, c) => sum + c.amount, 0)).toBe(530_000);
+  });
+
+  it('leaves the transferor short by what they transferred away', () => {
+    const built = plan();
+    const from = built.investors.find((i) => i.name === 'NORTHWIND STUDIO AG [LP]')!;
+    const to = built.investors.find((i) => i.name === 'ALDGATE PARTNERS LLP')!;
+    const called = (id: string) => built.cashflows
+      .filter((c) => c.investorId === id && c.type === 'Capital Call')
+      .reduce((sum, c) => sum + c.amount, 0);
+    expect(called(from.id)).toBe(200_000);
+    expect(called(to.id)).toBe(100_000);
+    expect(from.commitment).toBe(500_000);
+  });
+
+  it('keeps a fee charged inside the commitment apart from one charged outside', () => {
+    const fees = plan().cashflows.filter((c) => c.investorId && c.type === 'Fee');
+    expect(fees.filter((f) => f.affectsCommitment)).toHaveLength(0);
+    expect(fees.reduce((sum, f) => sum + f.amount, 0)).toBe(2_000 + 1_000 + 500);
+    const opex = plan().cashflows.filter((c) => c.type === 'Expense');
+    expect(opex.reduce((sum, f) => sum + f.amount, 0)).toBe(1_500);
+  });
+
+  it('works the price of a unit out of the file rather than assuming it', () => {
+    // 530,000 called against 1,030 units in issue is 514.56 a unit, which is
+    // not a round price — so no unit count is filed at all.
+    expect(plan().metrics.some((m) => m.metric === 'units.held')).toBe(false);
+    // Told what a unit costs, it files them.
+    const told = planMasterImport(workbook(), { vehicleId: 'veh-nw', unitPrice: 1_000 });
+    const units = told.metrics.filter((m) => m.metric === 'units.held');
+    expect(units.reduce((sum, m) => sum + (m.value ?? 0), 0)).toBe(530);
+  });
+});
+
+describe('the accounts', () => {
+  it('turns a liability signed negative into an amount to deduct', () => {
+    const sheet = plan().balanceSheets.find((b) => b.period === '2026Q2')!;
+    expect(sheet.cash).toBe(120_000);
+    expect(sheet.otherAssets).toBe(4_000);
+    expect(sheet.currentLiabilities).toBe(2_500);
+    expect(sheet.accruedExpenses).toBe(13_000);
+  });
+
+  it('keeps every account of the trial balance, by account rather than by label', () => {
+    const built = plan();
+    const audit = built.metrics.find(
+      (m) => m.metric === 'pl.60101600' && m.period === '2026Q2',
+    );
+    expect(audit?.value).toBe(-8_000);
+    expect(audit?.scope.kind).toBe('vehicle');
+    expect(built.metrics.some((m) => m.metric === 'bs.13002020')).toBe(true);
+  });
+
+  it('keeps what the change log says was restated', () => {
+    const basis = plan().metrics.find((m) => m.metric === 'narrative.basis');
+    expect(basis?.text).toContain('superseded');
+  });
+});

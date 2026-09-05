@@ -41,6 +41,7 @@ import type {
   Asset, AssetValuation, Attribution, Cashflow, CashflowType, CurrencyCode, FxRate,
   Investor, Metric, Position, PositionValuation,
 } from '../domain/types';
+import { slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -123,10 +124,6 @@ function only(values: string[]): string {
   return distinct.length === 1 ? distinct[0] : 'Unclassified';
 }
 
-function slug(value: string, limit = 24): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, limit)
-    || 'x';
-}
 
 /** The roman numeral a fund is distinguished by, as `Fund VI REIT LP` -> `VI`. */
 function romanIn(value: string): string | undefined {

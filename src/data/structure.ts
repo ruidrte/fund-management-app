@@ -160,15 +160,20 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
     vehicles: [
       {
         key: 'ut-early-growth',
-        name: 'Una Terra Early Growth Fund',
+        name: 'Una Terra Venture Capital Fund SCA SICAV-RAIF',
         shortName: 'UT EGF',
+        // It holds companies, not other funds.
         kind: 'direct-fund',
         currency: 'EUR',
-        inception: '2022-03-31',
-        investorCommitment: 45_000,
+        // In full euros: its register, its trial balance and its financial
+        // statements all state 27,754,500 rather than 27,754.5.
+        unitScale: 1,
+        // The first commitment in the register.
+        inception: '2022-01-11',
+        investorCommitment: 27_754_500,
         status: 'Investing',
         domicile: 'Luxembourg',
-        administrator: 'Northgate Fund Services',
+        administrator: 'CACEIS',
       },
     ],
   },

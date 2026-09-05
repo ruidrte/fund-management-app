@@ -42,13 +42,13 @@ describe('the unit a book is written in', () => {
     expect(shown(1_000, undefined)).toBe('—');
   });
 
-  it('agrees with the two products whose books are known to be written in full', () => {
+  it('agrees with the products whose books are known to be written in full', () => {
     const inFull = CLIENT_DEFINITIONS
       .flatMap((client) => client.vehicles)
       .filter((vehicle) => vehicle.unitScale === 1)
       .map((vehicle) => vehicle.shortName)
       .sort();
-    expect(inFull).toEqual(['PAS Infra', 'PK TG']);
+    expect(inFull).toEqual(['PAS Infra', 'PK TG', 'UT EGF']);
   });
 
   it('keeps the currency symbol in front of the amount, whatever the unit', () => {

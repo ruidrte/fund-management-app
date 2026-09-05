@@ -18,7 +18,8 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import {
-  planAllocationImport, planImport, planMandateImport, planSupportImport, similarity,
+  planAllocationImport, planImport, planMandateImport, planMasterImport, planSupportImport,
+  similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
 import { useImport } from '../../context/filing';
@@ -87,7 +88,8 @@ export function DatabaseImport({
   // share a branch and differ only in what the screen says they are.
   const support = outcome.support;
   const mandate = outcome.mandate;
-  const single = support ?? mandate;
+  const master = outcome.master;
+  const single = support ?? mandate ?? master;
 
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
@@ -169,7 +171,9 @@ export function DatabaseImport({
       }
       return chosen.map((target) => (mandate
         ? planMandateImport(outcome.sheets, { vehicleId: target.vehicleId })
-        : support
+        : master
+          ? planMasterImport(outcome.sheets, { vehicleId: target.vehicleId })
+          : support
           ? planSupportImport(outcome.sheets, { vehicleId: target.vehicleId })
           : planImport(outcome.sheets, {
             program: target.program,
@@ -184,7 +188,8 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, mandate, allocation, vehicleId, dataset, JSON.stringify(chosen)]);
+  }, [outcome.sheets, support, mandate, master, allocation, vehicleId, dataset,
+    JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
   // same one would silently replace each other's holdings.
@@ -215,7 +220,9 @@ export function DatabaseImport({
           ? 'This is an asset allocation database, not a document'
           : mandate
             ? 'This is an advisory monitoring workbook, not a document'
-            : support
+            : master
+              ? 'This is an LP capital master, not a document'
+              : support
               ? 'This is a quarterly reporting workbook, not a document'
               : 'This is a portfolio database, not a document'}
         subtitle={allocation
@@ -223,7 +230,9 @@ export function DatabaseImport({
           : mandate
             ? `${mandate.holder} — ${mandate.fund}`
               + `${mandate.reportingDate ? `, as at ${mandate.reportingDate}` : ''}`
-            : support
+            : master
+              ? `${master.fund}${master.reportingDate ? `, as at ${master.reportingDate}` : ''}`
+              : support
               ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
               : outcome.document.name}
         actions={
@@ -233,7 +242,10 @@ export function DatabaseImport({
                 ? `${allocation.rows} row(s), ${allocation.first} — ${allocation.last}`
                 : mandate
                   ? `${mandate.holdings} fund(s), ${mandate.companies} propert(ies)`
-                  : support
+                  : master
+                    ? `${master.holdings} compan(ies), ${master.instruments} instrument(s), `
+                      + `${master.investors} investor(s)`
+                    : support
                     ? `${support.holdings} holding(s), ${support.investors} investor(s)`
                     : `${outcome.programs.length} programme(s)`}
             </StatusPill>
@@ -251,6 +263,13 @@ export function DatabaseImport({
             + `quarter. It is what makes look-through possible — the portfolio stops at the funds, `
             + `and this is what is in them. The exposure is read as the sheet files it, so the `
             + `totals sum to the holdings rather than to a second calculation of the same thing.`
+          : master
+            ? `A fund's whole record in one file: the investors' register and every movement in `
+            + `it, the investments tranche by tranche and share class by share class, and the `
+            + `trial balance quarter by quarter. A position here is a company and an asset is a `
+            + `share class of it, because that is what the ledger records and what the valuation `
+            + `committee approves. The statements, reconciliations and bridges are not read — `
+            + `this application computes them.`
           : mandate
             ? `The book an adviser keeps about funds somebody else runs. There is no product to `
             + `value here: what the mandate is worth is what the capital account says, and the `

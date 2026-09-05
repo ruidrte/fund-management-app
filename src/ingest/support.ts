@@ -39,6 +39,7 @@ import type {
   Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Metric, Position, PositionKind,
   PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
+import { slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -471,10 +472,6 @@ function camel(value: string): string {
 const round = (value: number): string =>
   Math.round(value).toLocaleString('en-GB');
 
-function slug(value: string): string {
-  const full = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return full || 'x';
-}
 
 export function planSupportImport(sheets: TableData[], options: SupportOptions): ImportPlan {
   const summary = summariseSupport(sheets);
@@ -808,10 +805,12 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
       });
     };
 
-    // The investors' ledger is already written from the investor's side, where
-    // a call is money they paid out. That is the same sign this application
-    // uses, so it is carried across rather than flipped.
-    if (row.called) emit('Capital Call', row.called, row.description || 'Capital call');
+    // The investors' ledger is written from the investor's side, where a call is
+    // money they paid out and is negative. Every flow in this application is
+    // signed from the vehicle's side, where the same event is money in — so it
+    // is turned round here rather than left for whoever reads it to wonder
+    // which way round a register they never saw was written.
+    if (row.called) emit('Capital Call', -row.called, row.description || 'Capital call');
     if (row.fees) emit('Fee', row.fees, row.description || 'Fee');
     // A rebate is a fee returned, so it is filed as one with the opposite sign
     // rather than as income: fees then read net, which is what the investor is

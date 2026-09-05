@@ -191,11 +191,18 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   const inPeriod = forPeriod(investorFlows, period, knowledgeDate)
     .filter((c) => c.status !== 'Draft');
 
-  // Investor flows are signed from the vehicle's side: a capital call is money
-  // in, a distribution money out. From the investor's side the signs reverse,
-  // which is what the IRR below needs.
-  const called = sum(toDate.filter(isInvestorCall).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
-  const distributed = sum(toDate.filter(isInvestorDistribution).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
+  // Investor flows are signed from the vehicle's side, as every flow here is: a
+  // capital call is money in and positive, a distribution money out and
+  // negative. So each figure is the signed sum, turned round only where the
+  // direction it is quoted in differs from the direction it is stored in.
+  //
+  // Summing absolute values instead is wrong the moment a register holds a
+  // transfer between two investors, which is one investor's call reversed and
+  // another's made. Netted, the pair moves capital between accounts and leaves
+  // the fund's called capital unchanged; taken absolutely, both legs add and
+  // the fund appears to have called twice the transferred amount that it did.
+  const called = sum(toDate.filter(isInvestorCall).map((c) => convert(c.amount, c.currency, c.period)));
+  const distributed = -sum(toDate.filter(isInvestorDistribution).map((c) => convert(c.amount, c.currency, c.period)));
 
   const feeFlows = cashflows.filter((c) => inScope.has(c.vehicleId) && isCost(c));
   const feesCumulative = sum(
@@ -323,10 +330,13 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
     const toDate = throughPeriod(own, period, knowledgeDate);
     const toPrior = throughPeriod(own, prior, knowledgeDate);
 
-    const called = sum(toDate.filter(isInvestorCall).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
-    const distributed = sum(toDate.filter(isInvestorDistribution).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
-    const calledPrior = sum(toPrior.filter(isInvestorCall).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
-    const distributedPrior = sum(toPrior.filter(isInvestorDistribution).map((c) => convert(Math.abs(c.amount), c.currency, c.period)));
+    // Signed, as at product level above. An investor who transferred part of
+    // their commitment away has that leg deducted from their own called
+    // capital, which is what happened to it.
+    const called = sum(toDate.filter(isInvestorCall).map((c) => convert(c.amount, c.currency, c.period)));
+    const distributed = -sum(toDate.filter(isInvestorDistribution).map((c) => convert(c.amount, c.currency, c.period)));
+    const calledPrior = sum(toPrior.filter(isInvestorCall).map((c) => convert(c.amount, c.currency, c.period)));
+    const distributedPrior = -sum(toPrior.filter(isInvestorDistribution).map((c) => convert(c.amount, c.currency, c.period)));
 
     return {
       investor,

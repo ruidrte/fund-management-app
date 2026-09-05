@@ -41,6 +41,7 @@ import type {
   Asset, AssetValuation, Cashflow, CashflowType, CurrencyCode, FxRate, Investor,
   Metric, Position, PositionKind, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
+import { slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 
@@ -182,32 +183,6 @@ function toDate(cell: Cell): string | undefined {
 
 function find(sheets: TableData[], name: string): TableData | undefined {
   return sheets.find((sheet) => sheet.sheetName.trim().toLowerCase() === name);
-}
-
-/** An id fragment. Accents become separators, which is fine for an identifier. */
-function slug(value: string, limit = 40): string {
-  const full = value.toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  if (!full) return 'x';
-  if (full.length <= limit) return full;
-  // Truncation on its own collides, and does so precisely where it costs most:
-  // funds in the same family differ only in the roman numeral at the end, so
-  // "Rose Affordable Housing Preservation Fund IV" and "... V" became one
-  // holding carrying both funds' figures. A digest of the whole name keeps the
-  // id readable and distinct, and depends on the name alone — so importing the
-  // same workbook twice still produces the same id.
-  return `${full.slice(0, limit).replace(/-+$/, '')}-${digest(full)}`;
-}
-
-/** FNV-1a, 32 bits. Not a security hash: a suffix that makes an id unique. */
-function digest(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 /* ------------------------------------------------------------------ *

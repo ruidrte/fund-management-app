@@ -33,6 +33,7 @@ import {
 import type {
   Asset, AssetValuation, Cashflow, DataSet, Metric, Position, PositionValuation,
 } from '../domain/types';
+import { slug } from '../ingest/ids';
 import type { TableData } from '../ingest/types';
 import { visibleAt } from '../engine/asof';
 
@@ -149,9 +150,6 @@ export function buildMandateWorkbook(options: MandateWorkbookOptions): MandateWo
   };
 }
 
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'mandate';
-}
 
 const TITLE = 'ADVISORY MONITORING  ·  SUPPORT DATA';
 

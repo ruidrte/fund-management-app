@@ -28,6 +28,7 @@ import { periodForDate, type PeriodId } from '../domain/period';
 import type {
   Asset, AssetValuation, CurrencyCode, EsgClassification,
 } from '../domain/types';
+import { slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 
@@ -179,9 +180,6 @@ function currencyOf(heading: string): CurrencyCode | undefined {
   return SYMBOL[inside[1].trim().toLowerCase()] ?? SYMBOL[inside[1].trim()];
 }
 
-function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'x';
-}
 
 /* ------------------------------------------------------------------ *
  * The sheet

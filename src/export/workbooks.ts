@@ -64,10 +64,18 @@ export const WORKBOOK_SHAPES: WorkbookShape[] = [
   },
 ];
 
-/** The shape a product's quarter arrives in, and is written back out in. */
+/**
+ * The shape a product's quarter arrives in, and is written back out in.
+ *
+ * A product whose shape has a reader but not yet a writer gets nothing rather
+ * than the nearest one: writing an LP capital master into a quarterly reporting
+ * workbook would produce a file that opens, reads back, and is not the fund's
+ * record.
+ */
 export function shapeFor(vehicle: Vehicle | undefined): WorkbookShape | undefined {
   if (!vehicle) return undefined;
-  return WORKBOOK_SHAPES.find(
-    (shape) => shape.id === (vehicle.kind === 'mandate' ? 'mandate' : 'support'),
-  );
+  const id = vehicle.kind === 'mandate' ? 'mandate'
+    : vehicle.kind === 'fund-of-funds' ? 'support'
+      : undefined;
+  return id ? WORKBOOK_SHAPES.find((shape) => shape.id === id) : undefined;
 }

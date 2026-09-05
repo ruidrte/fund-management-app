@@ -19,6 +19,7 @@ import {
   isAllocationWorkbook, summariseAllocation, type AllocationSummary,
 } from './allocation';
 import { isMandateWorkbook, summariseMandate, type MandateSummary } from './mandate';
+import { isMasterWorkbook, summariseMaster, type MasterSummary } from './master';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -41,6 +42,11 @@ export {
   isMandateWorkbook, planMandateImport, summariseMandate,
   type MandateFund, type MandateOptions, type MandateSummary,
 } from './mandate';
+export {
+  isMasterWorkbook, planMasterImport, summariseMaster,
+  type MasterOptions, type MasterSummary,
+} from './master';
+export { slug } from './ids';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
 export { validateAll, canCommit, stringField, numberField, booleanField } from './validate';
@@ -106,7 +112,10 @@ export async function openDatabase(
   const mandate = isMandateWorkbook(workbook.sheets)
     ? summariseMandate(workbook.sheets)
     : undefined;
-  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation && !mandate) {
+  const master = isMasterWorkbook(workbook.sheets)
+    ? summariseMaster(workbook.sheets)
+    : undefined;
+  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation && !mandate && !master) {
     return undefined;
   }
 
@@ -129,6 +138,7 @@ export async function openDatabase(
     support,
     allocation,
     mandate,
+    master,
   };
 }
 
@@ -145,6 +155,8 @@ export interface DatabaseOutcome {
   allocation?: AllocationSummary;
   /** The funds and the capital account, when it is an advisory monitoring workbook. */
   mandate?: MandateSummary;
+  /** The register, the investments and the accounts, when it is an LP capital master. */
+  master?: MasterSummary;
 }
 
 export async function ingest(
