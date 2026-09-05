@@ -14,6 +14,8 @@ import { describe, expect, it } from 'vitest';
 import { isMasterWorkbook, planMasterImport, summariseMaster } from '../src/ingest/master';
 import { isSupportWorkbook } from '../src/ingest/support';
 import { isMandateWorkbook } from '../src/ingest/mandate';
+import { analyse } from '../src/engine';
+import { DEFAULT_CONVENTIONS } from '../src/domain/types';
 import { masterSheets as workbook, REGISTER, TRIAL_BALANCE } from './fixtures/master';
 
 const plan = () => planMasterImport(workbook(), { vehicleId: 'veh-nw' });
@@ -145,6 +147,56 @@ describe('the investors', () => {
     const told = planMasterImport(workbook(), { vehicleId: 'veh-nw', unitPrice: 1_000 });
     const units = told.metrics.filter((m) => m.metric === 'units.held');
     expect(units.reduce((sum, m) => sum + (m.value ?? 0), 0)).toBe(530);
+  });
+});
+
+describe('an investor who has called nothing', () => {
+  const view = () => {
+    const built = plan();
+    return analyse({
+      client: {
+        id: 'c', name: 'A house', shortName: 'H', reportingCurrency: 'EUR',
+        conventions: DEFAULT_CONVENTIONS,
+      },
+      vehicles: [{
+        id: 'veh-nw', clientId: 'c', kind: 'direct-fund', name: 'Northwind', shortName: 'NW',
+        currency: 'EUR', unitScale: 1, inceptionDate: '2024-01-15',
+        investorCommitment: 1_030_000, status: 'Investing',
+      }],
+      positions: built.positions,
+      assets: built.assets,
+      investors: built.investors,
+      positionValuations: built.valuations,
+      assetValuations: built.assetValuations,
+      cashflows: built.cashflows,
+      balanceSheets: built.balanceSheets,
+      metrics: built.metrics,
+      fxRates: built.fxRates,
+    }, { clientId: 'c', vehicleId: 'veh-nw', period: '2026Q2' });
+  };
+
+  it('is shown as having called nothing, not a share of what others called', () => {
+    // Harbour Trust called; Aldgate received a transfer. The fund's own
+    // register is complete, so an investor with no movements has made none —
+    // and giving them a pro-rata share of the fund's called capital would be a
+    // capital call they never received.
+    const idle = view().net.investors.find((row) => row.investor.name === 'HARBOUR TRUST')!;
+    expect(idle.called).toBeGreaterThan(0);
+
+    const founder = view().net.investors.find(
+      (row) => row.investor.name === 'NORTHWIND VENTURES SARL [GP]',
+    )!;
+    expect(founder.called).toBe(1_000);
+    expect(founder.allocated).toBe(false);
+  });
+
+  it('adds the capital accounts up to what the fund called, and checks it', () => {
+    const net = view().net;
+    const total = net.investors.reduce((sum, row) => sum + row.called, 0);
+    expect(Math.round(total)).toBe(Math.round(net.product.called));
+
+    const identity = view().checks.results.find((row) => row.id === 'investor_called_sum')!;
+    expect(identity.status).toBe('pass');
   });
 });
 

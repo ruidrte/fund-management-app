@@ -362,7 +362,14 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   const anyOwnFlows = accounts.some((a) => a.hasOwnFlows);
 
   return accounts.map((account) => {
-    const allocated = !account.hasOwnFlows;
+    // Allocating is what to do when the book has no investors' ledger at all
+    // and there is no other way to give anybody a capital account. It is not
+    // what to do for one investor in a register that holds everybody else's
+    // movements: there, an investor with no movements has made none, and giving
+    // them a share of the fund's called capital invents a call they never
+    // received. It also breaks the sum, because the invented amounts are added
+    // on top of the real ones.
+    const allocated = !anyOwnFlows;
 
     const byCommitment = totalCommitment > 0 ? account.commitment / totalCommitment : 0;
 

@@ -180,6 +180,19 @@ export function runChecks(
     'Every unit of net asset value belongs to exactly one investor',
   );
 
+  // The identity that catches a capital account invented for somebody. Skipped
+  // where the accounts were allocated on commitment, which is an approximation
+  // of the split and ties by construction rather than by agreement.
+  const investorCalled = net.investors.reduce((sum, i) => sum + i.called, 0);
+  check(
+    'investor_called_sum',
+    'Capital accounts sum to the capital called',
+    net.investors.length > 0 && net.investors.some((i) => !i.allocated),
+    investorCalled,
+    net.product.called,
+    'What each investor paid adds up to what the product called',
+  );
+
   const ownership = net.investors.reduce((sum, i) => sum + i.ownership, 0);
   check(
     'investor_ownership',

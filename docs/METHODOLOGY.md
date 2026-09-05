@@ -260,7 +260,7 @@ issued as a statement of account.
 
 ## Identity checks
 
-Nineteen assertions run on every analysis. Each is conditional on its inputs, so
+Twenty-one assertions run on every analysis. Each is conditional on its inputs, so
 a partial quarter produces skips rather than failures — and skips are reported,
 because a check that silently never ran is worse than one that failed.
 
@@ -274,6 +274,7 @@ because a check that silently never ran is worse than one that failed.
 | `nav_components` | vehicle NAV = portfolio + cash + other − liabilities − accruals |
 | `net_commitment_split` | investor commitment = called + undrawn |
 | `investor_nav_sum` | capital accounts sum to vehicle NAV |
+| `investor_called_sum` | capital accounts sum to the capital called |
 | `investor_ownership` | ownership shares sum to 100% |
 | `breakdown_*` | each breakdown sums to the whole |
 | `coverage_floor` | reported NAV coverage meets the minimum |
@@ -283,6 +284,17 @@ enough that an absolute tolerance is meaningless.
 
 ## Denomination
 
-Amounts are stored in thousands of the stated currency and displayed in
-millions. A quarterly report that prints nine significant figures is not read,
-it is scanned past.
+Amounts are displayed in millions: a quarterly report that prints nine
+significant figures is not read, it is scanned past.
+
+What they are *stored* in is a property of the product, not of the application.
+Most books are kept in thousands of the stated currency; some are kept in whole
+units, and nothing in a figure says which — 165,000 and 27,900,000 are the same
+kind of number to look at, and one of them is a hundred and sixty-five million.
+So the unit is recorded against the product beside its currency, is editable
+without a release, and is applied once before a figure is formatted. A book
+written before the unit was recorded is in thousands, which all of them were.
+
+Two products kept in different units cannot be added together at all: a rate
+turns one currency into another, but nothing turns a figure whose unit is
+unrecorded into one whose unit is.
