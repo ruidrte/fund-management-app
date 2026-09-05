@@ -18,6 +18,9 @@ import { VEHICLE_KIND } from '../../domain/types';
 import { useScope, usePositions } from '../../context/ScopeContext';
 import { formatTimestamp } from '../common/format';
 
+/** Above this many holdings, a row of tabs is a dropdown that has to be scrolled. */
+const HOLDING_TABS = 6;
+
 export function ScopeBar() {
   const {
     clients, clientId, setClientId,
@@ -38,6 +41,22 @@ export function ScopeBar() {
   const bases = new Set(selected.map((v) => v.currency));
   const reportingCurrency = bases.size === 1 ? [...bases][0] : undefined;
   const translating = currency !== undefined && currency !== reportingCurrency;
+
+  // A product with a handful of holdings gets tabs for them, for the reason the
+  // client and product rows are tabs: there are few, and somebody moves between
+  // them constantly. A portfolio of thirty funds does not — a row of thirty
+  // tabs is a dropdown that has to be scrolled.
+  //
+  // Unlike the product row, this one keeps its "All". Holdings inside one
+  // product are one book: one currency, one unit, one capital account, and the
+  // total across them is the portfolio. That is a figure; a total across
+  // products is not.
+  const holdingTabs = useMemo(
+    () => (positions.length >= 2 && positions.length <= HOLDING_TABS
+      ? positions.map((position) => ({ id: position.id, label: position.name, title: position.name }))
+      : []),
+    [positions],
+  );
 
   const vehicleTabs = useMemo(
     () => vehicles.map((vehicle) => ({
@@ -77,18 +96,32 @@ export function ScopeBar() {
         />
       )}
 
-      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 px-6 py-3">
-        <Selector
-          icon={<Boxes size={13} aria-hidden />}
+      {holdingTabs.length > 0 && (
+        <TabRow
           label="Holding"
-          value={positionId ?? ''}
-          onChange={(value) => setPositionId(value || undefined)}
-        >
-          <option value="">Whole portfolio</option>
-          {positions.map((position) => (
-            <option key={position.id} value={position.id}>{position.name}</option>
-          ))}
-        </Selector>
+          tabs={[
+            { id: '', label: 'All', title: `The whole portfolio, all ${holdingTabs.length} holdings` },
+            ...holdingTabs,
+          ]}
+          selected={positionId ?? ''}
+          onSelect={(id) => setPositionId(id || undefined)}
+        />
+      )}
+
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-3 px-6 py-3">
+        {holdingTabs.length === 0 && (
+          <Selector
+            icon={<Boxes size={13} aria-hidden />}
+            label="Holding"
+            value={positionId ?? ''}
+            onChange={(value) => setPositionId(value || undefined)}
+          >
+            <option value="">Whole portfolio</option>
+            {positions.map((position) => (
+              <option key={position.id} value={position.id}>{position.name}</option>
+            ))}
+          </Selector>
+        )}
 
         <Selector
           icon={<CalendarDays size={13} aria-hidden />}
