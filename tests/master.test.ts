@@ -66,8 +66,8 @@ describe('a company is a position and a share class is an asset', () => {
     // a suffix is not a different company, and a weaker match is not a match.
     const built = plan();
     const continuum = built.positions.find((p) => p.name === 'Continuum Labs Inc.')!;
-    expect(continuum.country ?? built.assets.find((a) => a.positionId === continuum.id)?.country)
-      .toBe('USA');
+    // The country reaches the share class, which is what an exposure view reads.
+    expect(built.assets.find((a) => a.positionId === continuum.id)?.country).toBe('USA');
   });
 
   it('carries the rate a dollar tranche was converted at', () => {
