@@ -13,12 +13,13 @@ import { DataTable } from '../components/common/DataTable';
 import { KpiTile } from '../components/common/KpiTile';
 import { ProvenanceBadge, StatusPill } from '../components/common/Badges';
 import { Waterfall } from '../components/charts/Waterfall';
-import { money, multiple, percent, signedMoney } from '../components/common/format';
+import { multiple, percent } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
 import { useCan } from '../context/AuthContext';
-import { useScope } from '../context/ScopeContext';
+import { useMoney, useScope } from '../context/ScopeContext';
 
 export function Investors({ view }: { view: QuarterView }) {
+  const { money, signedMoney } = useMoney();
   const { clientId } = useScope();
   const seesAll = useCan('investors.read.all', { clientId });
   const net = view.net.product;

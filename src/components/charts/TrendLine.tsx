@@ -7,8 +7,9 @@
 
 import { useMemo, useState } from 'react';
 import { formatPeriod, type PeriodId } from '../../domain/period';
-import { money } from '../common/format';
+
 import type { CurrencyCode } from '../../domain/types';
+import { useMoney } from '../../context/ScopeContext';
 
 export interface TrendPoint {
   period: PeriodId;
@@ -24,6 +25,7 @@ const MARGIN = { top: 16, right: 20, bottom: 34, left: 76 };
 export function TrendLine({
   points, currency, label,
 }: { points: TrendPoint[]; currency: CurrencyCode; label: string }) {
+  const { money } = useMoney();
   const [active, setActive] = useState<number>();
 
   const plotWidth = WIDTH - MARGIN.left - MARGIN.right;

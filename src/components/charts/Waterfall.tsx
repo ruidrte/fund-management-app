@@ -12,13 +12,14 @@
 
 import { useId, useState } from 'react';
 import type { Bridge } from '../../engine/bridge';
-import { money, signedMoney } from '../common/format';
+import { useMoney } from '../../context/ScopeContext';
 
 const WIDTH = 720;
 const HEIGHT = 260;
 const MARGIN = { top: 16, right: 16, bottom: 52, left: 76 };
 
 export function Waterfall({ bridge }: { bridge: Bridge }) {
+  const { money, signedMoney } = useMoney();
   const clipId = useId();
   const [hovered, setHovered] = useState<number>();
 

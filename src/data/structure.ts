@@ -20,6 +20,8 @@ export interface VehicleDefinition {
   shortName: string;
   kind: Vehicle['kind'];
   currency: CurrencyCode;
+  /** 1000 where the books are written in thousands, 1 where they are in full. */
+  unitScale?: number;
   inception: string;
   /** The total subscribed to the product, in its own currency and units. */
   investorCommitment: number;
@@ -78,6 +80,10 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         // Its books, its capital accounts and its reporting workbook are all
         // in euro, whatever the currency of the foundation behind it.
         currency: 'EUR',
+        // Its books are written in whole euros, not in thousands: the balance
+        // sheet, the capital accounts and the reporting workbook all state
+        // 27,900,000 rather than 27,900.
+        unitScale: 1,
         inception: '2024-02-27',
         investorCommitment: 27_900_000,
         status: 'Investing',
@@ -135,6 +141,8 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         // are all in dollars; the holder's own currency appears beside them as
         // a restatement rather than as the basis.
         currency: 'USD',
+        // In full dollars, as the workbook's own conventions state.
+        unitScale: 1,
         // The commitment to the first of the two funds.
         inception: '2020-07-20',
         investorCommitment: 40_000_000,
@@ -203,6 +211,7 @@ export function buildClientStructure(clientId: string): {
       name: vehicle.name,
       shortName: vehicle.shortName,
       currency: vehicle.currency,
+      unitScale: vehicle.unitScale,
       inceptionDate: vehicle.inception,
       investorCommitment: vehicle.investorCommitment,
       manager: seed.manager,

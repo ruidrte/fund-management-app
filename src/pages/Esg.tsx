@@ -16,12 +16,13 @@ import type { QuarterView } from '../engine';
 import { Card } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { AllocationBars } from '../components/charts/AllocationBars';
-import { useScope } from '../context/ScopeContext';
-import { money, percent } from '../components/common/format';
+import { useMoney, useScope } from '../context/ScopeContext';
+import { percent } from '../components/common/format';
 import type { ExposureBreakdown } from '../engine/exposure';
 import { forPeriod } from '../engine/asof';
 
 export function Esg({ view }: { view: QuarterView }) {
+  const { money } = useMoney();
   const { dataset } = useScope();
 
   const sfdr = useMemo<ExposureBreakdown>(() => {

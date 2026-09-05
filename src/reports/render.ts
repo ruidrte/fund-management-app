@@ -14,6 +14,7 @@ import type { QuarterView } from '../engine';
 import type { ExposureBreakdown } from '../engine/exposure';
 import type { Bridge } from '../engine/bridge';
 import { formatPeriod } from '../domain/period';
+import { unitScaleOf, type CurrencyCode } from '../domain/types';
 import type { Branding, ReportLayout, Section } from './layouts';
 import {
   money, multiple, percent, signedMoney,
@@ -63,6 +64,28 @@ ${body}
 </html>`;
 }
 
+/**
+ * Money, in the unit the products in this report keep their books in.
+ *
+ * A figure as filed says nothing about its own unit — 165,000 is a book in
+ * thousands and 27,900,000 one in whole euros — so the unit is applied here,
+ * once, from the products the report covers. A report spanning products that
+ * disagree has no unit to state a figure in, and says so rather than picking.
+ */
+function cash(
+  view: QuarterView, value: number, currency: CurrencyCode, decimals = 1,
+): string {
+  const scale = unitScaleOf(view.vehicles);
+  return scale === undefined ? '—' : money(value * scale, currency, decimals);
+}
+
+function signedCash(
+  view: QuarterView, value: number, currency: CurrencyCode, decimals = 1,
+): string {
+  const scale = unitScaleOf(view.vehicles);
+  return scale === undefined ? '—' : signedMoney(value * scale, currency, decimals);
+}
+
 function renderSection(section: Section, view: QuarterView, branding?: Branding): string {
   const heading = section.title ? `<h2>${esc(section.title)}</h2>` : '';
   const intro = section.intro ? `<p class="intro">${esc(section.intro)}</p>` : '';
@@ -78,13 +101,13 @@ function sectionContent(section: Section, view: QuarterView, branding?: Branding
     case 'summary': return summary(view);
     case 'kpi-gross': return grossKpis(view);
     case 'kpi-net': return netKpis(view);
-    case 'nav-bridge': return bridgeBlock(view.bridges.portfolioNav);
+    case 'nav-bridge': return bridgeBlock(view.bridges.portfolioNav, view);
     case 'commitments-bridge':
       // A direct fund with no undrawn commitment has nothing to say here.
       return view.gross.totals.commitments > view.gross.totals.drawn
-        ? bridgeBlock(view.bridges.commitments)
+        ? bridgeBlock(view.bridges.commitments, view)
         : '';
-    case 'product-bridge': return bridgeBlock(view.bridges.productNav);
+    case 'product-bridge': return bridgeBlock(view.bridges.productNav, view);
     case 'nav-components': return navComponents(view);
     case 'portfolio-register': return register(view);
     case 'drivers': return drivers(view);
@@ -137,10 +160,10 @@ function summary(view: QuarterView): string {
 function grossKpis(view: QuarterView): string {
   const t = view.gross.totals;
   return kpiGrid([
-    ['Portfolio net asset value', money(t.nav, view.currency), `${signedMoney(t.nav - t.navPrior, view.currency)} on the quarter`],
-    ['Commitments', money(t.commitments, view.currency), `${percent(t.percentInvested)} drawn`],
-    ['Undrawn', money(t.undrawn, view.currency), `${money(t.openCommitment, view.currency)} open including recallable`],
-    ['Distributed', money(t.distributed, view.currency), `${money(t.distributionsInPeriod, view.currency)} this quarter`],
+    ['Portfolio net asset value', cash(view, t.nav, view.currency), `${signedCash(view, t.nav - t.navPrior, view.currency)} on the quarter`],
+    ['Commitments', cash(view, t.commitments, view.currency), `${percent(t.percentInvested)} drawn`],
+    ['Undrawn', cash(view, t.undrawn, view.currency), `${cash(view, t.openCommitment, view.currency)} open including recallable`],
+    ['Distributed', cash(view, t.distributed, view.currency), `${cash(view, t.distributionsInPeriod, view.currency)} this quarter`],
     ['TVPI', multiple(t.multiples.tvpi), `DPI ${multiple(t.multiples.dpi)} · RVPI ${multiple(t.multiples.rvpi)}`],
     ['IRR', percent(t.irr), 'Since inception, money-weighted'],
   ], view.gross.provenance);
@@ -149,13 +172,13 @@ function grossKpis(view: QuarterView): string {
 function netKpis(view: QuarterView): string {
   const net = view.net.product;
   return kpiGrid([
-    ['Net asset value', money(net.components.vehicleNav, view.currency),
-      `${signedMoney(net.components.vehicleNav - net.componentsPrior.vehicleNav, view.currency)} on the quarter`],
-    ['Investor commitments', money(net.commitment, view.currency), `${percent(net.percentCalled)} called`],
-    ['Undrawn', money(net.undrawn, view.currency), `${money(net.calledInPeriod, view.currency)} called this quarter`],
-    ['Distributed', money(net.distributed, view.currency), `${money(net.distributedInPeriod, view.currency)} this quarter`],
+    ['Net asset value', cash(view, net.components.vehicleNav, view.currency),
+      `${signedCash(view, net.components.vehicleNav - net.componentsPrior.vehicleNav, view.currency)} on the quarter`],
+    ['Investor commitments', cash(view, net.commitment, view.currency), `${percent(net.percentCalled)} called`],
+    ['Undrawn', cash(view, net.undrawn, view.currency), `${cash(view, net.calledInPeriod, view.currency)} called this quarter`],
+    ['Distributed', cash(view, net.distributed, view.currency), `${cash(view, net.distributedInPeriod, view.currency)} this quarter`],
     ['Net TVPI', multiple(net.multiples.tvpi), `DPI ${multiple(net.multiples.dpi)} · RVPI ${multiple(net.multiples.rvpi)}`],
-    ['Net IRR', percent(net.irr), `After ${money(net.feesCumulative, view.currency)} of fees and expenses`],
+    ['Net IRR', percent(net.irr), `After ${cash(view, net.feesCumulative, view.currency)} of fees and expenses`],
   ], net.provenance);
 }
 
@@ -166,18 +189,18 @@ function kpiGrid(items: Array<[string, string, string]>, provenance: string): st
   return `<div class="kpi-grid">${cells}</div>${provenanceLine(provenance)}`;
 }
 
-function bridgeBlock(bridge: Bridge): string {
+function bridgeBlock(bridge: Bridge, view: QuarterView): string {
   const rows = bridge.steps.map((step) => `<tr class="${step.type}">
     <td>${esc(step.label)}</td>
-    <td class="num">${esc(step.type === 'anchor' ? money(step.value, bridge.currency) : signedMoney(step.value, bridge.currency))}</td>
+    <td class="num">${esc(step.type === 'anchor' ? cash(view, step.value, bridge.currency) : signedCash(view, step.value, bridge.currency))}</td>
     <td class="note">${esc(step.note ?? '')}</td>
   </tr>`).join('');
 
   const warning = bridge.closes
     ? ''
-    : `<p class="stop">This bridge does not close — residual ${esc(money(bridge.residual, bridge.currency))}. The figures above are internally inconsistent and must not be issued.</p>`;
+    : `<p class="stop">This bridge does not close — residual ${esc(cash(view, bridge.residual, bridge.currency))}. The figures above are internally inconsistent and must not be issued.</p>`;
 
-  return `${waterfallSvg(bridge)}
+  return `${waterfallSvg(bridge, view)}
 <table class="grid">
   <thead><tr><th>Step</th><th class="num">${esc(bridge.currency)}</th><th>Note</th></tr></thead>
   <tbody>${rows}</tbody>
@@ -189,7 +212,7 @@ function bridgeBlock(bridge: Bridge): string {
  * running totals, and the value axis is truncated so a quarterly step stays
  * legible against a large base — which the caption then says out loud.
  */
-function waterfallSvg(bridge: Bridge): string {
+function waterfallSvg(bridge: Bridge, view: QuarterView): string {
   const width = 680;
   const height = 220;
   const margin = { top: 24, right: 12, bottom: 46, left: 74 };
@@ -223,7 +246,7 @@ function waterfallSvg(bridge: Bridge): string {
 
   const gridlines = Array.from({ length: 5 }, (_, i) => floor + ((max - floor) / 4) * i)
     .map((tick) => `<line x1="${margin.left}" x2="${width - margin.right}" y1="${y(tick).toFixed(1)}" y2="${y(tick).toFixed(1)}" class="grid-line"/>
-      <text x="${margin.left - 8}" y="${y(tick).toFixed(1)}" class="axis" text-anchor="end" dominant-baseline="middle">${esc(money(tick, bridge.currency, 0))}</text>`)
+      <text x="${margin.left - 8}" y="${y(tick).toFixed(1)}" class="axis" text-anchor="end" dominant-baseline="middle">${esc(cash(view, tick, bridge.currency, 0))}</text>`)
     .join('');
 
   const marks = bars.map((bar, index) => {
@@ -237,7 +260,7 @@ function waterfallSvg(bridge: Bridge): string {
     const connector = index < bars.length - 1
       ? `<line x1="${(centre + barW / 2).toFixed(1)}" x2="${(margin.left + band * (index + 1) + band / 2 - barW / 2).toFixed(1)}" y1="${y(bar.to).toFixed(1)}" y2="${y(bar.to).toFixed(1)}" class="connector"/>`
       : '';
-    const label = isAnchor ? money(bar.step.value, bridge.currency) : signedMoney(bar.step.value, bridge.currency);
+    const label = isAnchor ? cash(view, bar.step.value, bridge.currency) : signedCash(view, bar.step.value, bridge.currency);
     const caption = bar.step.label.length > 18 ? `${bar.step.label.slice(0, 17)}…` : bar.step.label;
 
     return `<rect x="${(centre - barW / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="4" class="${cls}"/>
@@ -265,13 +288,13 @@ function navComponents(view: QuarterView): string {
     ['Accrued fees and expenses', -c.accruedExpenses, true],
   ];
   const body = rows.map(([label, value, signed]) =>
-    `<tr><td>${esc(label)}</td><td class="num">${esc(signed ? signedMoney(value, view.currency) : money(value, view.currency))}</td></tr>`,
+    `<tr><td>${esc(label)}</td><td class="num">${esc(signed ? signedCash(view, value, view.currency) : cash(view, value, view.currency))}</td></tr>`,
   ).join('');
 
   return `<table class="grid">
   <thead><tr><th>Component</th><th class="num">${esc(view.currency)}</th></tr></thead>
   <tbody>${body}</tbody>
-  <tfoot><tr><td>Net asset value</td><td class="num">${esc(money(c.vehicleNav, view.currency))}</td></tr></tfoot>
+  <tfoot><tr><td>Net asset value</td><td class="num">${esc(cash(view, c.vehicleNav, view.currency))}</td></tr></tfoot>
 </table>${view.net.product.balanceSheetEstimated
   ? '<p class="caveat">No balance sheet was filed for this period; the last available one is carried forward.</p>'
   : ''}`;
@@ -283,10 +306,10 @@ function register(view: QuarterView): string {
     .map((p) => `<tr>
       <td>${esc(p.position.name)}<span class="sub">${esc(`${p.position.manager ?? ''} · ${p.position.subAssetClass ?? p.position.assetClass} · ${p.position.vintage}`)}</span></td>
       <td>${esc(p.position.currency)}</td>
-      <td class="num">${esc(money(p.commitment, view.currency))}</td>
-      <td class="num">${esc(money(p.drawn, view.currency))}</td>
-      <td class="num">${esc(money(p.distributed, view.currency))}</td>
-      <td class="num">${esc(money(p.nav, view.currency))}</td>
+      <td class="num">${esc(cash(view, p.commitment, view.currency))}</td>
+      <td class="num">${esc(cash(view, p.drawn, view.currency))}</td>
+      <td class="num">${esc(cash(view, p.distributed, view.currency))}</td>
+      <td class="num">${esc(cash(view, p.nav, view.currency))}</td>
       <td class="num">${esc(multiple(p.multiples.tvpi))}</td>
       <td class="num">${esc(percent(p.irr))}</td>
       <td>${provenanceChip(p.provenance)}</td>
@@ -302,10 +325,10 @@ function register(view: QuarterView): string {
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <td>Total</td><td></td>
-    <td class="num">${esc(money(t.commitments, view.currency))}</td>
-    <td class="num">${esc(money(t.drawn, view.currency))}</td>
-    <td class="num">${esc(money(t.distributed, view.currency))}</td>
-    <td class="num">${esc(money(t.nav, view.currency))}</td>
+    <td class="num">${esc(cash(view, t.commitments, view.currency))}</td>
+    <td class="num">${esc(cash(view, t.drawn, view.currency))}</td>
+    <td class="num">${esc(cash(view, t.distributed, view.currency))}</td>
+    <td class="num">${esc(cash(view, t.nav, view.currency))}</td>
     <td class="num">${esc(multiple(t.multiples.tvpi))}</td>
     <td class="num">${esc(percent(t.irr))}</td><td></td>
   </tr></tfoot>
@@ -325,14 +348,14 @@ function drivers(view: QuarterView): string {
     items.length === 0
       ? '<p class="caveat">None in this quarter.</p>'
       : `<ul class="drivers">${items.map((p) =>
-          `<li><span>${esc(p.position.name)}</span><span class="num">${esc(signedMoney(p[field], view.currency))}</span></li>`,
+          `<li><span>${esc(p.position.name)}</span><span class="num">${esc(signedCash(view, p[field], view.currency))}</span></li>`,
         ).join('')}</ul>`;
 
   return `<div class="columns">
   <div><h3>Largest value gains</h3>${list(gains, 'valueChange')}</div>
   <div><h3>Largest value declines</h3>${list(declines, 'valueChange')}</div>
   <div><h3>Largest currency effects</h3>${list(fx, 'fxEffect')}
-    <p class="caveat">Total translation effect ${esc(signedMoney(view.gross.totals.fxEffect, view.currency))}.</p></div>
+    <p class="caveat">Total translation effect ${esc(signedCash(view, view.gross.totals.fxEffect, view.currency))}.</p></div>
 </div>`;
 }
 
@@ -367,13 +390,13 @@ function breakdownBlock(breakdown: ExposureBreakdown, view: QuarterView): string
     <div class="bar-row">
       <span class="swatch" style="background:var(--series-${Math.min(index + 1, 8)})"></span>
       <span class="bar-label">${esc(slice.label)}</span>
-      <span class="bar-figures num">${esc(money(slice.value, breakdown.currency))} · ${esc(percent(slice.weight))}</span>
+      <span class="bar-figures num">${esc(cash(view, slice.value, breakdown.currency))} · ${esc(percent(slice.weight))}</span>
     </div>
     <div class="bar-track"><div class="bar-fill" style="width:${((slice.weight / largest) * 100).toFixed(1)}%;background:var(--series-${Math.min(index + 1, 8)})"></div></div>
   </li>`).join('');
 
   const rows = breakdown.slices.map((slice) =>
-    `<tr><td>${esc(slice.label)}</td><td class="num">${esc(money(slice.value, breakdown.currency))}</td><td class="num">${esc(percent(slice.weight))}</td><td class="num">${esc(slice.priorWeight === undefined ? '—' : percent(slice.priorWeight))}</td></tr>`,
+    `<tr><td>${esc(slice.label)}</td><td class="num">${esc(cash(view, slice.value, breakdown.currency))}</td><td class="num">${esc(percent(slice.weight))}</td><td class="num">${esc(slice.priorWeight === undefined ? '—' : percent(slice.priorWeight))}</td></tr>`,
   ).join('');
 
   return `<ul class="bars">${bars}</ul>
@@ -381,11 +404,11 @@ function breakdownBlock(breakdown: ExposureBreakdown, view: QuarterView): string
   <thead><tr><th>Category</th><th class="num">${esc(view.currency)}</th><th class="num">Share</th><th class="num">Prior</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
-<p class="caveat">${esc(basisNote(breakdown))}${
+<p class="caveat">${esc(basisNote(breakdown, view))}${
   breakdown.coverage < 0.995 ? ` ${esc(percent(1 - breakdown.coverage, 0))} unclassified.` : ''}</p>`;
 }
 
-function basisNote(breakdown: ExposureBreakdown): string {
+function basisNote(breakdown: ExposureBreakdown, view: QuarterView): string {
   if (breakdown.basis !== 'look-through') {
     return 'Measured on holding attributes — no look-through available.';
   }
@@ -393,17 +416,17 @@ function basisNote(breakdown: ExposureBreakdown): string {
   if (!breakdown.benchmarkTotal || breakdown.benchmarkTotal <= 0) return base;
   const share = breakdown.total / breakdown.benchmarkTotal;
   if (share > 0.98) return base;
-  return `${base} Asset detail covers ${money(breakdown.total, breakdown.currency)} of ${money(breakdown.benchmarkTotal, breakdown.currency)} portfolio net asset value (${percent(share, 0)}); the remainder is fund-level cash, undeployed capital and holdings with no asset data.`;
+  return `${base} Asset detail covers ${cash(view, breakdown.total, breakdown.currency)} of ${cash(view, breakdown.benchmarkTotal, breakdown.currency)} portfolio net asset value (${percent(share, 0)}); the remainder is fund-level cash, undeployed capital and holdings with no asset data.`;
 }
 
 function capitalAccounts(view: QuarterView): string {
   const rows = view.net.investors.map((i) => `<tr>
     <td>${esc(i.investor.name)}<span class="sub">${esc(i.investor.type)}</span></td>
-    <td class="num">${esc(money(i.commitment, view.currency))}</td>
-    <td class="num">${esc(money(i.called, view.currency))}</td>
-    <td class="num">${esc(money(i.undrawn, view.currency))}</td>
-    <td class="num">${esc(money(i.distributed, view.currency))}</td>
-    <td class="num">${esc(money(i.nav, view.currency))}</td>
+    <td class="num">${esc(cash(view, i.commitment, view.currency))}</td>
+    <td class="num">${esc(cash(view, i.called, view.currency))}</td>
+    <td class="num">${esc(cash(view, i.undrawn, view.currency))}</td>
+    <td class="num">${esc(cash(view, i.distributed, view.currency))}</td>
+    <td class="num">${esc(cash(view, i.nav, view.currency))}</td>
     <td class="num">${esc(percent(i.ownership))}</td>
     <td class="num">${esc(multiple(i.multiples.tvpi))}</td>
     <td>${i.allocated ? '<span class="chip chip-warning">Allocated</span>' : provenanceChip(i.provenance)}</td>
@@ -419,11 +442,11 @@ function capitalAccounts(view: QuarterView): string {
   <tbody>${rows}</tbody>
   <tfoot><tr>
     <td>Total</td>
-    <td class="num">${esc(money(sum(view.net.investors.map((i) => i.commitment)), view.currency))}</td>
-    <td class="num">${esc(money(sum(view.net.investors.map((i) => i.called)), view.currency))}</td>
-    <td class="num">${esc(money(sum(view.net.investors.map((i) => i.undrawn)), view.currency))}</td>
-    <td class="num">${esc(money(sum(view.net.investors.map((i) => i.distributed)), view.currency))}</td>
-    <td class="num">${esc(money(sum(view.net.investors.map((i) => i.nav)), view.currency))}</td>
+    <td class="num">${esc(cash(view, sum(view.net.investors.map((i) => i.commitment)), view.currency))}</td>
+    <td class="num">${esc(cash(view, sum(view.net.investors.map((i) => i.called)), view.currency))}</td>
+    <td class="num">${esc(cash(view, sum(view.net.investors.map((i) => i.undrawn)), view.currency))}</td>
+    <td class="num">${esc(cash(view, sum(view.net.investors.map((i) => i.distributed)), view.currency))}</td>
+    <td class="num">${esc(cash(view, sum(view.net.investors.map((i) => i.nav)), view.currency))}</td>
     <td class="num">${esc(percent(sum(view.net.investors.map((i) => i.ownership))))}</td>
     <td></td><td></td>
   </tr></tfoot>
@@ -440,7 +463,7 @@ function coverage(view: QuarterView): string {
     <td>${esc(p.position.name)}</td>
     <td>${esc(p.state.sourcePeriod ? formatPeriod(p.state.sourcePeriod) : 'Never valued')}</td>
     <td class="num">${p.state.lagQuarters}Q</td>
-    <td class="num">${esc(money(p.nav, view.currency))}</td>
+    <td class="num">${esc(cash(view, p.nav, view.currency))}</td>
     <td>${provenanceChip(p.provenance)}</td>
     <td class="note">${esc(p.state.note ?? '')}</td>
   </tr>`).join('');

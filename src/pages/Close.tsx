@@ -19,7 +19,7 @@ import { zipSync, strToU8 } from 'fflate';
 import { analyse, type QuarterView } from '../engine';
 import { formatPeriod } from '../domain/period';
 import { VEHICLE_KIND, type DataSet, type Vehicle } from '../domain/types';
-import { useScope } from '../context/ScopeContext';
+import { useMoney, useScope } from '../context/ScopeContext';
 import { useDataSource } from '../context/DataSourceContext';
 import { useAuth } from '../context/AuthContext';
 import { boundInvestorId } from '../auth/permissions';
@@ -28,7 +28,7 @@ import { Card } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { KpiTile } from '../components/common/KpiTile';
 import { StatusPill } from '../components/common/Badges';
-import { money, percent } from '../components/common/format';
+import { percent } from '../components/common/format';
 import { layoutsFor } from '../reports/layouts';
 import { renderReport } from '../reports/render';
 import { NO_PROFILE, type ReportLayout } from '../domain/report';
@@ -60,6 +60,7 @@ function standingOf(view: QuarterView): Standing {
 }
 
 export function Close() {
+  const { money } = useMoney();
   const {
     clients, clientId, period, setClientId, setVehicleId, sourceLabel,
   } = useScope();

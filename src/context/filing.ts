@@ -165,6 +165,8 @@ export function useImport() {
  */
 export interface ProductTerms {
   currency?: CurrencyCode;
+  /** 1000 where the books are written in thousands, 1 where they are in full. */
+  unitScale?: number;
   /** Total subscribed to the product, in its own currency and units. */
   investorCommitment?: number;
 }

@@ -3,7 +3,7 @@ import { useScope } from '../../context/ScopeContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatPeriod } from '../../domain/period';
-import { VEHICLE_KIND } from '../../domain/types';
+import { unitScaleOf, VEHICLE_KIND } from '../../domain/types';
 import { StatusPill } from '../common/Badges';
 import { formatTimestamp } from '../common/format';
 
@@ -19,6 +19,12 @@ export function Header() {
   // single basis, so it is not a translation away from one.
   const bases = new Set(view?.vehicles.map((v) => v.currency) ?? []);
   const translated = Boolean(view) && bases.size === 1 && ![...bases].includes(view!.currency);
+
+  // Products whose books are written in different units cannot be added at all.
+  // A rate turns one currency into another; nothing turns a figure whose unit
+  // is unrecorded into one whose unit is, so the total is not shown rather than
+  // shown a thousandfold out.
+  const mixedUnits = Boolean(view) && unitScaleOf(view!.vehicles) === undefined;
 
   return (
     <header
@@ -57,6 +63,11 @@ export function Header() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {mixedUnits && (
+          <StatusPill tone="critical">
+            These products keep their books in different units — no consolidated figure
+          </StatusPill>
+        )}
         {knowledgeDate && (
           <StatusPill tone="warning">
             Historical view — as known at {formatTimestamp(knowledgeDate)}

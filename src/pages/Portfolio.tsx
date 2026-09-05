@@ -9,13 +9,14 @@ import type { QuarterView } from '../engine';
 import { Card } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { ProvenanceBadge } from '../components/common/Badges';
-import { money, multiple, percent, signedMoney } from '../components/common/format';
+import { multiple, percent } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
-import { useScope } from '../context/ScopeContext';
+import { useMoney, useScope } from '../context/ScopeContext';
 
 type SortKey = 'name' | 'nav' | 'valueChange' | 'tvpi' | 'commitment';
 
 export function Portfolio({ view }: { view: QuarterView }) {
+  const { money, signedMoney } = useMoney();
   const { setPositionId } = useScope();
   const [sort, setSort] = useState<SortKey>('nav');
   const [onlyDrafted, setOnlyDrafted] = useState(false);

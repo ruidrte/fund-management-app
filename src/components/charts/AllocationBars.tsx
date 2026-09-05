@@ -12,11 +12,13 @@
 
 import { useState } from 'react';
 import type { ExposureBreakdown } from '../../engine/exposure';
-import { money, percent, seriesColor, signedPercent } from '../common/format';
+import { percent, seriesColor, signedPercent } from '../common/format';
+import { useMoney } from '../../context/ScopeContext';
 
 const MAX_SLICES = 8;
 
 export function AllocationBars({ breakdown }: { breakdown: ExposureBreakdown }) {
+  const { money } = useMoney();
   const [hovered, setHovered] = useState<string>();
   const slices = foldTail(breakdown);
   const largest = Math.max(...slices.map((s) => s.weight), 0.0001);
@@ -94,7 +96,7 @@ export function AllocationBars({ breakdown }: { breakdown: ExposureBreakdown }) 
 
       <figcaption className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
         {breakdown.basis === 'look-through'
-          ? lookThroughNote(breakdown)
+          ? lookThroughNote(breakdown, money)
           : 'Measured on position attributes — no look-through available.'}
         {breakdown.coverage < 0.995 && ` ${percent(1 - breakdown.coverage, 0)} unclassified.`}
         {breakdown.slices.length > MAX_SLICES &&
@@ -109,7 +111,12 @@ export function AllocationBars({ breakdown }: { breakdown: ExposureBreakdown }) 
  * how much it falls short is the difference between a breakdown of the
  * portfolio and a breakdown of the part of it somebody happened to collect.
  */
-function lookThroughNote(breakdown: ExposureBreakdown): string {
+function lookThroughNote(
+  breakdown: ExposureBreakdown,
+  // The formatter comes from the caller: it is bound to the unit the products
+  // in scope keep their books in, which a plain function cannot reach.
+  money: (value: number, currency: string) => string,
+): string {
   const base = 'Look-through to underlying assets, at the vehicle’s economic share.';
   if (!breakdown.benchmarkTotal || breakdown.benchmarkTotal <= 0) return base;
   const share = breakdown.total / breakdown.benchmarkTotal;

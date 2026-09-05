@@ -13,11 +13,12 @@ import { DataTable } from '../components/common/DataTable';
 import { KpiTile } from '../components/common/KpiTile';
 import { ProvenanceBadge, StatusPill } from '../components/common/Badges';
 import { DraftBanner } from '../components/common/DraftBanner';
-import { money, percent, PROVENANCE_DESCRIPTION, PROVENANCE_LABEL } from '../components/common/format';
+import { percent, PROVENANCE_DESCRIPTION, PROVENANCE_LABEL } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
 import { Conventions } from '../components/quality/Conventions';
 import { ProductTerms } from '../components/quality/ProductTerms';
 import type { CurrencyCode, Provenance } from '../domain/types';
+import { useMoney } from '../context/ScopeContext';
 
 const PROVENANCES: Provenance[] = ['reported', 'rolled-forward', 'estimated', 'stale', 'missing'];
 
@@ -62,6 +63,7 @@ function rateRows(view: QuarterView): RateRow[] {
 }
 
 export function DataQuality({ view }: { view: QuarterView }) {
+  const { money } = useMoney();
   const c = view.gross.coverage;
 
   return (

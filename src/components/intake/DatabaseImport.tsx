@@ -22,11 +22,11 @@ import {
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
 import { useImport } from '../../context/filing';
-import { useScope } from '../../context/ScopeContext';
+import { useMoney, useScope } from '../../context/ScopeContext';
 import { Card } from '../common/Card';
 import { StatusPill } from '../common/Badges';
 import { DataTable } from '../common/DataTable';
-import { money, percent } from '../common/format';
+import { percent } from '../common/format';
 
 /** One programme in the workbook, and where it is going. */
 interface Target {
@@ -474,6 +474,7 @@ export function DatabaseImport({
 }
 
 function PlanDetail({ plan, vehicle, only }: { plan: ImportPlan; vehicle: string; only: boolean }) {
+  const { money } = useMoney();
   return (
     <div className="mt-4">
       <h4 className="mb-1.5 text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>

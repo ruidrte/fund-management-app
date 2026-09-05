@@ -9,7 +9,7 @@
 import { useMemo } from 'react';
 import { analyse, type QuarterView } from '../engine';
 import { formatPeriod, sortPeriods } from '../domain/period';
-import { useScope } from '../context/ScopeContext';
+import { useMoney, useScope } from '../context/ScopeContext';
 import { KpiTile } from '../components/common/KpiTile';
 import { Card, ChartCard } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
@@ -17,9 +17,10 @@ import { DraftBanner } from '../components/common/DraftBanner';
 import { Waterfall } from '../components/charts/Waterfall';
 import { AllocationBars } from '../components/charts/AllocationBars';
 import { TrendLine, type TrendPoint } from '../components/charts/TrendLine';
-import { money, multiple, percent, signedMoney } from '../components/common/format';
+import { multiple, percent } from '../components/common/format';
 
 export function Dashboard({ view }: { view: QuarterView }) {
+  const { money, signedMoney } = useMoney();
   const { dataset, clientId, vehicleId, periods, currency, knowledgeDate } = useScope();
   const gross = view.gross.totals;
   const net = view.net.product;
@@ -204,6 +205,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
 }
 
 function ExposureTable({ view, dimension }: { view: QuarterView; dimension: string }) {
+  const { money } = useMoney();
   const breakdown = view.exposure[dimension];
   return (
     <DataTable

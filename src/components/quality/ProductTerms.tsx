@@ -1,12 +1,17 @@
 /**
  * Each product's own terms.
  *
- * The currency it reports in, and what its investors subscribed. Neither is a
- * view setting: a fund's financial statements, capital accounts and every
+ * The currency it reports in, the unit its books are written in, and what its
+ * investors subscribed. None of the three is a view setting: a fund's financial statements, capital accounts and every
  * figure its investors read are stated in that currency, and the total
  * subscribed is what the register of investors has to add up to — a total
  * larger than the register makes the engine read the register as incomplete
  * and refuse to allocate the last unit of net asset value to anybody.
+ *
+ * The unit is the one thing here that a figure cannot be checked against, and
+ * that is exactly why it has to be recorded: 165,000 and 27,900,000 look like
+ * the same kind of number, and a book in thousands shown as a book in whole
+ * units is out by a factor of a thousand with nothing on the screen to say so.
  *
  * Both belong to the product and are kept in the book with it, so correcting
  * one is a change somebody makes here rather than a new version of the
@@ -102,6 +107,24 @@ export function ProductTerms() {
                 )}
               >
                 {choices.map((code) => <option key={code} value={code}>{code}</option>)}
+              </select>
+            ),
+          },
+          {
+            key: 'unit', header: 'Written in',
+            render: (row) => (
+              <select
+                className="field w-28"
+                value={String(row.unitScale ?? 1000)}
+                disabled={!canSave || busy === row.id}
+                onChange={(event) => void commit(
+                  row,
+                  { unitScale: Number(event.target.value) },
+                  `is written in ${event.target.value === '1' ? `whole ${row.currency}` : 'thousands'}`,
+                )}
+              >
+                <option value="1000">Thousands</option>
+                <option value="1">Whole units</option>
               </select>
             ),
           },

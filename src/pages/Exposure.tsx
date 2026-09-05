@@ -12,8 +12,9 @@ import type { QuarterView } from '../engine';
 import { ChartCard, Card } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { AllocationBars } from '../components/charts/AllocationBars';
-import { money, percent } from '../components/common/format';
+import { percent } from '../components/common/format';
 import type { ExposureBreakdown } from '../engine/exposure';
+import { useMoney } from '../context/ScopeContext';
 
 const POSITION_DIMENSIONS: Array<[string, string]> = [
   ['assetClass', 'Asset class'],
@@ -33,6 +34,7 @@ const LOOK_THROUGH_DIMENSIONS: Array<[string, string]> = [
 ];
 
 export function Exposure({ view }: { view: QuarterView }) {
+  const { money } = useMoney();
   const [basis, setBasis] = useState<'position' | 'look-through'>(
     Object.keys(view.lookThrough).length > 0 ? 'look-through' : 'position',
   );
@@ -119,6 +121,7 @@ export function Exposure({ view }: { view: QuarterView }) {
 }
 
 function BreakdownTable({ breakdown }: { breakdown: ExposureBreakdown }) {
+  const { money } = useMoney();
   return (
     <DataTable
       rows={breakdown.slices}

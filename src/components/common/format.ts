@@ -7,22 +7,23 @@ export function currencySymbol(code: CurrencyCode): string {
 }
 
 /**
- * Money is stored in thousands and shown in millions, because a quarterly report
- * that prints nine significant figures is not read, it is scanned past.
+ * Money, shown in millions, because a quarterly report that prints nine
+ * significant figures is not read, it is scanned past. One unit down a column
+ * rather than a unit chosen per row, for the same reason.
+ *
+ * `value` is the amount itself, not the figure as filed. A product's books are
+ * kept in some unit — thousands for most of them, whole currency units for
+ * others — and the two are not distinguishable by looking at a number. That
+ * unit belongs to the product, so it is applied before a figure reaches here,
+ * by the formatter the screens use. Passing a figure as filed shows it a
+ * thousandfold out and nothing says so, which is why this takes the amount.
  */
 export function money(value: number, currency: CurrencyCode, decimals = 1): string {
-  const millions = value / 1000;
+  const millions = value / 1_000_000;
   return `${currencySymbol(currency)}${millions.toLocaleString('en-GB', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   })}m`;
-}
-
-export function moneyExact(value: number, currency: CurrencyCode): string {
-  return `${currencySymbol(currency)}${value.toLocaleString('en-GB', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  })}k`;
 }
 
 /** Signed, for bridge steps and deltas — the sign carries meaning, not just colour. */

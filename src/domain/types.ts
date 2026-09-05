@@ -41,6 +41,18 @@ export const VEHICLE_KIND: Record<VehicleKind, string> = {
   mandate: 'Advisory mandate',
 };
 
+/**
+ * The unit a set of products keep their books in, when they agree on one.
+ *
+ * Undefined when they do not: there is then no unit a figure spanning them
+ * could be shown in, and adding them together was already meaningless. A book
+ * written before the unit was recorded is in thousands, which all of them were.
+ */
+export function unitScaleOf(vehicles: Array<Pick<Vehicle, 'unitScale'>>): number | undefined {
+  const scales = new Set(vehicles.map((vehicle) => vehicle.unitScale ?? 1000));
+  return scales.size === 1 ? [...scales][0] : undefined;
+}
+
 export interface Vehicle {
   id: string;
   clientId: string;
@@ -49,6 +61,17 @@ export interface Vehicle {
   shortName: string;
   /** Currency the vehicle books in. Positions are translated into it. */
   currency: CurrencyCode;
+  /**
+   * The unit the product's books are kept in, as a multiplier onto whole
+   * currency units: 1000 for a book written in thousands, 1 for one written in
+   * full. Absent means thousands, which is what every book written before this
+   * was recorded is in.
+   *
+   * It is a property of the books and not of the view. Nothing in a figure says
+   * which unit it is in, so two products kept in different units cannot be
+   * added together — a consolidation across them is refused rather than shown.
+   */
+  unitScale?: number;
   inceptionDate: string; // ISO date
   /** Total commitment investors have made to the vehicle. */
   investorCommitment: number;

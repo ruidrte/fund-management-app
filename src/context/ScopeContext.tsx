@@ -17,8 +17,11 @@ import { useDataSource } from './DataSourceContext';
 import { useAuth } from './AuthContext';
 import { boundInvestorId, visibleClientIds } from '../auth/permissions';
 import { restrictToInvestor } from '../auth/restrict';
-import type { CurrencyCode, DataSet, PositionKind, Scope, Vehicle } from '../domain/types';
+import {
+  unitScaleOf, type CurrencyCode, type DataSet, type PositionKind, type Scope, type Vehicle,
+} from '../domain/types';
 import { periodForDate, type PeriodId } from '../domain/period';
+import { money, signedMoney } from '../components/common/format';
 
 interface ScopeValue {
   loading: boolean;
@@ -53,6 +56,12 @@ interface ScopeValue {
   currencies: CurrencyCode[];
 
   view?: QuarterView;
+  /**
+   * The unit the products in scope keep their books in. Undefined when they do
+   * not agree, which is the one case where a consolidated figure cannot be
+   * shown at all.
+   */
+  unitScale?: number;
   refresh: () => void;
 }
 
@@ -187,6 +196,13 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     }
   }, [dataset, clientId, vehicleId, positionId, period, knowledgeDate, currency]);
 
+  // The unit the books in scope are kept in. A book written before the unit was
+  // recorded is in thousands, which is what every one of them was.
+  const unitScale = useMemo(() => unitScaleOf(
+    (view?.vehicles ?? dataset?.vehicles ?? [])
+      .filter((vehicle) => !vehicleId || vehicle.id === vehicleId),
+  ), [view, dataset, vehicleId]);
+
   const value: ScopeValue = {
     loading,
     error,
@@ -213,6 +229,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     setCurrency,
     currencies,
     view,
+    unitScale,
     refresh: useCallback(() => setReloadToken((n) => n + 1), []),
   };
 
@@ -223,6 +240,35 @@ export function useScope(): ScopeValue {
   const value = useContext(ScopeContext);
   if (!value) throw new Error('useScope must be used inside a ScopeProvider');
   return value;
+}
+
+/**
+ * Money, in the unit the products in scope keep their books in.
+ *
+ * Every screen formats through this rather than through the bare formatter,
+ * because a figure as filed says nothing about its own unit: 165,000 is a book
+ * in thousands and 27,900,000 is a book in whole euros, and shown side by side
+ * without their units one of them is out by a factor of a thousand. The names
+ * are the same as the plain formatters on purpose, so a screen that imports
+ * this instead of those needs no other change.
+ *
+ * When the products in scope disagree, there is no unit to show a consolidated
+ * figure in, so nothing is scaled and the figure is left plainly unavailable.
+ */
+export function useMoney() {
+  const { unitScale } = useScope();
+  return useMemo(() => {
+    const scale = unitScale;
+    const format = (value: number, currency: CurrencyCode, decimals = 1) =>
+      (scale === undefined ? '—' : money(value * scale, currency, decimals));
+    return {
+      money: format,
+      signedMoney: (value: number, currency: CurrencyCode, decimals = 1) =>
+        (scale === undefined ? '—' : signedMoney(value * scale, currency, decimals)),
+      /** True when the scope spans books kept in different units. */
+      mixed: scale === undefined,
+    };
+  }, [unitScale]);
 }
 
 /** The positions available for the current scope, for the position selector. */
