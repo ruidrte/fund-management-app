@@ -112,9 +112,14 @@ export function DatabaseImport({
     // nothing.
     const managerOf = new Map(allocation?.funds.map((f) => [f.name, f.manager]) ?? []);
     return portfolios.map((program) => {
-      const searchFor = managerOf.get(program.program)
-        ? `${managerOf.get(program.program)} ${program.program}`
-        : program.program;
+      // A mandate is named after the funds it holds and the product after
+      // whose mandate it is, so the two never match. The holder is the name
+      // they have in common, and is what the product is called.
+      const searchFor = mandate
+        ? mandate.holder
+        : managerOf.get(program.program)
+          ? `${managerOf.get(program.program)} ${program.program}`
+          : program.program;
       const vehicleId = suggest(searchFor, against, taken);
       if (vehicleId) taken.add(vehicleId);
       return {
@@ -208,22 +213,29 @@ export function DatabaseImport({
       <Card
         title={allocation
           ? 'This is an asset allocation database, not a document'
-          : support
-            ? 'This is a quarterly reporting workbook, not a document'
-            : 'This is a portfolio database, not a document'}
+          : mandate
+            ? 'This is an advisory monitoring workbook, not a document'
+            : support
+              ? 'This is a quarterly reporting workbook, not a document'
+              : 'This is a portfolio database, not a document'}
         subtitle={allocation
           ? `${allocation.product} — ${allocation.companies} companies inside ${allocation.funds.length} funds`
-          : support
-            ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
-            : outcome.document.name}
+          : mandate
+            ? `${mandate.holder} — ${mandate.fund}`
+              + `${mandate.reportingDate ? `, as at ${mandate.reportingDate}` : ''}`
+            : support
+              ? `${support.fund}${support.reportingDate ? ` — as at ${support.reportingDate}` : ''}`
+              : outcome.document.name}
         actions={
           <div className="flex items-center gap-2">
             <StatusPill tone="serious">
               {allocation
                 ? `${allocation.rows} row(s), ${allocation.first} — ${allocation.last}`
-                : support
-                  ? `${support.holdings} holding(s), ${support.investors} investor(s)`
-                  : `${outcome.programs.length} programme(s)`}
+                : mandate
+                  ? `${mandate.holdings} fund(s), ${mandate.companies} propert(ies)`
+                  : support
+                    ? `${support.holdings} holding(s), ${support.investors} investor(s)`
+                    : `${outcome.programs.length} programme(s)`}
             </StatusPill>
             <button
               type="button" onClick={onClose}
@@ -254,9 +266,9 @@ export function DatabaseImport({
               + `than reviewed row by row. Every figure still carries this file's hash, and the file `
               + `itself is kept beside them.`}
       >
-        {!allocation && (
+        {!allocation && !single && (
           <DataTable
-            rows={allocation ? [] : outcome.programs}
+            rows={outcome.programs}
             rowKey={(row: ProgramSummary) => row.program}
             dense
             columns={[

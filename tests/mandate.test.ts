@@ -14,6 +14,7 @@
 import { describe, expect, it } from 'vitest';
 import { isMandateWorkbook, planMandateImport, summariseMandate } from '../src/ingest/mandate';
 import { isAllocationWorkbook } from '../src/ingest/allocation';
+import { similarity } from '../src/ingest/match';
 import { isSupportWorkbook } from '../src/ingest/support';
 import type { TableData } from '../src/ingest/types';
 import type { Cell } from '../src/ingest/workbook';
@@ -204,6 +205,18 @@ describe('recognising the workbook', () => {
       .toEqual(['Fund I REIT LP', 'Fund II REIT LP']);
     expect(summary.funds[0].commitment).toBe(10_000_000);
     expect(summary.funds[0].share).toBe(0.1);
+  });
+});
+
+describe('finding the product it belongs to', () => {
+  it('matches on the holder, because the workbook is named after the funds', () => {
+    const summary = summariseMandate(workbook())!;
+    // What the import screen offers as the default target. The subject line
+    // names the funds and matches nothing; the holder names the mandate.
+    expect(similarity(summary.holder, 'Northshore Pension Scheme mandate'))
+      .toBeGreaterThan(0.5);
+    expect(similarity(summary.fund, 'Northshore Pension Scheme mandate'))
+      .toBeLessThan(0.5);
   });
 });
 
