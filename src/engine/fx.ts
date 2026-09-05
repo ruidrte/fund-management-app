@@ -106,9 +106,17 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     byKind.set(row.kind, list);
   }
   // Sorted so the winner for a period is the last row at or before it: period
-  // ascending, then authority worst-to-best, then oldest-to-newest. Authority
-  // before recency is the whole point — an administrator rate must not be
-  // displaced by a market rate that happens to be loaded afterwards.
+  // ascending, then authority worst-to-best, then by the date the rate is for,
+  // then oldest-to-newest by when it was learned.
+  //
+  // Authority before recency is the whole point — an administrator rate must
+  // not be displaced by a market rate that happens to be loaded afterwards.
+  //
+  // The date the rate is *for* comes before the date it was learned because a
+  // quarter can hold several: a book that keeps the rate beside every movement
+  // holds one per transaction date, and the closing rate is the last of them,
+  // not whichever happened to be read first. Without this the winner within a
+  // quarter is decided by the order rows arrived in, which is no rule at all.
   for (const byKind of index.values()) {
     for (const list of byKind.values()) {
       list.sort((a, b) => {
@@ -116,6 +124,8 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
         if (byPeriod !== 0) return byPeriod;
         const byAuthority = AUTHORITY_RANK[authorityOf(a)] - AUTHORITY_RANK[authorityOf(b)];
         if (byAuthority !== 0) return byAuthority;
+        const byDate = a.date.localeCompare(b.date);
+        if (byDate !== 0) return byDate;
         return Date.parse(a.recordedAt) - Date.parse(b.recordedAt);
       });
     }

@@ -36,7 +36,7 @@
 
 import { periodForDate, type PeriodId } from '../domain/period';
 import type {
-  Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Position, PositionKind,
+  Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Metric, Position, PositionKind,
   PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
 import type { TableData } from './types';
@@ -48,6 +48,8 @@ const SHEETS = {
   investments: 'investments',
   balance: 'bs',
   investors: 'investors cf',
+  income: 'p&l',
+  acquisitionCosts: 'acquisition costs',
 } as const;
 
 /** What the workbook is about, before anything is imported from it. */
@@ -221,6 +223,8 @@ interface LedgerRow {
   distribution?: number;
   nav?: number;
   rate?: number;
+  /** The working behind the figure, where the sheet records it. */
+  detail: string;
 }
 
 function readLedger(sheets: TableData[]): LedgerRow[] {
@@ -254,6 +258,7 @@ function readLedger(sheets: TableData[]): LedgerRow[] {
       otherExpense: col.number(row, 'Other exp'),
       recallable: col.number(row, 'Recallable'),
       distribution: col.number(row, 'Distributions'),
+      detail: col.text(row, 'Source detail'),
       nav: col.number(row, 'NAV'),
       rate: col.number(row, 'FX rate'),
     });
@@ -303,6 +308,99 @@ function readBalanceRows(sheets: TableData[]): BalanceRow[] {
     currentLiabilities: of('ST Liabilities', index),
     accruedExpenses: of('Accruals P', index),
   }));
+}
+
+/**
+ * The income statement.
+ *
+ * Laid out like the balance sheet — a `Mapping` column of stable tags, the
+ * labels beside them in three languages, a column per period — with one
+ * difference that decides how it is filed: its columns are ranges rather than
+ * dates, and every one of them starts at the beginning of a year. They are
+ * year-to-date figures, so they are named as such and filed against the quarter
+ * their range ends in. A reader that treated them as quarterly would double the
+ * management fee every quarter after the first.
+ *
+ * Nothing the engine computes depends on any of it. The total expense ratio,
+ * the fee analysis and the operating result on a report page do.
+ */
+interface IncomeRow {
+  tag: string;
+  label: string;
+  period: PeriodId;
+  /** The range the figure covers, as the sheet heads it. */
+  basis: string;
+  value: number;
+}
+
+/** `01.01.2026-30.06.2026` and `23.02.2024-31.12.2024`: a range, not a date. */
+function rangeEnd(heading: string): string | undefined {
+  const parts = heading.split(/[-–—]/).map((part) => part.trim());
+  if (parts.length < 2) return undefined;
+  return toDate(parts[parts.length - 1]);
+}
+
+function readIncomeRows(sheets: TableData[]): IncomeRow[] {
+  const table = sheet(sheets, SHEETS.income);
+  if (!table) return [];
+
+  const header = table.rows.findIndex(
+    (row) => text(row[0]).toLowerCase() === 'mapping'
+      && row.some((cell) => rangeEnd(text(cell))),
+  );
+  if (header < 0) return [];
+
+  const columnsOf = table.rows[header]
+    .map((cell, index) => ({ index, heading: text(cell), end: rangeEnd(text(cell)) }))
+    .filter((entry): entry is { index: number; heading: string; end: string } =>
+      Boolean(entry.end));
+
+  const rows: IncomeRow[] = [];
+  for (let i = header + 1; i < table.rows.length; i += 1) {
+    const row = table.rows[i];
+    const tag = text(row[0]);
+    // A row with no tag is a subtotal or a heading: readable, and derived from
+    // the tagged rows above it rather than a figure of its own.
+    if (!tag) continue;
+    // The English label, which is the third of the three the sheet carries.
+    const label = text(row[3]) || tag;
+    for (const column of columnsOf) {
+      const value = toNumber(row[column.index]);
+      if (value === undefined) continue;
+      rows.push({
+        tag, label, period: periodForDate(column.end), basis: column.heading, value,
+      });
+    }
+  }
+  return rows;
+}
+
+/**
+ * The accounting ledger behind the capitalised acquisition costs.
+ *
+ * Not filed: its lines are the components of a figure the investments ledger
+ * already carries, and filing both would count the cost twice. It is read to
+ * check one against the other — the workbook's own third control, enforced
+ * rather than looked at.
+ *
+ * Its own summary total is what is read, not the lines above it. Which lines
+ * are capitalised is marked in prose beside them — "capitalised" on most, "new
+ * in Q2" or "internal estimate" on others that are capitalised just the same —
+ * and a reader that added up the ones it recognised would quietly report a
+ * shortfall that is its own.
+ */
+function readAcquisitionTotal(sheets: TableData[]): number | undefined {
+  const table = sheet(sheets, SHEETS.acquisitionCosts);
+  if (!table) return undefined;
+
+  const summary = table.rows.findIndex((row) => /summary/i.test(text(row[0])));
+  if (summary < 0) return undefined;
+
+  for (let i = summary + 1; i < table.rows.length; i += 1) {
+    if (!/^total$/i.test(text(table.rows[i][0]))) continue;
+    return table.rows[i].map(toNumber).find((value) => value !== undefined);
+  }
+  return undefined;
 }
 
 interface InvestorRow {
@@ -361,6 +459,17 @@ const KIND: Record<string, PositionKind> = {
   coinvestment: 'co-investment',
   direct: 'direct-investment',
 };
+
+/** `Invest.Income` -> `investIncome`, so a tag is a name rather than a label. */
+function camel(value: string): string {
+  const words = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ');
+  return words
+    .map((word, i) => (i === 0 ? word : word[0].toUpperCase() + word.slice(1)))
+    .join('') || 'unnamed';
+}
+
+const round = (value: number): string =>
+  Math.round(value).toLocaleString('en-GB');
 
 function slug(value: string): string {
   const full = value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -520,6 +629,10 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
         affectsCommitment: flow.commits && flow.type === 'Capital Call',
         recallable: flow.recallable,
         description: flow.note,
+        // The notice, the components, the account it was booked to. Dropping
+        // it means finding it again in the file, which is the thing this
+        // application exists to make unnecessary.
+        sourceDetail: row.detail || undefined,
         status: 'Confirmed',
       });
     }
@@ -532,23 +645,23 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     // translates at the closing one — so the latest row in the quarter wins.
     // Keeping the first put one holding seventy-four thousand above the
     // balance sheet it has to tie to.
+    // Every rate the ledger states, on the date it states it for — not one a
+    // quarter. A movement was converted at the rate beside it, and the quarter's
+    // closing rate is the last of them rather than a different figure; keeping
+    // only that one leaves every earlier conversion unreproducible.
     if (row.rate && row.currency !== summary.currency) {
-      const key = `${row.currency}/${row.period}`;
-      const held = rates.get(key);
-      if (!held || row.date >= (held.date ?? '')) {
-        rates.set(key, {
-          id: `fx-${row.currency}-${row.period}`,
-          base: row.currency,
-          quote: summary.currency,
-          rate: row.rate,
-          date: row.date,
-          period: row.period,
-          recordedAt,
-          kind: 'closing',
-          source: `${summary.fund} reporting workbook`,
-          authority: 'manual',
-        });
-      }
+      rates.set(`${row.currency}/${row.date}`, {
+        id: `fx-${row.currency}-${row.date}`,
+        base: row.currency,
+        quote: summary.currency,
+        rate: row.rate,
+        date: row.date,
+        period: row.period,
+        recordedAt,
+        kind: 'closing',
+        source: `${summary.fund} reporting workbook`,
+        authority: 'manual',
+      });
     }
   }
 
@@ -584,6 +697,68 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     notes.push(
       `Cash and accruals for ${balanceSheets.length} quarter(s) came from the balance sheet, `
       + 'which is what lets the net asset value tie to the accounts rather than to the portfolio.',
+    );
+  }
+
+  /* --- the income statement ---------------------------------------- */
+
+  const metrics: Metric[] = [];
+  for (const row of readIncomeRows(sheets)) {
+    periods.add(row.period);
+    metrics.push({
+      id: `met-${vehicleId}-${row.period}-pl.${slug(row.tag)}`,
+      scope: { kind: 'vehicle', id: vehicleId },
+      period: row.period,
+      recordedAt,
+      // Named year-to-date because that is what the column is. A quarter's own
+      // figure is the difference between two of these, and calling it anything
+      // else invites somebody to add four of them together.
+      metric: `pl.ytd.${camel(row.tag)}`,
+      value: row.value,
+      unit: summary.currency,
+      source: `${summary.fund} — profit and loss, ${row.basis}`,
+    });
+  }
+  if (metrics.length > 0) {
+    notes.push(
+      `${metrics.length} figure(s) from the income statement are kept as year-to-date amounts `
+      + 'against the quarter each range ends in. Nothing computed depends on them; the expense '
+      + 'ratio and the fee analysis on a report page do.',
+    );
+  }
+
+  /* --- what the accounting ledger says the costs were --------------- */
+
+  // In the product's currency, not in each row's own. One holding is in
+  // sterling and its costs are stated there, so a plain sum across the ledger
+  // compares a mixed total against a euro one and reports a break that is only
+  // the exchange rate.
+  const capitalised = ledger.reduce(
+    (sum, row) => sum + (row.acquisition ?? 0) * (row.rate ?? 1), 0,
+  );
+  const ledgerTotal = readAcquisitionTotal(sheets);
+  if (ledgerTotal !== undefined) {
+    // Kept so the check outlives this file. The accounting ledger's itemisation
+    // is not filed — its lines are the components of a figure the investments
+    // ledger already carries, and filing both would count the cost twice — but
+    // its total is what the check needs, and a check that only runs on the day
+    // of the import is not one.
+    metrics.push({
+      id: `met-${vehicleId}-${summary.last ?? 'x'}-accounting.acquisitionCosts`,
+      scope: { kind: 'vehicle', id: vehicleId },
+      period: summary.last ?? [...periods].sort().pop() ?? '',
+      recordedAt,
+      metric: 'accounting.capitalisedAcquisitionCosts',
+      value: ledgerTotal,
+      unit: summary.currency,
+      source: `${summary.fund} — acquisition cost ledger`,
+    });
+  }
+  if (ledgerTotal !== undefined && Math.abs(ledgerTotal - capitalised) > 1) {
+    problems.push(
+      `Capitalised acquisition costs come to ${round(capitalised)} in the investments ledger and `
+      + `${round(ledgerTotal)} in the accounting one, a difference of `
+      + `${round(capitalised - ledgerTotal)}. One of the two is missing a line.`,
     );
   }
 
@@ -658,7 +833,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     assets: [],
     assetValuations: [],
     balanceSheets,
-    metrics: [],
+    metrics,
     fxRates: [...rates.values()],
     problems,
     periods: [...periods].sort(),

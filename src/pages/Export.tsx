@@ -18,8 +18,8 @@ import { DataTable } from '../components/common/DataTable';
 import { StatusPill } from '../components/common/Badges';
 import { formatTimestamp } from '../components/common/format';
 import { buildExtract, type ExtractWindow } from '../export/extract';
-import { buildMandateWorkbook } from '../export/mandateWorkbook';
-import { summariseVerification, verifyMandateWorkbook } from '../export/verify';
+import { shapeFor } from '../export/workbooks';
+import { summariseVerification, verifyWorkbook } from '../export/verify';
 import { toCsvBundle, toWorkbook, toXlsx, download } from '../export/serialise';
 
 type WindowKind = 'since-inception' | 'period' | 'range';
@@ -71,30 +71,29 @@ export function Export({ view }: { view: QuarterView }) {
   // The support workbook is a different thing from an extract: the same shape
   // as the file this product's quarter arrives in, so whatever reads that — a
   // person, or the deck — needs no change once the book produces it instead.
-  const mandate = view.vehicles.length === 1 && view.vehicles[0].kind === 'mandate'
-    ? view.vehicles[0]
-    : undefined;
+  const product = view.vehicles.length === 1 ? view.vehicles[0] : undefined;
+  const shape = shapeFor(product);
   const support = useMemo(() => {
-    if (!dataset || !mandate) return undefined;
+    if (!dataset || !product || !shape) return undefined;
     try {
-      return buildMandateWorkbook({
-        dataset, vehicleId: mandate.id, period: view.period, knowledgeDate,
+      return shape.write({
+        dataset, vehicleId: product.id, period: view.period, knowledgeDate,
       });
     } catch {
       return undefined;
     }
-  }, [dataset, mandate, view.period, knowledgeDate]);
+  }, [dataset, product, shape, view.period, knowledgeDate]);
 
   // Written, read back with the same reader that reads the manager's own file,
   // and compared. A figure that quietly does not survive the write is worse
   // than one that fails loudly: the report is built from the file, and nobody
   // opens the book again to check.
   const verified = useMemo(() => {
-    if (!dataset || !mandate) return undefined;
-    return verifyMandateWorkbook({
-      dataset, vehicleId: mandate.id, period: view.period, knowledgeDate,
+    if (!dataset || !product || !shape) return undefined;
+    return verifyWorkbook({
+      dataset, vehicleId: product.id, period: view.period, knowledgeDate, shape,
     });
-  }, [dataset, mandate, view.period, knowledgeDate]);
+  }, [dataset, product, shape, view.period, knowledgeDate]);
 
   const emitSupport = () => {
     if (!support || !allowed.allowed) return;
@@ -114,8 +113,8 @@ export function Export({ view }: { view: QuarterView }) {
     <div className="flex flex-col gap-4">
       {support && (
         <Card
-          title="The support workbook"
-          subtitle={`${mandate!.name} · ${formatPeriod(view.period)} · `
+          title={shape!.label}
+          subtitle={`${product!.name} · ${formatPeriod(view.period)} · `
             + `${support.sheets.length} sheets`}
           actions={
             <button
@@ -127,12 +126,7 @@ export function Export({ view }: { view: QuarterView }) {
               <FileSpreadsheet size={13} aria-hidden /> Write the workbook
             </button>
           }
-          note="The same shape as the file this quarter arrives in — the register, the fill
-                surface, the histories and the capital account — written from the book rather
-                than kept by hand. It is what the report is built from, so nothing that reads it
-                has to change. Sheet 05 names every figure that was not reported for its own
-                quarter, because a workbook that looks hand-kept must not pass an estimate off
-                as a reported number."
+          note={shape!.note}
         >
           {verified && (
             <div

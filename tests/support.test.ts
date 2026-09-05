@@ -11,79 +11,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { isSupportWorkbook, planSupportImport, summariseSupport } from '../src/ingest/support';
-import type { TableData } from '../src/ingest/types';
+import { buildRateLookup } from '../src/engine/fx';
+import { supportSheets as sheets, BS, INVESTORS } from './fixtures/support';
 
-const serial = (iso: string): number =>
-  Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000);
-
-const COVER: TableData = {
-  sheetName: 'Cover',
-  rows: [
-    [0],
-    [null, 'NORTHERN PENSION FOUNDATION'],
-    [null, 'Anlagegruppe Baltic Infrastructure — BALT INFRA'],
-    [null, 'Reporting support workbook'],
-    [null, 'CONTROL PANEL'],
-    [null, 'Reporting date', serial('2026-06-30'), null, '← every sheet reads this'],
-    [null, 'Prior reporting date', serial('2026-03-31')],
-    [null, 'Reporting currency', 'EUR'],
-  ],
-};
-
-const INVESTMENTS: TableData = {
-  sheetName: 'Investments',
-  rows: [
-    ['INVESTMENTS — single ledger'],
-    ['Replaces the three sheets it used to take'],
-    [],
-    ['Asset', 'Class', 'CCY', 'Date', 'Event', 'Comment', 'Commitment', 'Capital Call',
-      'Acq cost', 'Other exp', 'Recallable', 'Distributions', 'NAV', 'FX rate'],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2025-01-15'), 'Commitment', 'Initial', 4_000_000, null, null, null, null, null, null, 1],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2025-02-01'), 'Capital call', 'CC#1', null, 2_000_000, null, null, null, null, null, 1],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2025-02-01'), 'Acq cost', 'Stamp duty', null, null, 20_000, null, null, null, null, 1],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2026-03-31'), 'NAV', 'NAV', null, null, null, null, null, null, 2_150_000, 1],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2026-05-10'), 'Capital call', 'Net receipt', null, -30_000, null, null, 5_000, null, null, 1],
-    ['Baltic Wind', 'Co-investment', 'EUR', serial('2026-06-30'), 'NAV', 'NAV', null, null, null, null, null, null, 2_240_000, 1],
-    // A sterling holding, with the rate moving inside the quarter.
-    ['Sound Grid', 'Primary', 'GBP', serial('2025-03-01'), 'Commitment', 'Initial', 1_000_000, null, null, null, null, null, null, 1.2],
-    ['Sound Grid', 'Primary', 'GBP', serial('2025-03-02'), 'Capital call', 'CC#1', null, 600_000, null, null, null, null, null, 1.2],
-    ['Sound Grid', 'Primary', 'GBP', serial('2026-04-10'), 'Distribution', 'Dist #1', null, null, null, null, null, 40_000, 39_999, 1.5],
-    ['Sound Grid', 'Primary', 'GBP', serial('2026-06-30'), 'NAV', 'NAV', null, null, null, null, null, null, 700_000, 1.1],
-    [null, null, null, null, null, 'TOTAL (all dates)', 5_000_000, 2_570_000, 20_000],
-  ],
-};
-
-const BS: TableData = {
-  sheetName: 'BS',
-  rows: [
-    [null, 'Vermögensrechnung', 'Bilan', 'Balance Sheet'],
-    [],
-    ['Mapping', 'AKTIVEN', 'ACTIFS', 'ASSETS', serial('2026-03-31'), '30.06.2026'],
-    [null, null, null, null, 'EUR', 'EUR'],
-    ['Cash', 'Flüssige Mittel', 'Disponibilités', 'Cash', 500_000, 620_000],
-    ['ST receivables', 'Forderungen', 'Créances', 'Receivables', 1_000, 2_000],
-    ['Accruals A', 'Aktive RA', 'Régularisation', 'Accrued income', 3_000, 0],
-    ['ST Liabilities', 'Verbindlichkeiten', 'Engagements', 'Liabilities', 7_000, 9_000],
-    ['Accruals P', 'Passive RA', 'Régularisation', 'Accrued expenses', 11_000, 13_000],
-  ],
-};
-
-const INVESTORS: TableData = {
-  sheetName: 'Investors CF',
-  rows: [
-    [null, 'Date', 'ID', 'Short Name', 'Description', 'Comment', 'Commitment', 'Capital Called',
-      'Other (fees)', 'Rebates', 'net cashflow'],
-    [null, serial('2024-11-01'), 1, 'PK Nord', 'Initial Commitment', null, 3_000_000],
-    [null, serial('2025-01-20'), 1, 'PK Nord', 'Capital Call #1', null, null, -1_500_000],
-    [null, serial('2026-06-05'), 1, 'PK Nord', 'Rebate received', null, null, null, null, 4_000],
-    [null, serial('2025-02-01'), 2, 'Baltic Trust', 'Initial Commitment', null, 2_000_000],
-    [null, serial('2025-02-20'), 2, 'Baltic Trust', 'Capital Call #1', null, null, -900_000],
-    // The fund's own marker rows carry no investor id and are not movements.
-    [null, serial('2026-06-30'), null, 'BALT INFRA', 'NAV'],
-  ],
-};
-
-const sheets = (): TableData[] => [COVER, INVESTMENTS, BS, INVESTORS];
 const plan = () => planSupportImport(sheets(), { vehicleId: 'veh-balt' });
 
 describe('recognising the workbook', () => {
@@ -161,14 +91,28 @@ describe('a figure in the NAV column of a row that is not a valuation', () => {
   });
 });
 
-describe('the rate a stock translates at', () => {
-  it('is the last one in the quarter, not the first', () => {
+describe('the rates beside the movements', () => {
+  it('are all kept, on the dates they are for', () => {
     const { fxRates } = plan();
-    const q2 = fxRates.find((r) => r.base === 'GBP' && r.period === '2026Q2')!;
+    const gbp = fxRates
+      .filter((r) => r.base === 'GBP')
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-    // 1.5 on 10 April, 1.1 at the quarter end. A stock translates at closing.
-    expect(q2.rate).toBe(1.1);
-    expect(q2.quote).toBe('EUR');
+    // A movement was converted at the rate beside it. Keeping only the last one
+    // in the quarter leaves every earlier conversion unreproducible, and the
+    // capitalised costs it converted no longer tie to the accounting ledger.
+    expect(gbp.map((r) => [r.date, r.rate])).toContainEqual(['2026-04-10', 1.5]);
+    expect(gbp.map((r) => r.quote)).toEqual(gbp.map(() => 'EUR'));
+  });
+
+  it('still translate a stock at the closing rate, which is the last of them', () => {
+    const { fxRates } = plan();
+    const rates = buildRateLookup(fxRates);
+
+    // 1.5 on 10 April, 1.1 at the quarter end. A stock translates at closing —
+    // decided by the lookup now that the quarter holds more than one rate,
+    // rather than by the reader having thrown the others away.
+    expect(rates.tryRate('GBP', 'EUR', '2026Q2')).toBe(1.1);
   });
 });
 

@@ -250,6 +250,15 @@ export interface Cashflow {
    * never by the engine, which would double-count it as a portfolio flow.
    */
   chargedFor?: string;
+  /**
+   * How the figure was arrived at, as the source states it: the notice it came
+   * from, the components that were added up, the account it was booked to.
+   *
+   * Separate from `description`, which is what the movement is called. One is
+   * the label somebody reads; this is the working that would otherwise have to
+   * be found again in the file the figure was read from.
+   */
+  sourceDetail?: string;
   vehicleId: string;
   type: CashflowType;
   /** Signed from the vehicle's perspective: calls out negative, receipts positive. */

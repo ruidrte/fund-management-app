@@ -22,9 +22,8 @@
 import type { DataSet, Metric } from '../domain/types';
 import type { PeriodId } from '../domain/period';
 import { formatPeriod } from '../domain/period';
-import { planMandateImport } from '../ingest/mandate';
 import type { ImportPlan } from '../ingest/pfdb';
-import { buildMandateWorkbook } from './mandateWorkbook';
+import type { WorkbookShape } from './workbooks';
 
 export interface Difference {
   /** What the difference is about, in a person's terms. */
@@ -191,15 +190,17 @@ export interface VerifyOptions {
   vehicleId: string;
   period: PeriodId;
   knowledgeDate?: string;
+  /** The reader and writer to put back to back. */
+  shape: WorkbookShape;
 }
 
-export function verifyMandateWorkbook(options: VerifyOptions): Verification {
-  const { dataset, vehicleId, period, knowledgeDate } = options;
+export function verifyWorkbook(options: VerifyOptions): Verification {
+  const { dataset, vehicleId, period, knowledgeDate, shape } = options;
 
   let plan: ImportPlan;
   try {
-    const written = buildMandateWorkbook({ dataset, vehicleId, period, knowledgeDate });
-    plan = planMandateImport(written.sheets, { vehicleId });
+    const written = shape.write({ dataset, vehicleId, period, knowledgeDate });
+    plan = shape.read(written.sheets, vehicleId);
   } catch (cause) {
     return {
       ok: false,

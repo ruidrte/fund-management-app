@@ -34,15 +34,20 @@ the facts must be the same.
 | Shape | Reader keeps everything | Writer | Round trip |
 | --- | --- | --- | --- |
 | Advisory monitoring workbook (PK TG) | yes | yes | yes |
-| Quarterly reporting workbook (PAS Infra) | no | no | no |
+| Quarterly reporting workbook (PAS Infra) | yes | yes | yes |
 | Portfolio database (AbIF, PHF) | no | no | no |
 | Asset allocation database (look-through) | partly | no | no |
 
-"Reader keeps everything" is the part that is easy to believe is done and is
-not. Before the metric table existed, the advisory reader read about sixty
-columns per property and stored four. The other three readers are still in that
-position: they read what the engine computes on and drop the rest, and the rest
-is most of what a report page prints.
+The portfolio database is the one left, and it is a different problem from the
+two that are done. Those are each one product's own file. A portfolio database
+is a manager's whole book — every programme they run, in one workbook — so a
+writer for it writes several products at once, or writes one product's rows back
+into a file that also holds other people's. That is a decision to make before
+any code: whether what comes out is the database that went in, or one file per
+product in a shape the database reader can still read.
+
+The allocation database is the smaller piece and has no such question: one
+product, one sheet, one row per company per quarter.
 
 ## The deck
 

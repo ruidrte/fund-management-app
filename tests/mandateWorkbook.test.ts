@@ -17,7 +17,10 @@ import { describe, expect, it } from 'vitest';
 import { planMandateImport } from '../src/ingest/mandate';
 import { buildMandateWorkbook } from '../src/export/mandateWorkbook';
 import { toWorkbook } from '../src/export/serialise';
-import { summariseVerification, verifyMandateWorkbook } from '../src/export/verify';
+import { summariseVerification, verifyWorkbook } from '../src/export/verify';
+import { WORKBOOK_SHAPES } from '../src/export/workbooks';
+
+const SHAPE = WORKBOOK_SHAPES.find((row) => row.id === 'mandate')!;
 import { parseXlsx } from '../src/ingest/workbook';
 import type { ImportPlan } from '../src/ingest/pfdb';
 import type { DataSet } from '../src/domain/types';
@@ -179,7 +182,7 @@ describe('the check the application runs on a real book', () => {
   const dataset = book(first);
 
   it('passes on a book that came from a workbook, and says how much it looked at', () => {
-    const result = verifyMandateWorkbook({ dataset, vehicleId: VEHICLE, period: PERIOD });
+    const result = verifyWorkbook({ dataset, vehicleId: VEHICLE, period: PERIOD, shape: SHAPE });
     expect(result.failure).toBeUndefined();
     expect(result.compared).toBeGreaterThanOrEqual(first.metrics.length);
     expect(result.differences).toEqual([]);
@@ -188,7 +191,7 @@ describe('the check the application runs on a real book', () => {
   });
 
   it('reports a movement of a kind the ledger has no column for', () => {
-    const result = verifyMandateWorkbook({
+    const result = verifyWorkbook({
       dataset: {
         ...dataset,
         cashflows: [...dataset.cashflows, {
@@ -207,6 +210,7 @@ describe('the check the application runs on a real book', () => {
       },
       vehicleId: VEHICLE,
       period: PERIOD,
+      shape: SHAPE,
     });
     expect(result.ok).toBe(false);
     expect(result.differences.some((d) => /movement.*does not carry/.test(d.what))).toBe(true);
@@ -214,7 +218,7 @@ describe('the check the application runs on a real book', () => {
   });
 
   it('reports a balance sheet, which an adviser’s workbook has nowhere to put', () => {
-    const result = verifyMandateWorkbook({
+    const result = verifyWorkbook({
       dataset: {
         ...dataset,
         balanceSheets: [{
@@ -230,13 +234,14 @@ describe('the check the application runs on a real book', () => {
       },
       vehicleId: VEHICLE,
       period: PERIOD,
+      shape: SHAPE,
     });
     expect(result.ok).toBe(false);
     expect(result.differences.some((d) => /balance sheet.*does not carry/.test(d.what))).toBe(true);
   });
 
   it('reports a figure filed against the product itself, which has no column', () => {
-    const result = verifyMandateWorkbook({
+    const result = verifyWorkbook({
       dataset: {
         ...dataset,
         metrics: [...dataset.metrics, {
@@ -251,6 +256,7 @@ describe('the check the application runs on a real book', () => {
       },
       vehicleId: VEHICLE,
       period: PERIOD,
+      shape: SHAPE,
     });
     expect(result.ok).toBe(false);
     expect(result.differences.flatMap((d) => d.examples).join(' ')).toContain('esg.scope1');
