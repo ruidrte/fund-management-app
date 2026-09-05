@@ -33,8 +33,7 @@ export function ScopeBar() {
   const showClients = clients.length > 1;
 
   // The currency the product itself reports in — the basis, set with the
-  // product and kept in the book. Undefined on a consolidated view across
-  // products that do not share one, where there is no single basis to name.
+  // product and kept in the book.
   const selected = vehicles.filter((v) => !vehicleId || v.id === vehicleId);
   const bases = new Set(selected.map((v) => v.currency));
   const reportingCurrency = bases.size === 1 ? [...bases][0] : undefined;
@@ -66,16 +65,13 @@ export function ScopeBar() {
         />
       )}
 
+      {/* One product at a time. A house's products are separate books — separate
+          currencies, separate units, separate investors — and a total across
+          them answers no question anybody asks. */}
       {vehicleTabs.length > 0 && (
         <TabRow
           label="Product"
-          tabs={[
-            // Consolidation is a product view of its own, not the absence of one.
-            ...(vehicleTabs.length > 1
-              ? [{ id: '', label: 'All', title: `All ${vehicleTabs.length} products, consolidated` }]
-              : []),
-            ...vehicleTabs,
-          ]}
+          tabs={vehicleTabs}
           selected={vehicleId ?? ''}
           onSelect={(id) => setVehicleId(id || undefined)}
         />

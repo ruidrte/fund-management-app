@@ -34,7 +34,11 @@ interface ScopeValue {
 
   dataset?: DataSet;
   vehicles: Vehicle[];
-  /** Undefined means every vehicle of the client, consolidated. */
+  /**
+   * The product in scope. One is always selected where the client has any: a
+   * house's products are separate books, and a total across them is not a
+   * figure. Undefined only for a client with no products yet.
+   */
   vehicleId?: string;
   setVehicleId: (id: string | undefined) => void;
 
@@ -57,9 +61,9 @@ interface ScopeValue {
 
   view?: QuarterView;
   /**
-   * The unit the products in scope keep their books in. Undefined when they do
-   * not agree, which is the one case where a consolidated figure cannot be
-   * shown at all.
+   * The unit the product in scope keeps its books in. Undefined for a client
+   * with no products, and for a scope somehow spanning books kept in different
+   * units — in both cases there is no unit a figure could be stated in.
    */
   unitScale?: number;
   refresh: () => void;
@@ -126,17 +130,19 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
         setDataset(restrictToInvestor(loaded, boundInvestorId(principal, clientId)));
 
         // Default to the latest quarter that has any data at all, and to the
-        // client's single vehicle when there is only one. A book with no facts
-        // yet falls back to the current quarter rather than to nothing —
-        // otherwise a new book has no scope, and no way to reach the screen
-        // that would load its first document.
+        // client's first product. A book with no facts yet falls back to the
+        // current quarter rather than to nothing — otherwise a new book has no
+        // scope, and no way to reach the screen that would load its first
+        // document.
         const available = availablePeriods(loaded, { clientId });
         setPeriod((current) => (current && available.includes(current)
           ? current
           : available[0] ?? periodForDate(new Date())));
+        // Always one product, never all of them: they are separate books, and
+        // a figure summed across them is not a figure.
         setVehicleId((current) => {
           if (current && loaded.vehicles.some((v) => v.id === current)) return current;
-          return loaded.vehicles.length === 1 ? loaded.vehicles[0].id : undefined;
+          return loaded.vehicles[0]?.id;
         });
         setPositionId(undefined);
       } catch (cause) {
