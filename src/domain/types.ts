@@ -24,10 +24,22 @@ export interface Client {
 }
 
 /**
- * A vehicle is the reporting product: a fund-of-funds or a direct fund.
- * The distinction changes what a "position" is, not how the engine works.
+ * A vehicle is the reporting product: a fund-of-funds, a direct fund, or a
+ * mandate. The distinction changes what a "position" is, not how the engine
+ * works.
+ *
+ * `mandate` is the case where the client runs nothing: an adviser monitors and
+ * reports on funds somebody else manages. It has positions and a capital
+ * account like any other, and no net asset value of its own, because there is
+ * no vehicle of the client's own between the holder and the funds.
  */
-export type VehicleKind = 'fund-of-funds' | 'direct-fund';
+export type VehicleKind = 'fund-of-funds' | 'direct-fund' | 'mandate';
+
+export const VEHICLE_KIND: Record<VehicleKind, string> = {
+  'fund-of-funds': 'Fund of funds',
+  'direct-fund': 'Direct fund',
+  mandate: 'Advisory mandate',
+};
 
 export interface Vehicle {
   id: string;

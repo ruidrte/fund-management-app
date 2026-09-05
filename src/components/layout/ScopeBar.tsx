@@ -14,6 +14,7 @@
 import { useMemo } from 'react';
 import { CalendarDays, Boxes, Coins, History } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
+import { VEHICLE_KIND } from '../../domain/types';
 import { useScope, usePositions } from '../../context/ScopeContext';
 import { formatTimestamp } from '../common/format';
 
@@ -43,7 +44,7 @@ export function ScopeBar() {
     () => vehicles.map((vehicle) => ({
       id: vehicle.id,
       label: vehicle.shortName,
-      title: `${vehicle.name} · ${vehicle.kind === 'fund-of-funds' ? 'Fund of funds' : 'Direct fund'} · ${vehicle.currency}`,
+      title: `${vehicle.name} · ${VEHICLE_KIND[vehicle.kind]} · ${vehicle.currency}`,
       kind: vehicle.kind,
     })),
     [vehicles],

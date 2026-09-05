@@ -18,7 +18,7 @@ import {
 import { zipSync, strToU8 } from 'fflate';
 import { analyse, type QuarterView } from '../engine';
 import { formatPeriod } from '../domain/period';
-import type { DataSet, Vehicle } from '../domain/types';
+import { VEHICLE_KIND, type DataSet, type Vehicle } from '../domain/types';
 import { useScope } from '../context/ScopeContext';
 import { useDataSource } from '../context/DataSourceContext';
 import { useAuth } from '../context/AuthContext';
@@ -266,7 +266,7 @@ export function Close() {
                 <span className="flex flex-col">
                   <span>{row.vehicle.shortName}</span>
                   <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                    {row.vehicle.kind === 'direct-fund' ? 'Direct fund' : 'Fund of funds'} · {row.vehicle.currency}
+                    {VEHICLE_KIND[row.vehicle.kind]} · {row.vehicle.currency}
                   </span>
                 </span>
               ),

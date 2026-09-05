@@ -25,7 +25,8 @@ export interface VehicleDefinition {
   investorCommitment: number;
   status: Vehicle['status'];
   domicile: string;
-  administrator: string;
+  /** Absent for a mandate: an adviser runs no vehicle, so nobody administers one. */
+  administrator?: string;
 }
 
 export interface ClientDefinition {
@@ -124,15 +125,21 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
       },
       {
         key: 'pk-tg',
-        name: 'PK TG',
+        name: 'Pensionskasse Thurgau mandate',
         shortName: 'PK TG',
-        kind: 'fund-of-funds',
-        currency: 'CHF',
-        inception: '2018-09-30',
-        investorCommitment: 320_000,
-        status: 'Harvesting',
+        // Advisory only: the funds are run by their own manager and the
+        // pension fund holds the interests. What is reported on is the
+        // mandate, and there is no vehicle of EBG's own inside it.
+        kind: 'mandate',
+        // The mandate's ledger, the funds it holds and the reports it produces
+        // are all in dollars; the holder's own currency appears beside them as
+        // a restatement rather than as the basis.
+        currency: 'USD',
+        // The commitment to the first of the two funds.
+        inception: '2020-07-20',
+        investorCommitment: 40_000_000,
+        status: 'Investing',
         domicile: 'Switzerland',
-        administrator: 'Helvetia Fund Administration',
       },
     ],
   },

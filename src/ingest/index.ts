@@ -18,6 +18,7 @@ import { isSupportWorkbook, summariseSupport, type SupportSummary } from './supp
 import {
   isAllocationWorkbook, summariseAllocation, type AllocationSummary,
 } from './allocation';
+import { isMandateWorkbook, summariseMandate, type MandateSummary } from './mandate';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -36,6 +37,10 @@ export {
   isAllocationWorkbook, planAllocationImport, summariseAllocation,
   type AllocationOptions, type AllocationPlan, type AllocationSummary,
 } from './allocation';
+export {
+  isMandateWorkbook, planMandateImport, summariseMandate,
+  type MandateFund, type MandateOptions, type MandateSummary,
+} from './mandate';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
 export { validateAll, canCommit, stringField, numberField, booleanField } from './validate';
@@ -98,7 +103,12 @@ export async function openDatabase(
   const allocation = isAllocationWorkbook(workbook.sheets)
     ? summariseAllocation(workbook.sheets)
     : undefined;
-  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation) return undefined;
+  const mandate = isMandateWorkbook(workbook.sheets)
+    ? summariseMandate(workbook.sheets)
+    : undefined;
+  if (!isPortfolioDatabase(workbook.sheets) && !support && !allocation && !mandate) {
+    return undefined;
+  }
 
   return {
     document: {
@@ -118,6 +128,7 @@ export async function openDatabase(
     programs: isPortfolioDatabase(workbook.sheets) ? programsIn(workbook.sheets) : [],
     support,
     allocation,
+    mandate,
   };
 }
 
@@ -132,6 +143,8 @@ export interface DatabaseOutcome {
   support?: SupportSummary;
   /** The companies inside the funds, when it is an allocation database. */
   allocation?: AllocationSummary;
+  /** The funds and the capital account, when it is an advisory monitoring workbook. */
+  mandate?: MandateSummary;
 }
 
 export async function ingest(

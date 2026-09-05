@@ -3,6 +3,7 @@ import { useScope } from '../../context/ScopeContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
 import { formatPeriod } from '../../domain/period';
+import { VEHICLE_KIND } from '../../domain/types';
 import { StatusPill } from '../common/Badges';
 import { formatTimestamp } from '../common/format';
 
@@ -49,7 +50,7 @@ export function Header() {
                 )}
               </span>
               <span aria-hidden>·</span>
-              <span>{view.vehicles[0]?.kind === 'direct-fund' ? 'Direct fund' : 'Fund of funds'}</span>
+              <span>{VEHICLE_KIND[view.vehicles[0]?.kind ?? 'fund-of-funds']}</span>
             </>
           )}
         </p>
