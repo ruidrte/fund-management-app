@@ -125,6 +125,92 @@ function only(values: string[]): string {
 }
 
 
+/**
+ * The funds the mandate holds, under their own names.
+ *
+ * The fund-level sheets head their columns `Fund V REIT LP`, and that heading
+ * names the *level* a figure is stated at — the limited partnership the
+ * interest is held through — rather than the fund the mandate is invested in.
+ * Reading it as an identity turns two holdings in Rose Affordable Housing
+ * Preservation Fund V and VI into two holdings in something called a REIT LP,
+ * which is not what anybody committed to.
+ *
+ * The workbook states the real names on its front page, as one line naming both
+ * generations: `Rose Affordable Housing Preservation Fund V and VI`. Splitting
+ * that is a transformation rather than a guess, and it is only used when it
+ * checks out — the generations it yields have to be exactly the funds the
+ * ledger carries. Anything else and the heading stands, because a name that is
+ * merely confusing is better than one that is wrong.
+ */
+function fundNames(subject: string, keys: string[]): Map<string, string> {
+  const names = new Map<string, string>();
+  const wanted = new Set(keys.map((key) => key.toUpperCase()));
+
+  const several = /^(.*?)\s+((?:[IVX]+)(?:\s*(?:,|and|und|&|\/|\+)\s*[IVX]+)+)\s*$/i.exec(subject);
+  if (several) {
+    const stem = several[1].trim();
+    const found = several[2].split(/\s*(?:,|and|und|&|\/|\+)\s*/i)
+      .map((part) => part.trim().toUpperCase())
+      .filter(Boolean);
+    if (found.length === wanted.size && found.every((key) => wanted.has(key))) {
+      for (const key of found) names.set(key, `${stem} ${key}`);
+      return names;
+    }
+  }
+
+  // One fund, and the subject line is already its name.
+  if (keys.length === 1) {
+    const single = new RegExp(`\\b${keys[0]}\\s*$`, 'i');
+    if (single.test(subject.trim())) names.set(keys[0].toUpperCase(), subject.trim());
+  }
+  return names;
+}
+
+/**
+ * Where each property is, including the ones the register does not place.
+ *
+ * A country is read off a state, and the register states one for the older
+ * fund's properties and not for the newer fund's. Rather than leave a third of
+ * the book unplaced, the country is extended to the rows that state none — but
+ * only on a premise the register itself carries: every row that names a country
+ * names the same one, and the regions used by the rows that do not are regions
+ * that country's own properties are in. `Northeast` says nothing by itself; it
+ * says something once this register has put other properties in it.
+ *
+ * Two countries in one register and nothing is extended: which of them a
+ * regional label belongs to would then be the guess this is written to avoid.
+ * No register has held two yet — a country is read off a two-letter state code,
+ * and that is one country's convention — so the guard is what keeps this honest
+ * on the day one does.
+ */
+function placeRegister(register: RegisterRow[]): {
+  countryOf(row: RegisterRow): string;
+  extended: RegisterRow[];
+} {
+  const placed = register.filter((row) => countryOf(row.state) !== 'Unclassified');
+  const countries = new Set(placed.map((row) => countryOf(row.state)));
+  if (countries.size !== 1) {
+    return { countryOf: (row) => countryOf(row.state), extended: [] };
+  }
+
+  const [country] = [...countries];
+  const known = new Set(placed.map((row) => row.region).filter(Boolean));
+  const where = new Map<string, string>();
+  const extended: RegisterRow[] = [];
+  for (const row of register) {
+    const own = countryOf(row.state);
+    if (own !== 'Unclassified') where.set(row.id, own);
+    else if (row.region && known.has(row.region)) {
+      where.set(row.id, country);
+      extended.push(row);
+    }
+  }
+  return {
+    countryOf: (row) => where.get(row.id) ?? 'Unclassified',
+    extended,
+  };
+}
+
 /** The roman numeral a fund is distinguished by, as `Fund VI REIT LP` -> `VI`. */
 function romanIn(value: string): string | undefined {
   const found = [...value.matchAll(/\b(I{1,3}|IV|VI{0,3}|IX|XI{0,3})\b/g)];
@@ -226,6 +312,13 @@ export interface MandateFund {
   /** How the workbook distinguishes it: `V`, `VI`. */
   key: string;
   name: string;
+  /**
+   * The limited partnership the interest is held through, as the fund-level
+   * sheets head their columns — `Fund V REIT LP`. It is the level the fund
+   * figures are stated at, not the fund; kept because the mandate holds its
+   * interest through it and a statement will arrive addressed to it.
+   */
+  vehicleName?: string;
   commitment: number;
   share?: number;
   companies: number;
@@ -908,7 +1001,8 @@ export function summariseMandate(sheets: TableData[]): MandateSummary | undefine
     companies: register.length,
     funds: keys.map((key) => ({
       key,
-      name: names.get(key) ?? `Fund ${key}`,
+      name: fundNames(subject, keys).get(key) ?? names.get(key) ?? `Fund ${key}`,
+      vehicleName: names.get(key),
       commitment: control.commitments.get(key)
         ?? ledger.filter((row) => row.fund === key)
           .reduce((sum, row) => sum + (row.commitment ?? 0), 0),
@@ -942,6 +1036,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   const control = readControl(sheets);
   const { series } = readFundSeries(sheets);
   const register = readRegister(sheets);
+  const placed = placeRegister(register);
   const quarters = readQuarterSheets(sheets);
   const history = readAssetHistory(sheets);
   // Identity comes from whose mandate it is, not from the line describing what
@@ -982,7 +1077,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       // Where the fund invests, when its register puts every property in the
       // same country. Two countries and it is not one region, so it is left
       // unstated rather than reduced to whichever has more properties.
-      region: only(register.filter((row) => row.fund === fund.key).map((row) => countryOf(row.state))),
+      region: only(register.filter((row) => row.fund === fund.key).map(placed.countryOf)),
       status: 'Investing',
     };
     positions.push(position);
@@ -1266,6 +1361,16 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   for (const fund of summary.funds) {
     const position = positionOf.get(fund.key);
     if (!position) continue;
+    // The partnership the interest is held through. The fund figures below are
+    // stated at that level rather than the mandate's, and a statement will
+    // arrive addressed to it, so it is recorded rather than left as the name of
+    // a holding nobody committed to.
+    if (fund.vehicleName && fund.vehicleName !== fund.name) {
+      metric({ kind: 'position', id: position.id },
+        control.period ?? recordedAt.slice(0, 7) as PeriodId,
+        'interestHeldThrough', { text: fund.vehicleName },
+        `${fund.name} — the level the fund figures are stated at`);
+    }
     for (const [name, byFund] of series) {
       for (const [period, value] of byFund.get(fund.key) ?? []) {
         // The series is already keyed by name rather than by label, so it is
@@ -1373,7 +1478,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
         assetClass: 'Real Estate',
         sector,
         region: entry.region || 'Unclassified',
-        country: countryOf(entry.state),
+        country: placed.countryOf(entry),
         status: 'Held',
         // What the register says that this model has no column for, so the
         // sheet it came from can be written back as it was given.
@@ -1439,6 +1544,16 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       `${metrics.length} figure(s) beside the valuations — what moved each value, the debt, the `
       + 'operations against budget, the rehabilitation and the narrative — are kept as reported. '
       + 'Nothing computed depends on them; the report pages do.',
+    );
+  }
+
+  if (placed.extended.length > 0) {
+    notes.push(
+      `${placed.extended.length} propert(ies) state no state, so the register places them by `
+      + 'region alone. They are put in the same country as the rest of the register — every '
+      + 'property that names one names that country, and the regions these sit in are regions '
+      + 'that country\'s own properties are in. Had the register held two countries, nothing '
+      + 'would have been extended.',
     );
   }
 

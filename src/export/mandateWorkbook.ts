@@ -80,6 +80,8 @@ function latest<T extends { recordedAt: string }>(rows: T[], key: (row: T) => st
 interface Fund {
   key: string;
   position: Position;
+  /** The partnership the fund-level figures are stated at, which heads their columns. */
+  level: string;
   valuations: PositionValuation[];
   assets: Asset[];
 }
@@ -115,6 +117,13 @@ export function buildMandateWorkbook(options: MandateWorkbookOptions): MandateWo
   const funds: Fund[] = positions.map((position) => ({
     key: romanIn(position.name) ?? position.name,
     position,
+    // The partnership the interest is held through, which is what the
+    // fund-level sheets head their columns with. The holding is named after the
+    // fund; the columns are named after the level the figures are stated at,
+    // and writing the one where the other belongs would rename the level.
+    level: metrics.find(
+      (m) => m.scope.id === position.id && m.metric === 'interestHeldThrough',
+    )?.text ?? position.name,
     valuations: latest(
       valuations.filter((v) => v.positionId === position.id),
       (v) => v.period,
@@ -128,8 +137,11 @@ export function buildMandateWorkbook(options: MandateWorkbookOptions): MandateWo
   const currency = vehicle.currency;
   const holder = investor?.name ?? 'The mandate holder';
   // What the workbook is about, then whose it is. The first half names the
-  // funds rather than the product, which is how the file it imitates reads.
-  const about = funds.map((fund) => fund.position.name).join(' and ') || vehicle.name;
+  // funds rather than the product, which is how the file it imitates reads —
+  // and names them the way that file does, as one stem carrying both
+  // generations, so that reading this back gives the holdings their own names
+  // again rather than the level their figures are stated at.
+  const about = subjectLine(funds) || vehicle.name;
 
   const sheets: TableData[] = [
     readme(about, holder, currency, period, knowledgeDate),
@@ -481,6 +493,28 @@ function assetHistory(funds: Fund[], assetValuations: AssetValuation[]): TableDa
 
 /* --- 30 FUND QUARTER, 35 FUND HISTORY ---------------------------- */
 
+/**
+ * `Rose … Fund V` and `Rose … Fund VI` -> `Rose … Fund V and VI`.
+ *
+ * The inverse of how the reader takes the names apart. Written out one after
+ * the other, the line would repeat the stem, and the reader would no longer
+ * recognise it as one family of funds — so the holdings would come back named
+ * after the partnerships they are held through instead of after themselves.
+ */
+function subjectLine(funds: Fund[]): string {
+  const names = funds.map((fund) => fund.position.name);
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+
+  const stems = new Set(names.map((name, i) => {
+    const key = funds[i].key;
+    return new RegExp(`\\s+${key}\\s*$`).test(name) ? name.replace(new RegExp(`\\s+${key}\\s*$`), '') : name;
+  }));
+  if (stems.size !== 1) return names.join(' and ');
+  const [stem] = [...stems];
+  return `${stem} ${funds.map((fund) => fund.key).join(' and ')}`;
+}
+
 /** `fund.cumulativePaidInCapital` -> `Cumulative Paid In Capital`. */
 function fundLabel(metric: string): string {
   const bare = metric.replace(/^fund\./, '');
@@ -503,7 +537,7 @@ function fundQuarter(
   const columns: Array<{ id: string; period: PeriodId }> = [];
   for (const fund of funds) {
     for (const at of [period, before]) {
-      header.push(`${fund.position.name}\n${formatPeriod(at)}`);
+      header.push(`${fund.level}\n${formatPeriod(at)}`);
       columns.push({ id: fund.position.id, period: at });
     }
   }

@@ -43,9 +43,44 @@ describe('recognising the workbook', () => {
     expect(summary.holdings).toBe(2);
     expect(summary.companies).toBe(3);
     expect(summary.funds.map((fund) => fund.name))
-      .toEqual(['Fund I REIT LP', 'Fund II REIT LP']);
+      .toEqual(['Rowan Housing Fund I', 'Rowan Housing Fund II']);
     expect(summary.funds[0].commitment).toBe(10_000_000);
     expect(summary.funds[0].share).toBe(0.1);
+  });
+
+  it('names the holdings after the funds, not after what they are held through', () => {
+    // The fund-level sheets head their columns `Fund I REIT LP`, which names
+    // the partnership the interest is held through — the level the figures are
+    // stated at. Nobody committed to a REIT LP; they committed to Rowan Housing
+    // Fund I. The front matter names both generations on one line, and taking
+    // that apart is a transformation rather than a guess.
+    const summary = summariseMandate(workbook())!;
+    expect(summary.funds.map((fund) => fund.name))
+      .toEqual(['Rowan Housing Fund I', 'Rowan Housing Fund II']);
+    expect(summary.funds.map((fund) => fund.vehicleName))
+      .toEqual(['Fund I REIT LP', 'Fund II REIT LP']);
+  });
+
+  it('keeps the partnership the interest is held through as a fact of its own', () => {
+    const held = plan().metrics.filter((m) => m.metric === 'interestHeldThrough');
+    expect(held.map((m) => m.text)).toEqual(['Fund I REIT LP', 'Fund II REIT LP']);
+    expect(held.every((m) => m.scope.kind === 'position')).toBe(true);
+  });
+
+  it('keeps the column heading when the front matter does not name the funds', () => {
+    // Two funds, and a subject line that names neither: the heading stands,
+    // because a name that is merely confusing beats one that is wrong.
+    const renamed = workbook().map((sheet) => (sheet.sheetName === '00 README'
+      ? {
+        ...sheet,
+        rows: sheet.rows.map((row) => (String(row[0] ?? '').includes('·')
+          ? ['Two funds we advise on · Northshore Pension Scheme']
+          : row)),
+      }
+      : sheet));
+    const summary = summariseMandate(renamed)!;
+    expect(summary.funds.map((fund) => fund.name))
+      .toEqual(['Fund I REIT LP', 'Fund II REIT LP']);
   });
 });
 
@@ -71,6 +106,60 @@ describe('the funds the mandate holds', () => {
     expect(positions[0].commitmentDate).toBe('2021-01-20');
     expect(positions[0].vintage).toBe(2021);
     expect(positions[0].region).toBe('United States');
+  });
+});
+
+describe('placing the properties', () => {
+  const register = (rows: unknown[][]) => workbook({ '10 ASSETS': rows as never });
+  const base = [
+    ['ADVISORY MONITORING  ·  SUPPORT DATA'],
+    ['10  Asset register'],
+    [],
+    ['ID', 'Asset — report name', 'Fund', 'City', 'State', 'Region', 'Tenant type', 'Units'],
+  ];
+
+  it('reads a country off the state, as the register states it', () => {
+    expect(plan().assets.every((asset) => asset.country === 'United States')).toBe(true);
+  });
+
+  it('places a property that states no state by the region the rest are in', () => {
+    // The newer fund's rows carry a region and no state. `Northeast` says
+    // nothing by itself; it says something once this register has put other
+    // properties in it.
+    const built = planMandateImport(register([
+      ...base,
+      ['A1', 'Rowan Court', 'I', 'Denver', 'CO', 'West', '', 100],
+      ['A2', 'Alder Place', 'I', 'Boston', 'MA', 'Northeast', '', 50],
+      ['B1', 'Birch Terrace', 'II', '', '', 'Northeast', '', 40],
+    ]), { vehicleId: 'veh-mandate' });
+    expect(built.assets.map((asset) => asset.country))
+      .toEqual(['United States', 'United States', 'United States']);
+    expect(built.notes.some((note) => /1 propert\(ies\) state no state/.test(note))).toBe(true);
+  });
+
+  it('extends nothing to a region no placed property is in', () => {
+    // Nothing in this register says where `Nordic` is, so the property stays
+    // where the register left it.
+    const built = planMandateImport(register([
+      ...base,
+      ['A1', 'Rowan Court', 'I', 'Denver', 'CO', 'West', '', 100],
+      ['B1', 'Birch Terrace', 'II', '', '', 'Nordic', '', 40],
+    ]), { vehicleId: 'veh-mandate' });
+    expect(built.assets.find((asset) => asset.name === 'Birch Terrace')?.country)
+      .toBe('Unclassified');
+    expect(built.notes.some((note) => /state no state/.test(note))).toBe(false);
+  });
+
+  it('extends nothing off a state it cannot read as a state', () => {
+    // `Ontario` is not a two-letter code, so the row places nothing and is
+    // itself placed only if its region was placed by somebody else.
+    const built = planMandateImport(register([
+      ...base,
+      ['A1', 'Rowan Court', 'I', 'Denver', 'CO', 'West', '', 100],
+      ['A2', 'Alder Place', 'I', 'Toronto', 'Ontario', 'East', '', 50],
+    ]), { vehicleId: 'veh-mandate' });
+    expect(built.assets.find((asset) => asset.name === 'Alder Place')?.country)
+      .toBe('Unclassified');
   });
 });
 
@@ -101,7 +190,7 @@ describe('what the mandate is worth', () => {
 
   it('names a valuation that was carried forward rather than reported', () => {
     expect(plan().notes.some((note) =>
-      /Fund I REIT LP: net asset value is unchanged from 2023Q2 to 2023Q3/.test(note))).toBe(true);
+      /Rowan Housing Fund I: net asset value is unchanged from 2023Q2 to 2023Q3/.test(note))).toBe(true);
   });
 });
 
@@ -175,7 +264,7 @@ describe('the properties inside the funds', () => {
     expect(built.assets[0].ownership).toBeCloseTo(0.5, 6);
     expect(built.assetValuations[0].source).toContain('at 100% of the fund');
     expect(built.notes.some((note) =>
-      /Fund I REIT LP: the properties are reported at 100%/.test(note))).toBe(true);
+      /Rowan Housing Fund I: the properties are reported at 100%/.test(note))).toBe(true);
   });
 
   it('turns the affordability bands into the split a property is let under', () => {
