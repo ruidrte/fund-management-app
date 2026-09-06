@@ -23,7 +23,8 @@ import { verifyWorkbook, summariseVerification } from '../src/export/verify';
 import { WORKBOOK_SHAPES } from '../src/export/workbooks';
 import { DEFAULT_CONVENTIONS, type DataSet } from '../src/domain/types';
 import type { ImportPlan } from '../src/ingest/pfdb';
-import { SUPPORT_WORKBOOK } from './fixtures/support';
+import { SUPPORT_WORKBOOK, supportSheets as sheets, INVESTMENTS } from './fixtures/support';
+import type { TableData } from '../src/ingest/types';
 
 const VEHICLE = 'veh-balt';
 const PERIOD = '2026Q2';
@@ -182,5 +183,38 @@ describe('the file itself', () => {
     expect(again.positions).toHaveLength(first.positions.length);
     expect(again.cashflows).toHaveLength(first.cashflows.length);
     expect(again.problems).toEqual([]);
+  });
+});
+
+describe('the two bases the workbook carries', () => {
+  it('writes no such sheet where the book has one basis', () => {
+    // Nothing restated and nothing outside the commitment: the two methods are
+    // the same method, and a sheet showing it twice would say a change happened.
+    expect(written.sheets.find((sheet) => sheet.sheetName === 'Two bases')).toBeUndefined();
+  });
+
+  it('writes one where a basis adjustment makes them differ', () => {
+    const rows = [...INVESTMENTS.rows];
+    const total = rows.pop()!;
+    rows.push(
+      ['Baltic Wind', 'Co-investment', 'EUR', 46_193, 'Basis adj', 'Equalisation reclassified',
+        null, null, -20_000, null, null, null, null, 1],
+      total,
+    );
+    const restated = sheets().map((sheet) => (sheet.sheetName === 'Investments'
+      ? { ...sheet, rows } as TableData
+      : sheet));
+    const plan = planSupportImport(restated, { vehicleId: VEHICLE, recordedAt: at });
+    const built = buildSupportWorkbook({ dataset: book(plan), vehicleId: VEHICLE, period: PERIOD });
+    const sheet = built.sheets.find((s) => s.sheetName === 'Two bases')!;
+
+    expect(sheet).toBeDefined();
+    const wind = sheet.rows.find((row) => row[0] === 'Baltic Wind')!;
+    // Reported leaves the restatement out; the previous method applies it, and
+    // the twenty thousand of capitalised cost comes back off the denominator.
+    expect((wind[2] as number) - (wind[9] as number)).toBeCloseTo(20_000, 6);
+    // The valuation is the same figure under both, which is the whole point of
+    // putting them side by side.
+    expect(sheet.rows[sheet.rows.length - 1][0]).toBe('TOTAL');
   });
 });

@@ -50,6 +50,17 @@ export interface ReturnBasis {
   /** How many flows the return ran over, terminal value aside. */
   flows: number;
   /**
+   * Why there is no IRR, where the flows would have produced one.
+   *
+   * A rate of return is an annual rate. Annualising a fortnight compounds
+   * whatever happened in it twenty-six times, and what comes out is not a
+   * property of the investment — a holding drawn twelve days before the
+   * reporting date has printed three hundred per cent this way. The multiple is
+   * still meaningful over any span; the rate is not, and saying so is better
+   * than printing it with a footnote.
+   */
+  irrNote?: string;
+  /**
    * Flows the basis should have admitted and could not, each named. A basis
    * with anything here is incomplete, and saying which line is missing is the
    * difference between a figure somebody can fix and one they cannot trust.
@@ -64,8 +75,32 @@ export interface ReturnBasis {
  */
 const ON_COMMITMENT: CashflowType[] = ['Capital Call', 'Distribution', 'Return of Capital'];
 
+/**
+ * The shortest span an annualised rate is worth quoting over.
+ *
+ * A quarter. Below it the compounding does the talking: a two per cent move
+ * over twelve days annualises to eighty, and the number describes the calendar
+ * rather than the investment.
+ */
+const MEANINGFUL_DAYS = 90;
+
 /** A commitment is a promise, not a payment; it never enters a return. */
 const NOT_CASH: CashflowType[] = ['Commitment'];
+
+/**
+ * Which side of the multiples a flow nets against.
+ *
+ * By what it is, not by which way it points. A negative capital call is capital
+ * coming back out of what was paid in — a reversal of that side — and not a
+ * distribution of profit; a refunded fee reduces the fee paid rather than
+ * paying the holder a dividend. Splitting on the sign instead puts the same
+ * amount into the numerator and the denominator at once, which moves both
+ * multiples and moves them away from what the source workbook states.
+ *
+ * The identity survives either way: TVPI is still DPI plus RVPI, because all
+ * three are over the same denominator.
+ */
+const PAID_IN: CashflowType[] = ['Capital Call', 'Equalisation', 'Fee', 'Expense'];
 
 export interface BasisRequest {
   cashflows: Cashflow[];
@@ -77,6 +112,24 @@ export interface BasisRequest {
   period: PeriodId;
   /** The currency the fourth basis restates into. Omitted, there are three. */
   restateIn?: CurrencyCode;
+  /**
+   * Report every basis in this currency, converting each flow at the rate of
+   * its own day.
+   *
+   * Different from `restateIn`, which adds a basis. This changes the unit the
+   * others are stated in — what a fund-level table needs, where four holdings
+   * in three currencies have to be added up before they can be compared.
+   */
+  stateIn?: CurrencyCode;
+  /**
+   * Admit the rows that restate an earlier basis.
+   *
+   * False, and rightly, for anything reported: nothing was paid or received on
+   * the day a basis changed. True only to reconstruct what the previous basis
+   * said — which is worth doing exactly once, on the page that explains why
+   * this quarter's figure differs from the one published last quarter.
+   */
+  includeRestatements?: boolean;
 }
 
 export function returnBases(request: BasisRequest): ReturnBasis[] {
@@ -87,6 +140,7 @@ export function returnBases(request: BasisRequest): ReturnBasis[] {
     (flow) => (flow.positionId === positionId || flow.chargedFor === positionId)
       && flow.date <= end
       && flow.status !== 'Draft'
+      && (request.includeRestatements || !flow.restatement)
       && !NOT_CASH.includes(flow.type),
   );
 
@@ -118,11 +172,18 @@ export function returnBases(request: BasisRequest): ReturnBasis[] {
     },
   ];
 
+  const { stateIn } = request;
+  const inOwn = !stateIn || stateIn === currency;
+  const shown = inOwn ? undefined : convert(mine, residual, stateIn, request, end);
+
   const bases = admits.map(({ key, label, takes }) => (
-    measure(key, label, currency, mine.filter(takes), residual, end)
+    inOwn
+      ? measure(key, label, currency, mine.filter(takes), residual, end)
+      : measure(key, label, stateIn!, shown!.flows.filter((flow) => takes(flow.of)),
+        shown!.residual, end, shown!.missing)
   ));
 
-  if (restateIn && restateIn !== currency) {
+  if (restateIn && restateIn !== (stateIn ?? currency)) {
     bases.push(restate(mine, residual, request, end));
   }
   return bases;
@@ -130,23 +191,35 @@ export function returnBases(request: BasisRequest): ReturnBasis[] {
 
 function measure(
   key: BasisKey, label: string, currency: CurrencyCode,
-  flows: Array<{ date: string; amount: number; description?: string }>,
+  flows: Array<{ date: string; amount: number; type: CashflowType; description?: string }>,
   residual: number, end: string, missing: string[] = [],
 ): ReturnBasis {
   const dated: DatedFlow[] = flows.map((flow) => ({ date: new Date(flow.date), amount: flow.amount }));
-  // Every negative flow is capital the holder put in and every positive one is
-  // money that came back, whatever the line is called. Defining the multiples
-  // off the signs rather than off the types is what keeps TVPI equal to DPI
-  // plus RVPI on all four bases — the identity the workbook checks.
-  const paidIn = -flows.filter((flow) => flow.amount < 0).reduce((sum, flow) => sum + flow.amount, 0);
-  const distributed = flows.filter((flow) => flow.amount > 0).reduce((sum, flow) => sum + flow.amount, 0);
+  const paidIn = -flows.filter((flow) => PAID_IN.includes(flow.type))
+    .reduce((sum, flow) => sum + flow.amount, 0);
+  const distributed = flows.filter((flow) => !PAID_IN.includes(flow.type))
+    .reduce((sum, flow) => sum + flow.amount, 0);
+
+  const first = dated.reduce<number | undefined>(
+    (earliest, flow) => (earliest === undefined || flow.date.getTime() < earliest
+      ? flow.date.getTime()
+      : earliest),
+    undefined,
+  );
+  const days = first === undefined
+    ? 0
+    : Math.round((new Date(end).getTime() - first) / 86_400_000);
+  const tooShort = dated.length > 0 && days < MEANINGFUL_DAYS;
 
   return {
     key,
     label,
     currency,
-    irr: residual !== 0 || dated.length > 0
-      ? irrWithTerminalValue(dated, residual, new Date(end))
+    irr: tooShort || (residual === 0 && dated.length === 0)
+      ? undefined
+      : irrWithTerminalValue(dated, residual, new Date(end)),
+    irrNote: tooShort
+      ? `${days} day(s) from the first flow — too short for an annualised rate to mean anything`
       : undefined,
     paidIn,
     distributed,
@@ -166,13 +239,19 @@ function measure(
  * every line for exactly this, and a line that has none is left out and named
  * rather than converted at whatever rate is nearest.
  */
-function restate(
-  flows: Cashflow[], residual: number, request: BasisRequest, end: string,
-): ReturnBasis {
-  const { fxRates, currency, period, restateIn } = request;
-  const into = restateIn!;
+interface Converted {
+  flows: Array<{ date: string; amount: number; type: CashflowType; description?: string; of: Cashflow }>;
+  residual: number;
+  missing: string[];
+}
 
-  const converted: Array<{ date: string; amount: number }> = [];
+/** Every flow at the rate of its own day, and the valuation at the closing one. */
+function convert(
+  flows: Cashflow[], residual: number, into: CurrencyCode, request: BasisRequest, end: string,
+): Converted {
+  const { fxRates, currency, period } = request;
+
+  const converted: Converted['flows'] = [];
   const missing: string[] = [];
   for (const flow of flows) {
     const rate = rateOn(fxRates, flow.currency, into, flow.date, kindFor(flow));
@@ -180,7 +259,10 @@ function restate(
       missing.push(`${flow.description ?? flow.type} on ${flow.date}`);
       continue;
     }
-    converted.push({ date: flow.date, amount: flow.amount * rate });
+    converted.push({
+      date: flow.date, amount: flow.amount * rate, type: flow.type,
+      description: flow.description, of: flow,
+    });
   }
 
   // The valuation is a stock and is restated at the closing rate — never at
@@ -195,8 +277,20 @@ function restate(
     missing.push(`the closing valuation at ${end}`);
   }
 
+  return {
+    flows: converted,
+    residual: closing === undefined ? 0 : residual * closing,
+    missing,
+  };
+}
+
+function restate(
+  flows: Cashflow[], residual: number, request: BasisRequest, end: string,
+): ReturnBasis {
+  const into = request.restateIn!;
+  const shown = convert(flows, residual, into, request, end);
   return measure('restated', `In ${into}, at each flow’s own rate`, into,
-    converted, closing === undefined ? 0 : residual * closing, end, missing);
+    shown.flows, shown.residual, end, shown.missing);
 }
 
 /**

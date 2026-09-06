@@ -29,8 +29,10 @@ import {
   formatPeriod, periodEndDate, sortPeriods, type PeriodId,
 } from '../domain/period';
 import type {
-  Cashflow, DataSet, Investor, Metric, Position, PositionValuation, VehicleBalanceSheet,
+  Cashflow, CurrencyCode, DataSet, Investor, Metric, Position, PositionValuation,
+  VehicleBalanceSheet,
 } from '../domain/types';
+import { returnBases, type ReturnBasis } from '../engine/basis';
 import { slug } from '../ingest/ids';
 import type { TableData } from '../ingest/types';
 
@@ -122,6 +124,7 @@ export function buildSupportWorkbook(options: SupportWorkbookOptions): SupportWo
     incomeStatement(metrics, vehicle.currency),
     investorLedger(investors, cashflows.filter((c) => c.investorId && investorIds.has(c.investorId))),
     ...acquisitionCosts(metrics),
+    ...twoBases(positions, valuations, cashflows, dataset.fxRates, vehicle.currency, period),
   ];
 
   return {
@@ -129,6 +132,110 @@ export function buildSupportWorkbook(options: SupportWorkbookOptions): SupportWo
     filename: `${slug(vehicle.shortName)}_reporting_${period}`,
     problems,
   };
+}
+
+/* --- Two bases --------------------------------------------------- */
+
+/**
+ * The reported basis, and the one it replaced.
+ *
+ * A change to how performance is presented is the hardest thing for a reader to
+ * see, because both quarters are internally consistent and only the comparison
+ * between them is wrong. So the workbook carries both, side by side, on the
+ * quarter the basis changed and afterwards — and states the definition of each
+ * rather than leaving it to be inferred from the numbers.
+ *
+ * The application reports the first of them and nothing else. This sheet is not
+ * a second answer: it is the arithmetic of why last quarter's published figure
+ * and this quarter's do not sit on the same line.
+ *
+ * It is written only where the two differ. A book with no basis adjustments in
+ * it and no flows outside the commitment has one basis, and a sheet showing it
+ * twice would say the change happened when it did not.
+ */
+function twoBases(
+  positions: Position[], valuations: PositionValuation[], cashflows: Cashflow[],
+  fxRates: DataSet['fxRates'], currency: CurrencyCode, period: PeriodId,
+): TableData[] {
+  const of = (position: Position, previous: boolean) => returnBases({
+    cashflows,
+    valuations,
+    fxRates,
+    positionId: position.id,
+    currency: position.currency,
+    period,
+    stateIn: currency,
+    includeRestatements: previous,
+  }).find((basis: ReturnBasis) => basis.key === (previous ? 'on-commitment' : 'with-off-commitment'));
+
+  const lines = positions
+    .map((position) => ({
+      position,
+      reported: of(position, false),
+      previous: of(position, true),
+    }))
+    .filter((line) => line.reported && line.previous);
+
+  const differs = lines.some(({ reported, previous }) => (
+    Math.abs(reported!.paidIn - previous!.paidIn) > 0.005
+    || Math.abs(reported!.distributed - previous!.distributed) > 0.005
+  ));
+  if (!differs) return [];
+
+  const rows: Cell[][] = [
+    [`Reported basis and previous method — ${formatPeriod(period)}`],
+    [
+      'The reported basis is every unit the fund paid: capital calls, capitalised '
+      + 'acquisition costs and other expenses, with the rows that restate an earlier basis not '
+      + 'applied. The previous method applies those rows and leaves the expenses outside the '
+      + 'commitment out of the denominator. The net asset value is the same under both, and '
+      + 'every flow converts at the rate of its own day under both.',
+    ],
+    [],
+    ['', '', 'REPORTED BASIS', '', '', '', '', '', 'PREVIOUS METHOD'],
+    ['Asset', 'CCY', `Paid in ${currency}`, `Distributed ${currency}`, `NAV ${currency}`,
+      'TVPI', 'DPI', 'Gross IRR', '',
+      `Paid in ${currency}`, `Distributed ${currency}`, 'TVPI', 'DPI', 'Gross IRR'],
+  ];
+
+  // A holding too young for an annualised rate says so where the rate would
+  // have been, the way the file this imitates does. An empty cell reads as a
+  // figure somebody forgot.
+  const rate = (basis: ReturnBasis): Cell => (basis.irr ?? (basis.irrNote ? 'n.m.' : null));
+
+  const total = { paidIn: 0, distributed: 0, nav: 0, wasPaidIn: 0, wasDistributed: 0 };
+  for (const { position, reported, previous } of lines) {
+    total.paidIn += reported!.paidIn;
+    total.distributed += reported!.distributed;
+    total.nav += reported!.residual;
+    total.wasPaidIn += previous!.paidIn;
+    total.wasDistributed += previous!.distributed;
+    rows.push([
+      position.name, position.currency,
+      reported!.paidIn, reported!.distributed, reported!.residual,
+      reported!.tvpi ?? null, reported!.dpi ?? null, rate(reported!), null,
+      previous!.paidIn, previous!.distributed, previous!.tvpi ?? null, previous!.dpi ?? null,
+      rate(previous!),
+    ]);
+  }
+
+  const ratio = (numerator: number, denominator: number) =>
+    (denominator > 0 ? numerator / denominator : null);
+  rows.push([
+    'TOTAL', null,
+    total.paidIn, total.distributed, total.nav,
+    ratio(total.distributed + total.nav, total.paidIn), ratio(total.distributed, total.paidIn),
+    // No fund-level IRR here: it is not the average of the holdings' and
+    // writing one that looked like it was would be worse than leaving the cell
+    // empty. The application computes it from the whole ledger.
+    null, null,
+    total.wasPaidIn, total.wasDistributed,
+    ratio(total.wasDistributed + total.nav, total.wasPaidIn),
+    ratio(total.wasDistributed, total.wasPaidIn),
+    null,
+  ]);
+
+  return [{ sheetName: 'Two bases', rows }];
 }
 
 /* --- Cover -------------------------------------------------------- */

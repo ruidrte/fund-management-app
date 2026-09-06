@@ -19,7 +19,7 @@ import { AlertTriangle, Check, Database, Info, Loader2, X } from 'lucide-react';
 import { formatPeriod } from '../../domain/period';
 import {
   planAllocationImport, planImport, planMandateImport, planMasterImport, planModelImport,
-  planStagedImport,
+  planRatesImport, planStagedImport,
   planSupportImport, similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
@@ -92,6 +92,10 @@ export function DatabaseImport({
   const master = outcome.master;
   const model = outcome.model;
   const staged = outcome.staged;
+  // A table of published fixings is the one shape with no product to point at:
+  // a rate belongs to the book. It gets a screen of its own rather than a
+  // picker whose answer would change nothing.
+  const rates = outcome.rates;
   const single = support ?? mandate ?? master ?? model ?? staged;
 
   // Portfolios first; a limited partner's own book is picked as the investor
@@ -180,6 +184,9 @@ export function DatabaseImport({
           problems: read.problems, periods: read.periods, notes: read.notes,
         }];
       }
+      if (rates) {
+        return [planRatesImport(outcome.sheets, { vehicleId: vehicleId || vehicles[0]?.id || '' })];
+      }
       return chosen.map((target) => (staged
         ? planStagedImport(outcome.sheets, { vehicleId: target.vehicleId })
         : model
@@ -203,7 +210,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, mandate, master, model, staged, allocation, vehicleId, dataset,
+  }, [outcome.sheets, support, mandate, master, model, staged, rates, allocation, vehicleId, dataset,
     JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
@@ -227,6 +234,61 @@ export function DatabaseImport({
 
   const total = (pick: (plan: ImportPlan) => unknown[]) =>
     plans.reduce((sum, plan) => sum + pick(plan).length, 0);
+
+  if (rates) {
+    return (
+      <div className="flex flex-col gap-4">
+        <Card
+          title="This is a table of exchange rates, not a document"
+          subtitle={`One ${rates.base} in ${rates.currencies} currencies, `
+            + `${rates.first} to ${rates.last}`}
+          actions={
+            <div className="flex items-center gap-2">
+              <StatusPill tone="serious">
+                {`${rates.rates.toLocaleString('en-GB')} rate(s) over `
+                  + `${rates.days.toLocaleString('en-GB')} day(s)`}
+              </StatusPill>
+              <button
+                type="button" onClick={onClose}
+                className="rounded px-2 py-1 text-xs"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+              >
+                Close
+              </button>
+            </div>
+          }
+          note={'A rate belongs to the book rather than to any one product, so there is nothing '
+            + 'to point this at. They are filed as published fixings — the lowest authority a '
+            + 'rate can have — so wherever the book already holds the rate an administrator\'s '
+            + 'own statement used, that one still wins. What these change is the days nothing '
+            + 'else covers: a movement with no rate beside it was being translated at its '
+            + "quarter's closing rate, which is a rate from a different day."}
+        >
+          {plans[0]?.problems.map((problem) => (
+            <p key={problem} className="mb-1 flex items-start gap-1.5 text-xs" style={{ color: 'var(--status-warning)' }}>
+              <AlertTriangle size={13} className="mt-px shrink-0" aria-hidden />
+              {problem}
+            </p>
+          ))}
+          {failure && (
+            <p className="mb-2 text-xs" style={{ color: 'var(--status-critical)' }}>{failure}</p>
+          )}
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              type="button" className="btn-primary"
+              disabled={busy || !canImport || plans.length === 0}
+              onClick={commit}
+            >
+              {busy ? 'Filing…' : `File ${total((plan) => plan.fxRates).toLocaleString('en-GB')} rate(s)`}
+            </button>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              into {destination}
+            </span>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">

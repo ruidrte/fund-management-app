@@ -22,6 +22,7 @@ import { isMandateWorkbook, summariseMandate, type MandateSummary } from './mand
 import { isMasterWorkbook, summariseMaster, type MasterSummary } from './master';
 import { isSupportModel, summariseModel, type ModelSummary } from './model';
 import { isStagedSupport, summariseStaged, type StagedSummary } from './staged';
+import { isRateSeries, summariseRates, type RateSeriesSummary } from './rates';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -56,6 +57,10 @@ export {
   isStagedSupport, planStagedImport, summariseStaged,
   type StagedOptions, type StagedSummary,
 } from './staged';
+export {
+  isRateSeries, planRatesImport, summariseRates,
+  type RateOptions, type RateSeriesSummary,
+} from './rates';
 export { slug } from './ids';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
@@ -131,8 +136,11 @@ export async function openDatabase(
   const staged = isStagedSupport(workbook.sheets)
     ? summariseStaged(workbook.sheets)
     : undefined;
+  const rates = isRateSeries(workbook.sheets)
+    ? summariseRates(workbook.sheets)
+    : undefined;
   if (!isPortfolioDatabase(workbook.sheets)
-    && !support && !allocation && !mandate && !master && !model && !staged) {
+    && !support && !allocation && !mandate && !master && !model && !staged && !rates) {
     return undefined;
   }
 
@@ -158,6 +166,7 @@ export async function openDatabase(
     master,
     model,
     staged,
+    rates,
   };
 }
 
@@ -180,6 +189,8 @@ export interface DatabaseOutcome {
   model?: ModelSummary;
   /** The inputs a quarter was built from, when it is a staged support file. */
   staged?: StagedSummary;
+  /** The published fixings, when it is a table of exchange rates. */
+  rates?: RateSeriesSummary;
 }
 
 export async function ingest(

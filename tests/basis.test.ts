@@ -187,7 +187,90 @@ describe('restating into the holder’s own currency', () => {
   });
 });
 
+describe('the basis a book reports on, and the one it replaced', () => {
+  const restating: Cashflow[] = [
+    ...CASHFLOWS,
+    {
+      ...flow('2026-04-01', 50_000, 'Equalisation', 'position', 'Equalisation reclassified'),
+      restatement: true,
+    },
+  ];
+  const bases = (includeRestatements: boolean) => returnBases({
+    cashflows: restating,
+    valuations: VALUATIONS,
+    fxRates: RATES,
+    positionId: POSITION,
+    currency: 'USD',
+    period: '2026Q2',
+    includeRestatements,
+  });
+
+  it('leaves the restatement out of what it reports', () => {
+    expect(bases(false).find((b) => b.key === 'with-off-commitment')!.paidIn).toBe(1_550_000);
+  });
+
+  it('lets it back in to reconstruct what was published before', () => {
+    // The reversal of the equalisation, applied: 50,000 less paid in.
+    expect(bases(true).find((b) => b.key === 'with-off-commitment')!.paidIn).toBe(1_500_000);
+  });
+
+  it('nets a flow against the side its type belongs to, not the side its sign points', () => {
+    // A negative capital call is capital coming back out of what was paid in.
+    const returned = returnBases({
+      cashflows: [...CASHFLOWS, flow('2026-05-01', 25_000, 'Capital Call', 'position', 'Overcall returned')],
+      valuations: VALUATIONS,
+      fxRates: RATES,
+      positionId: POSITION,
+      currency: 'USD',
+      period: '2026Q2',
+    }).find((b) => b.key === 'on-commitment')!;
+
+    expect(returned.paidIn).toBe(1_500_000 - 25_000);
+    expect(returned.distributed).toBe(100_000);
+  });
+
+  it('states every basis in one currency when asked to', () => {
+    const inFrancs = returnBases({
+      cashflows: CASHFLOWS,
+      valuations: VALUATIONS,
+      fxRates: RATES,
+      positionId: POSITION,
+      currency: 'USD',
+      period: '2026Q2',
+      stateIn: 'CHF',
+    });
+    expect(inFrancs.every((basis) => basis.currency === 'CHF')).toBe(true);
+    expect(inFrancs.find((b) => b.key === 'on-commitment')!.paidIn)
+      .toBeCloseTo(1_000_000 * 0.90 + 500_000 * 0.88, 6);
+    // Four holdings in three currencies have to be in one before they add up,
+    // and that is a different question from adding a fourth basis.
+    expect(inFrancs).toHaveLength(3);
+  });
+});
+
 describe('what it refuses to state', () => {
+  it('refuses to annualise a span too short to annualise', () => {
+    // Drawn twelve days before the reporting date and worth two per cent more.
+    // Compounded twenty-six times that reads as a triple-digit return, which
+    // describes the calendar rather than the investment.
+    const young = returnBases({
+      cashflows: [flow('2026-06-18', -1_000_000, 'Capital Call', 'position', 'Drawdown 1')],
+      valuations: [{
+        id: 'v2', positionId: POSITION, period: '2026Q2', recordedAt: RECORDED,
+        nav: 1_020_000, source: 'statement',
+      }],
+      fxRates: [],
+      positionId: POSITION,
+      currency: 'USD',
+      period: '2026Q2',
+    })[0];
+
+    expect(young.irr).toBeUndefined();
+    expect(young.irrNote).toMatch(/12 day\(s\) from the first flow/);
+    // The multiple is meaningful over any span; only the rate is not.
+    expect(young.tvpi).toBeCloseTo(1.02, 9);
+  });
+
   it('has no return without a flow of each sign', () => {
     const nothing = returnBases({
       cashflows: [flow('2026-01-01', -100, 'Capital Call', 'position', 'Call')],

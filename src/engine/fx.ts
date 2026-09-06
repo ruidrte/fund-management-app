@@ -36,14 +36,20 @@ export interface RateLookup {
   /** Same, but returns undefined instead of throwing. */
   tryRate(from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number | undefined;
   /**
-   * The rate for a particular day, where the book records one, falling back to
-   * the rate for the day's quarter where it does not.
+   * The rate for a particular day.
    *
    * A flow happened on a day, and a book that keeps a rate beside every movement
    * is stating the rate it happened at. Translating it at the quarter's rate
    * instead invents a currency movement between the two dates and puts it in the
    * return — which is precisely the difference between a figure that ties to the
    * source workbook and one that argues with it.
+   *
+   * Three answers in order, and the order is the point. The rate recorded for
+   * that exact day. Then the most recent one before it, which is what a daily
+   * published series means: a fixing is published on business days, and a
+   * payment that settles on a Saturday settles at Friday's. Then, only if the
+   * book holds nothing earlier at all, the rate for the day's quarter — the
+   * blunt answer, and the one the other two exist to avoid.
    */
   onDate(from: CurrencyCode, to: CurrencyCode, date: string, kind?: 'closing' | 'average'): number | undefined;
   convert(amount: number, from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number;
@@ -190,6 +196,29 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     return undefined;
   }
 
+  /**
+   * The last rate published for a pair on or before a day.
+   *
+   * Where the book carries a daily series this is that day's fixing or the one
+   * before it, which is what a published series is for. Where it carries only a
+   * handful of dated rates it is the nearest one behind, which is still closer
+   * to the day than the quarter's closing rate is.
+   */
+  function mostRecent(from: CurrencyCode, to: CurrencyCode, date: string): number | undefined {
+    const upTo = visible.filter(
+      (row) => row.date <= date
+        && ((row.base === from && row.quote === to) || (row.base === to && row.quote === from)),
+    );
+    if (upTo.length === 0) return undefined;
+    const latest = upTo.reduce((winner, row) => {
+      if (row.date !== winner.date) return row.date > winner.date ? row : winner;
+      const byAuthority = AUTHORITY_RANK[authorityOf(row)] - AUTHORITY_RANK[authorityOf(winner)];
+      if (byAuthority !== 0) return byAuthority > 0 ? row : winner;
+      return Date.parse(row.recordedAt) >= Date.parse(winner.recordedAt) ? row : winner;
+    }, upTo[0]);
+    return latest.base === from ? latest.rate : 1 / latest.rate;
+  }
+
   /** Of several rows for one day and pair, the one that outranks the rest. */
   function best(rows: FxRate[]): FxRate {
     return rows.reduce((winner, row) => {
@@ -293,6 +322,8 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
       if (from === to) return 1;
       const exact = onExactDate(from, to, date, rateKind);
       if (exact !== undefined) return exact;
+      const earlier = mostRecent(from, to, date);
+      if (earlier !== undefined) return earlier;
       return tryRate(from, to, periodForDate(date), rateKind);
     },
     convert: (amount, from, to, period, rateKind = 'closing') =>

@@ -76,6 +76,16 @@ product in a shape the database reader can still read.
 The allocation database is the smaller piece and has no such question: one
 product, one sheet, one row per company per quarter.
 
+## Rates from the ECB, without a file
+
+The reference series is read from the file the ECB publishes, which is what
+quarterly-or-manual means and what works with no network at all. A button that
+fetched it directly would be better, and whether the browser can is unknown:
+the ECB does not send the header a cross-origin fetch needs, and this could not
+be tested from where the work was done. When the Supabase path is built it can
+fetch on the server and file the rates the same way, at the same authority. Until
+then the file import is the whole of it, and it does not pretend otherwise.
+
 ## One support file, harmonised
 
 Once every product is loaded, the shapes are worth reconciling into one: the
