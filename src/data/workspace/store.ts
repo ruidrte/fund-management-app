@@ -38,6 +38,7 @@ import type {
   Position, PositionValuation, Vehicle, VehicleBalanceSheet,
 } from '../../domain/types';
 import type { ReportingProfile } from '../../domain/report';
+import { CLIENT_DEFINITIONS } from '../structure';
 import type { SourceDocument } from '../../ingest/types';
 import {
   appendLines, listFiles, readBytes as readFileBytes, readText as readFileText, writeFile,
@@ -418,7 +419,7 @@ export async function readClient(
       reporting: reportingText === undefined
         ? undefined
         : (JSON.parse(reportingText) as ReportingProfile),
-      vehicles: reference.vehicles as Vehicle[],
+      vehicles: settled(reference.vehicles as Vehicle[]),
       positions: reference.positions as Position[],
       assets: reference.assets as Asset[],
       investors: reference.investors as Investor[],
@@ -464,6 +465,32 @@ function collapse(rows: unknown[]): unknown[] {
     byId.set(id, row);
   }
   return [...byId.values(), ...anonymous];
+}
+
+/**
+ * Product terms the book does not state, taken from the product's definition.
+ *
+ * A vehicle's record is a copy of its definition, taken when the book was
+ * created. A term added to the definition afterwards is therefore missing from
+ * every book already written — and `unitScale` missing does not read as
+ * missing, it reads as thousands, so a fund keeping its books in full currency
+ * units reports a thousand times what it holds.
+ *
+ * Filled in only where the book is silent. A term somebody set on the Product
+ * terms screen is the answer for that book and is left alone, including one
+ * that happens to agree with the default: the definition is where a product
+ * starts, not what overrules it.
+ */
+function settled(vehicles: Vehicle[]): Vehicle[] {
+  const defined = new Map<string, { unitScale?: number }>(
+    CLIENT_DEFINITIONS.flatMap((client) => client.vehicles)
+      .map((vehicle) => [`veh-${vehicle.key}`, vehicle]),
+  );
+  return vehicles.map((vehicle) => {
+    const seed = defined.get(vehicle.id);
+    if (!seed || vehicle.unitScale !== undefined || seed.unitScale === undefined) return vehicle;
+    return { ...vehicle, unitScale: seed.unitScale };
+  });
 }
 
 /** Creates the folder for a client that is not in the book yet. */

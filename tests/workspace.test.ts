@@ -363,6 +363,38 @@ describe('a product\u2019s own terms', () => {
     );
   });
 
+  it('take the unit from the product definition when the book never stated one', async () => {
+    // A book written before unitScale existed carries no unitScale, and absent
+    // reads as thousands — which would report PAS Infra at a thousand times
+    // what it holds. Its definition says whole euros, so that is what it is.
+    const { vault, slug, vehicles } = await bookWith('client-pam');
+    const pas = vehicles.find((v) => v.shortName === 'PAS Infra')!;
+    expect(pas.unitScale).toBe(1);
+
+    await replaceReference(vault, slug, {
+      vehicles: vehicles.map((v) => {
+        const rest = { ...v };
+        delete rest.unitScale;
+        return rest;
+      }),
+    });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.vehicles.find((v) => v.id === pas.id)!.unitScale).toBe(1);
+  });
+
+  it('leave a unit somebody set alone, even where the definition disagrees', async () => {
+    const { vault, slug, vehicles } = await bookWith('client-pam');
+    const pas = vehicles.find((v) => v.shortName === 'PAS Infra')!;
+
+    await replaceReference(vault, slug, {
+      vehicles: vehicles.map((v) => (v.id === pas.id ? { ...v, unitScale: 1000 } : v)),
+    });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.vehicles.find((v) => v.id === pas.id)!.unitScale).toBe(1000);
+  });
+
   it('correct the subscribed total without touching anything measured', async () => {
     const { vault, slug, vehicles } = await bookWith('client-ebg');
     const phf = vehicles.find((v) => v.shortName === 'PHF I')!;
