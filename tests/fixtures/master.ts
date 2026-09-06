@@ -76,6 +76,9 @@ const INVESTMENT_HEADER = [
   'Quarter', 'Date', 'Asset', 'Short Name', 'CCY', 'Commitment', 'Invested', 'Cost / Share',
   '# UT Shares', 'Cum # shares', 'Type', 'Total FD # shares', 'Cum FD Stake %', 'Proceeds',
   'FV', 'Uncalled', 'MoIC', 'DPI', 'FX',
+  // The same figures as the fund states them in its own currency, at the rate
+  // of each tranche's own date.
+  'Commitment €', 'Invested €', 'Proceeds €', 'FV €',
 ];
 
 export const INVESTMENTS: TableData = {
@@ -83,12 +86,43 @@ export const INVESTMENTS: TableData = {
   rows: ([
     INVESTMENT_HEADER,
     ['2024Q2', serial('2024-05-02'), 'Halyard Robotics', 'HR', 'EUR', 900_000, 500_000, 10,
-      50_000, 50_000, 'Common (CS)', 2_000_000, 0.025, null, null, null, null, null, 1],
+      50_000, 50_000, 'Common (CS)', 2_000_000, 0.025, null, null, null, null, null, 1,
+      900_000, 500_000, null, null],
     ['2025Q1', serial('2025-02-10'), 'Halyard Robotics', 'HR', 'EUR', 900_000, 300_000, 12,
-      25_000, 75_000, 'Series A Preferred (SA)', 2_000_000, 0.0375, null, null, null, null, null, 1],
-    // A dollar holding, so a rate has to travel with the tranche.
+      25_000, 75_000, 'Series A Preferred (SA)', 2_000_000, 0.0375, null, null, null, null, null, 1,
+      900_000, 300_000, null, null],
+    // A dollar holding, so a rate travels with the tranche and the euro figure
+    // beside it is what every other sheet in the book is in.
     ['2025Q3', serial('2025-08-20'), 'Continuum Labs Inc.', 'CL', 'USD', 400_000, 220_000, 2.2,
-      100_000, 100_000, 'Ordinary', 5_000_000, 0.02, null, null, null, null, null, 1.1],
+      100_000, 100_000, 'Ordinary', 5_000_000, 0.02, null, null, null, null, null, 1.1,
+      363_636.36, 200_000, null, null],
+  ] as Cell[][]),
+};
+
+/**
+ * The capital account statements: investors across, line items down.
+ *
+ * The founder class bears the management fee here, which is why its account is
+ * negative and why no split of the fund by capital contributed arrives at any
+ * of these figures. One holder appears twice, once in each class, which is what
+ * makes matching on the name alone insufficient.
+ */
+export const ACCOUNTS: TableData = {
+  sheetName: 'LP_CAS Current',
+  rows: ([
+    [null, null, null, null, 'LPs  Account Statements'],
+    [],
+    [null, null, null, null, 'As at'],
+    [null, null, null, null, serial('2026-03-31')],
+    [null, null, null, null, null, null, 'HARBOUR TRUST', 'NORTHWIND STUDIO AG',
+      'NORTHWIND STUDIO AG', 'Total Partnership'],
+    [null, null, null, null, 'Type of Investor', null, 'LP', 'LP', 'Founder', null],
+    [null, null, null, null, 'Share class', null, 's01 [LP]', 's01 [LP]', 's02 [Founder]', null],
+    [null, null, null, null, 'Number of Shares', null, 700, 200, 100, 1_000],
+    [null, null, null, null, 'Commitment', null, 700_000, 200_000, 100_000, 1_000_000],
+    [null, null, null, null, 'Drawdowns', null, 700_000, 200_000, 100_000, 1_000_000],
+    [null, null, null, null, 'Distributions', null, 0, 0, 0, 0],
+    [null, null, null, null, 'Net Asset Value', null, 840_000, 240_000, -80_000, 1_000_000],
   ] as Cell[][]),
 };
 
@@ -129,6 +163,11 @@ export const TRIAL_BALANCE: TableData = {
 
 export function masterSheets(): TableData[] {
   return [README, SUMMARY, REGISTER, INVESTMENTS, PORTFOLIO, TRIAL_BALANCE];
+}
+
+/** The same book with the administrator's capital account statements in it. */
+export function statedSheets(): TableData[] {
+  return [...masterSheets(), ACCOUNTS];
 }
 
 /** The fixture as it stands, for a test that does not vary it. */

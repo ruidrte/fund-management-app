@@ -96,6 +96,7 @@ const TRIAL_BALANCE = /^tb$/;
 const PORTFOLIO = /^portfolio$/;
 const SUMMARY = /^summary$/;
 const README = /^readme/;
+const CAPITAL_ACCOUNTS = /cas/;
 
 /** The row carrying the column headings, found by what must be on it. */
 function headerRow(table: TableData, required: string[], depth = 12): number {
@@ -326,6 +327,123 @@ interface InvestmentRow {
   proceeds?: number;
   fairValue?: number;
   rate?: number;
+  /** The same amounts as the fund states them in its own currency. */
+  commitmentBase?: number;
+  investedBase?: number;
+  proceedsBase?: number;
+  fairValueBase?: number;
+}
+
+/**
+ * An amount in the fund's own currency.
+ *
+ * The ledger states each transaction in the currency it was made in and again
+ * in the fund's, at the rate of that tranche's own date. The second is what
+ * every other sheet in the book is in, so it is what is filed — and where the
+ * file gives no euro figure, the transaction was in the fund's currency
+ * already and the one column is both.
+ */
+function amountIn(
+  row: InvestmentRow, what: 'commitment' | 'invested' | 'proceeds' | 'fairValue',
+  base: CurrencyCode,
+): number | undefined {
+  const stated = row[`${what}Base` as const] as number | undefined;
+  if (stated !== undefined) return stated;
+  return row.currency === base ? row[what] : undefined;
+}
+
+/* ------------------------------------------------------------------ *
+ * The capital account statements
+ *
+ * The register says what every investor paid and when. This says what each of
+ * them has — which is a different figure, and not one any split of the fund
+ * arrives at.
+ *
+ * A fee waterfall is why. The management fee and most of the operating expenses
+ * are borne by one share class here, so at this quarter end the Founder class
+ * carries a negative account of 1.58 million and every LP carries more than
+ * their pro-rata share. Allocating the fund by capital contributed gives each
+ * of them somebody else's return, and gives the Founder a positive account they
+ * do not have. The statement is the answer; there is no rule that reconstructs
+ * it.
+ *
+ * The sheets are laid out sideways — investors across, line items down — and
+ * the rows move between one statement and the next, so every figure is found by
+ * its own label rather than by where it sat last quarter.
+ * ------------------------------------------------------------------ */
+
+interface StatementRow {
+  investor: string;
+  type: string;
+  date: string;
+  period: PeriodId;
+  units?: number;
+  commitment?: number;
+  drawn?: number;
+  distributed?: number;
+  nav?: number;
+}
+
+function readAccounts(sheets: TableData[]): StatementRow[] {
+  const rows: StatementRow[] = [];
+
+  for (const sheet of sheets) {
+    if (!CAPITAL_ACCOUNTS.test(sheet.sheetName.trim().toLowerCase())) continue;
+
+    // The label column is wherever `Type of Investor` sits, and the investors
+    // are named on the row above it.
+    let labelAt = -1;
+    let namesRow = -1;
+    for (let i = 0; i < sheet.rows.length && namesRow < 0; i += 1) {
+      const at = sheet.rows[i].findIndex((cell) => /^type of investor/i.test(text(cell)));
+      if (at >= 0) {
+        labelAt = at;
+        namesRow = i - 1;
+      }
+    }
+    if (namesRow < 0) continue;
+
+    // `As at` labels the date, and the date sits either beside the label or on
+    // the line under it. Both are written in these statements.
+    let asAt: string | undefined;
+    for (let i = 0; i < sheet.rows.length && !asAt; i += 1) {
+      if (!/^as at/i.test(text(sheet.rows[i][labelAt]))) continue;
+      asAt = toDate(sheet.rows[i][labelAt + 1] ?? null)
+        ?? toDate(sheet.rows[i + 1]?.[labelAt] ?? null);
+    }
+    if (!asAt) continue;
+
+    const line = (pattern: RegExp) => sheet.rows.find((row) => pattern.test(text(row[labelAt])));
+    const units = line(/^number of shares/i);
+    const commitment = line(/^commitment$/i);
+    const drawn = line(/^drawdowns$/i);
+    const distributed = line(/^distributions$/i);
+    const nav = line(/^net asset value$/i);
+    // A statement with no net asset value on it is a fragment of one.
+    if (!nav) continue;
+
+    const names = sheet.rows[namesRow];
+    const types = sheet.rows[namesRow + 1];
+    for (let column = labelAt + 1; column < names.length; column += 1) {
+      const name = text(names[column]);
+      if (!name) continue;
+      // The totals sit to the right of the investors and are a check on them,
+      // not another account.
+      if (/^total\b/i.test(name)) break;
+      rows.push({
+        investor: name,
+        type: text(types[column]),
+        date: asAt,
+        period: periodForDate(asAt),
+        units: toNumber(units?.[column] ?? null),
+        commitment: toNumber(commitment?.[column] ?? null),
+        drawn: toNumber(drawn?.[column] ?? null),
+        distributed: toNumber(distributed?.[column] ?? null),
+        nav: toNumber(nav[column] ?? null),
+      });
+    }
+  }
+  return rows;
 }
 
 function readInvestments(sheets: TableData[]): InvestmentRow[] {
@@ -358,6 +476,15 @@ function readInvestments(sheets: TableData[]): InvestmentRow[] {
       proceeds: at.number(row, 'Proceeds'),
       fairValue: at.number(row, 'FV'),
       rate: at.number(row, 'FX'),
+      // The same figures in the fund's own currency, which the ledger states
+      // beside them at the rate of the tranche's own date. They are what the
+      // valuation sheet, the trial balance and the capital accounts are all in,
+      // so they are what the book is kept in — and the transaction currency
+      // survives as the fact it is rather than as a label on a euro figure.
+      commitmentBase: at.number(row, 'Commitment €'),
+      investedBase: at.number(row, 'Invested €'),
+      proceedsBase: at.number(row, 'Proceeds €'),
+      fairValueBase: at.number(row, 'FV €'),
     });
   }
   return rows;
@@ -576,7 +703,13 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
         // holds it.
         kind: 'direct-investment',
         name: row.asset,
-        currency: row.currency,
+        // The fund's currency, not the company's. The valuation sheet, the
+        // trial balance and the capital accounts are all in euro, and the
+        // ledger states a euro figure beside every transaction one. Tagging the
+        // holding with the company's currency and then filing euro figures
+        // against it translates them a second time: one holding here read
+        // 3,073,944 where its own valuation letter says 2,634,359.
+        currency,
         vintage: Number(row.date.slice(0, 4)),
         commitmentDate: row.date,
         commitment: 0,
@@ -591,8 +724,9 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     if (row.date < position.commitmentDate) position.commitmentDate = row.date;
     // The commitment is stated on every tranche of the same company rather than
     // added up across them, so the largest is the commitment and not the sum.
-    if (row.commitment && row.commitment > position.commitment) {
-      position.commitment = row.commitment;
+    const commitment = amountIn(row, 'commitment', currency);
+    if (commitment && commitment > position.commitment) {
+      position.commitment = commitment;
     }
 
     if (row.instrument) {
@@ -657,14 +791,15 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     const position = positionOf.get(row.asset)!;
     periods.add(row.period);
 
-    if (row.invested) {
+    const invested = amountIn(row, 'invested', currency);
+    if (invested) {
       cashflows.push({
         id: id('cf'),
         vehicleId,
         positionId: position.id,
         type: 'Capital Call',
-        amount: -row.invested,
-        currency: row.currency,
+        amount: -invested,
+        currency,
         date: row.date,
         period: row.period,
         recordedAt,
@@ -675,14 +810,15 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
         status: 'Confirmed',
       });
     }
-    if (row.proceeds) {
+    const proceeds = amountIn(row, 'proceeds', currency);
+    if (proceeds) {
       cashflows.push({
         id: id('cf'),
         vehicleId,
         positionId: position.id,
         type: 'Distribution',
-        amount: row.proceeds,
-        currency: row.currency,
+        amount: proceeds,
+        currency,
         date: row.date,
         period: row.period,
         recordedAt,
@@ -884,6 +1020,58 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
       + 'what one costs. The register is the authority for the money and the unit count follows '
       + 'it, rather than the two being kept separately and drifting.',
     );
+  }
+
+  /* --- what each investor has, as the statements say ---------------- */
+
+  const statements = readAccounts(sheets);
+  if (statements.length > 0) {
+    // The statements name an investor and its class separately; the register
+    // carries the class in the name where two accounts share one. Joining on
+    // both is what keeps a founder's account out of the same holder's LP one.
+    const byName = new Map<string, Investor>();
+    for (const held of investors) {
+      byName.set(held.name.toLowerCase(), held);
+      const plain = held.name.replace(/\s*\[[^\]]*\]\s*$/, '').toLowerCase();
+      const klass = /\[([^\]]*)\]\s*$/.exec(held.name)?.[1] ?? held.shareClass ?? '';
+      byName.set(`${plain}|${klass.toLowerCase()}`, held);
+    }
+
+    const unmatched = new Set<string>();
+    let filed = 0;
+    for (const row of statements) {
+      const plain = row.investor.replace(/\s*\[[^\]]*\]\s*$/, '').toLowerCase();
+      const investor = byName.get(`${plain}|${row.type.toLowerCase()}`)
+        ?? byName.get(row.investor.toLowerCase())
+        ?? [...byName.values()].find((held) => held.name.toLowerCase().startsWith(plain.slice(0, 18)));
+      if (!investor) {
+        unmatched.add(row.investor);
+        continue;
+      }
+      periods.add(row.period);
+      const at = `${summary.fund} — capital account statement at ${row.date}`;
+      if (row.units !== undefined) {
+        metric({ kind: 'investor', id: investor.id }, row.period, 'units', { value: row.units }, at);
+      }
+      if (row.nav !== undefined) {
+        metric({ kind: 'investor', id: investor.id }, row.period, 'capitalAccount',
+          { value: row.nav }, at, currency);
+        filed += 1;
+      }
+    }
+
+    notes.push(
+      `${filed} capital account(s) are read from the statements rather than allocated. The `
+      + 'management fee and most of the operating expenses fall on one share class here, so an '
+      + 'account worked out from capital contributed gives every investor somebody else\'s '
+      + 'return — and gives the class that bears them a positive balance it does not have.',
+    );
+    if (unmatched.size > 0) {
+      problems.push(
+        `${unmatched.size} name(s) on the capital account statements match no investor in the `
+        + `register: ${[...unmatched].join('; ')}.`,
+      );
+    }
   }
 
   /* --- what the workbook says about itself -------------------------- */

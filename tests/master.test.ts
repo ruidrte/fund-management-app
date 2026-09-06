@@ -16,7 +16,9 @@ import { isSupportWorkbook } from '../src/ingest/support';
 import { isMandateWorkbook } from '../src/ingest/mandate';
 import { analyse } from '../src/engine';
 import { DEFAULT_CONVENTIONS } from '../src/domain/types';
-import { masterSheets as workbook, REGISTER, TRIAL_BALANCE } from './fixtures/master';
+import {
+  masterSheets as workbook, statedSheets, REGISTER, TRIAL_BALANCE,
+} from './fixtures/master';
 
 const plan = () => planMasterImport(workbook(), { vehicleId: 'veh-nw' });
 
@@ -222,5 +224,58 @@ describe('the accounts', () => {
   it('keeps what the change log says was restated', () => {
     const basis = plan().metrics.find((m) => m.metric === 'narrative.basis');
     expect(basis?.text).toContain('superseded');
+  });
+});
+
+describe('the capital account statements', () => {
+  const built = () => planMasterImport(statedSheets(), { vehicleId: 'veh-ut' });
+
+  it('reads what each investor has, rather than working it out', () => {
+    const facts = built().metrics.filter((m) => m.metric === 'capitalAccount');
+    expect(facts).toHaveLength(3);
+    expect(facts.map((m) => m.value).sort((a, b) => (a ?? 0) - (b ?? 0)))
+      .toEqual([-80_000, 240_000, 840_000]);
+  });
+
+  it('keeps two accounts of one holder apart by the class each is in', () => {
+    // `HALYARD VENTURES AG` appears twice on the statement, once as an LP and
+    // once as the founder. Matching on the name alone would give one of them
+    // both figures and the other none.
+    const facts = built().metrics.filter((m) => m.metric === 'capitalAccount');
+    const founder = facts.find((m) => m.scope.id.includes('founder'));
+    expect(founder?.value).toBe(-80_000);
+    expect(built().problems.some((p) => /match no investor/.test(p))).toBe(false);
+  });
+
+  it('reads the shares held at the statement date', () => {
+    const units = built().metrics.filter((m) => m.metric === 'units');
+    expect(units.map((m) => m.value).sort((a, b) => (a ?? 0) - (b ?? 0)))
+      .toEqual([100, 200, 700]);
+    expect(units.every((m) => m.period === '2026Q1')).toBe(true);
+  });
+
+  it('does not mistake the totals column for another investor', () => {
+    expect(built().metrics.filter((m) => m.metric === 'units')).toHaveLength(3);
+  });
+
+  it('says nothing of the kind where the book carries no statements', () => {
+    const plain = planMasterImport(workbook(), { vehicleId: 'veh-ut' });
+    expect(plain.metrics.some((m) => m.metric === 'capitalAccount')).toBe(false);
+  });
+});
+
+describe('the currency a holding is kept in', () => {
+  it('is the fund\'s, because that is what the figures beside it are in', () => {
+    // The ledger states a dollar tranche and the euro figure the fund books it
+    // at. Tagging the holding with the company's currency and then filing the
+    // euro figures against it translates them a second time.
+    const built = planMasterImport(workbook(), { vehicleId: 'veh-ut' });
+    const dollar = built.positions.find((p) => p.name.startsWith('Continuum'))!;
+    expect(dollar.currency).toBe('EUR');
+    const call = built.cashflows.find(
+      (c) => c.positionId === dollar.id && c.type === 'Capital Call',
+    )!;
+    expect(call.amount).toBe(-200_000);
+    expect(call.currency).toBe('EUR');
   });
 });
