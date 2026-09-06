@@ -40,3 +40,25 @@ export function slug(value: string, limit = 40): string {
   if (full.length <= limit) return full;
   return `${full.slice(0, limit).replace(/-+$/, '')}-${digest(full)}`;
 }
+
+/**
+ * An identifier for a fact, derived from the fact itself.
+ *
+ * A counter is the obvious way to number rows as a reader walks a file, and it
+ * is wrong for the same reason a row number is a poor primary key: it depends
+ * on everything that came before it. Change what the reader emits — stop
+ * turning a negative call into a distribution, say — and every identifier after
+ * that row shifts by one. Import the corrected file and the book gains a second
+ * copy of the same movement under a new name instead of replacing the first,
+ * which is how a fund ends up reporting twice the capital it drew.
+ *
+ * Derived from what the row says instead, the same row is the same fact
+ * whichever version of the reader read it, and re-importing a file replaces
+ * what it filed last time. Two genuinely identical movements on one day — a
+ * fund can call the same amount from two investors — are told apart by what
+ * distinguishes them, so everything that does is passed in.
+ */
+export function factId(prefix: string, ...parts: Array<string | number | undefined>): string {
+  const said = parts.map((part) => (part === undefined ? '' : String(part))).join('|');
+  return `${prefix}-${slug(said, 56)}`;
+}

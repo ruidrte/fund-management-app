@@ -262,3 +262,38 @@ describe('the investors', () => {
     expect(investorFlows.every((c) => c.positionId === undefined)).toBe(true);
   });
 });
+
+describe('importing the same workbook twice', () => {
+  it('files each movement under the same identity both times', () => {
+    // A counter is the obvious way to number rows as a reader walks a file and
+    // it is wrong for the reason a row number is a poor key: change what the
+    // reader emits and every identifier after that row shifts by one. The
+    // corrected file then adds a second copy of each movement instead of
+    // replacing the first, and a fund reports twice the capital it drew.
+    const first = planSupportImport(sheets(), { vehicleId: 'veh-balt', recordedAt: '2026-07-01T00:00:00.000Z' });
+    const again = planSupportImport(sheets(), { vehicleId: 'veh-balt', recordedAt: '2026-09-01T00:00:00.000Z' });
+
+    expect(again.cashflows.map((c) => c.id)).toEqual(first.cashflows.map((c) => c.id));
+    expect(again.valuations.map((v) => v.id)).toEqual(first.valuations.map((v) => v.id));
+    expect(new Set(first.cashflows.map((c) => c.id)).size).toBe(first.cashflows.length);
+  });
+
+  it('does not renumber the rest when one row stops producing a flow', () => {
+    // The recallable leg removed from one row. Under a counter every movement
+    // after it would be renamed; under an identity taken from the row itself,
+    // only that row's own flow goes.
+    const rows = INVESTMENTS.rows.map((row) => (row[5] === 'Net receipt'
+      ? [...row.slice(0, 10), null, ...row.slice(11)]
+      : row));
+    const changed = sheets().map((sheet) => (sheet.sheetName === 'Investments'
+      ? { ...sheet, rows } as TableData
+      : sheet));
+
+    const before = planSupportImport(sheets(), { vehicleId: 'veh-balt' });
+    const after = planSupportImport(changed, { vehicleId: 'veh-balt' });
+    const gone = before.cashflows.filter((c) => !after.cashflows.some((x) => x.id === c.id));
+
+    expect(gone).toHaveLength(1);
+    expect(gone[0].recallable).toBe(true);
+  });
+});

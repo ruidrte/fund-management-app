@@ -481,11 +481,21 @@ export function applyCandidates(
   return {
     ...dataset,
     positions: [...dataset.positions, ...facts.positions],
-    positionValuations: [...dataset.positionValuations, ...facts.positionValuations],
-    cashflows: [...dataset.cashflows, ...facts.cashflows],
+    // An identifier is what a fact is, so filing one twice states it twice
+    // rather than making two of it. The later statement wins; everything else
+    // stays where it was.
+    positionValuations: byIdentity(dataset.positionValuations, facts.positionValuations),
+    cashflows: byIdentity(dataset.cashflows, facts.cashflows),
     balanceSheets: [...dataset.balanceSheets, ...facts.balanceSheets],
-    fxRates: [...dataset.fxRates, ...facts.fxRates],
+    fxRates: byIdentity(dataset.fxRates, facts.fxRates),
   };
+}
+
+/** The two lists as one, with a later statement of a fact replacing an earlier. */
+function byIdentity<T extends { id: string }>(held: T[], added: T[]): T[] {
+  const byId = new Map(held.map((row) => [row.id, row]));
+  for (const row of added) byId.set(row.id, row);
+  return [...byId.values()];
 }
 
 /* ------------------------------------------------------------------ *

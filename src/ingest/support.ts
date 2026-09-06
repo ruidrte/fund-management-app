@@ -39,7 +39,7 @@ import type {
   Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Metric, Position, PositionKind,
   PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
-import { slug } from './ids';
+import { factId, slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -543,8 +543,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
   const notes: string[] = [];
   const periods = new Set<PeriodId>();
 
-  let sequence = 0;
-  const id = (prefix: string) => `${prefix}-${slug(summary.fund).slice(0, 24)}-${(sequence += 1)}`;
+  const book = slug(summary.fund).slice(0, 24);
 
   /* --- holdings --------------------------------------------------- */
 
@@ -609,7 +608,10 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
 
   for (const row of valued.values()) {
     valuations.push({
-      id: id('val'),
+      // One valuation per holding per quarter, so that is the identity. A
+      // restated figure for the same quarter replaces the one before it rather
+      // than sitting beside it and being averaged into nothing.
+      id: factId('val', positionOf.get(row.asset)!.id, row.period),
       positionId: positionOf.get(row.asset)!.id,
       period: row.period,
       recordedAt,
@@ -675,7 +677,11 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
 
     for (const flow of flows) {
       cashflows.push({
-        id: id('cf'),
+        // From what the row says, not from where it sits in the file. A reader
+        // that emits one flow fewer than it used to would otherwise renumber
+        // every movement after it, and re-importing the corrected file would
+        // add a second copy of each rather than replacing the first.
+        id: factId('cf', book, position.id, flow.type, row.date, flow.amount, flow.note),
         vehicleId,
         positionId: position.id,
         type: flow.type,
@@ -875,7 +881,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
 
     const emit = (type: CashflowType, amount: number, note: string) => {
       cashflows.push({
-        id: id('cf'),
+        id: factId('cf', book, investor!.id, type, row.date, amount, note),
         vehicleId,
         investorId: investor!.id,
         type,

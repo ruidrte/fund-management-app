@@ -408,7 +408,7 @@ export async function readClient(
   const facts = {} as Record<FactKey, unknown[]>;
   for (const [key, file] of Object.entries(FACT_FILES) as [FactKey, string][]) {
     const read = await vault.readLines(`${dir}/facts/${file}`);
-    facts[key] = read.rows;
+    facts[key] = collapse(read.rows);
     problems.push(...read.problems);
   }
 
@@ -431,6 +431,39 @@ export async function readClient(
     },
     problems,
   };
+}
+
+/**
+ * One row per identity, the last one written.
+ *
+ * The fact files are append-only, which is what makes them safe to write to and
+ * what lets a restatement sit behind the figure it replaced. It is not licence
+ * to hold the same fact twice: an identifier is what a fact *is*, so two rows
+ * carrying one identifier are one fact stated twice, and the later statement is
+ * the current one.
+ *
+ * Without this, importing a workbook a second time doubles every movement in
+ * it. A fund that drew twenty-two million reports forty-five, its multiple
+ * halves and its return goes from plus nine per cent to minus thirty-eight —
+ * all of it arithmetic on a book that was told the same thing twice.
+ *
+ * Reading rather than writing, so a book that already holds duplicates is
+ * right the moment it is opened, with nothing to migrate.
+ */
+function collapse(rows: unknown[]): unknown[] {
+  const byId = new Map<string, unknown>();
+  const anonymous: unknown[] = [];
+  for (const row of rows) {
+    const id = (row as { id?: unknown }).id;
+    if (typeof id !== 'string' || id === '') {
+      // A row with no identity cannot be shown to be the same as another, so it
+      // is kept. Dropping it would lose a fact to tidy up a file.
+      anonymous.push(row);
+      continue;
+    }
+    byId.set(id, row);
+  }
+  return [...byId.values(), ...anonymous];
 }
 
 /** Creates the folder for a client that is not in the book yet. */

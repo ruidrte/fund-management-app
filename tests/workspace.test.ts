@@ -165,6 +165,40 @@ describe('facts are appended, never rewritten', () => {
     expect(read!.dataset.positionValuations.map((v) => v.nav)).toEqual([100, 110]);
   });
 
+  it('states a fact twice rather than making two of it', async () => {
+    // Filing the same workbook a second time writes every fact again. An
+    // identifier is what a fact is, so two rows carrying one identifier are one
+    // fact stated twice — and the later statement is the current one. Without
+    // this a fund that drew twenty-two million reports forty-five, its multiple
+    // halves and its return goes from plus nine per cent to minus thirty-eight.
+    const { vault, slug } = await bookWith('client-pam');
+
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 104)] });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.positionValuations).toHaveLength(1);
+    expect(read!.dataset.positionValuations[0].nav).toBe(104);
+  });
+
+  it('keeps a row that carries no identity, rather than tidying it away', async () => {
+    const { root, vault, slug } = await bookWith('client-ut');
+    await appendFacts(vault, slug, { positionValuations: [valuation('v1', 100)] });
+
+    const clients = await root.getDirectoryHandle('clients');
+    const dir = await (await clients.getDirectoryHandle(slug)).getDirectoryHandle('facts');
+    const handle = await dir.getFileHandle('position_valuations.jsonl');
+    const existing = await (await handle.getFile()).text();
+    const writable = await handle.createWritable();
+    await writable.write(`${existing}{"positionId":"p1","nav":7}\n`);
+    await writable.close();
+
+    // It cannot be shown to be the same as anything, so dropping it would lose
+    // a fact to tidy up a file.
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.positionValuations).toHaveLength(2);
+  });
+
   it('skips a line it cannot read, reports it, and keeps the rest', async () => {
     const { root, vault, slug } = await bookWith('client-ut');
 
