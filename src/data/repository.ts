@@ -13,6 +13,8 @@ export interface ClientSummary {
   id: string;
   name: string;
   shortName: string;
+  /** The house's own colour, where the book records one. */
+  accent?: string;
 }
 
 export interface Repository {

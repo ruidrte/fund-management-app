@@ -53,6 +53,8 @@ export interface ClientEntry {
   slug: string;
   name: string;
   shortName: string;
+  /** The house's own colour, carried in the manifest so a book keeps it. */
+  accent?: string;
 }
 
 export interface BookManifest {
@@ -458,7 +460,7 @@ export async function createClient(
 
   const manifest = await withClients(base, [
     ...held,
-    { id: client.id, slug, name: client.name, shortName: client.shortName },
+    { id: client.id, slug, name: client.name, shortName: client.shortName, accent: client.accent },
   ], cipher);
   await writeManifest(vault.root, manifest);
   return manifest;

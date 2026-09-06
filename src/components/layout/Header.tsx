@@ -8,7 +8,9 @@ import { StatusPill } from '../common/Badges';
 import { formatTimestamp } from '../common/format';
 
 export function Header() {
-  const { view, sourceLabel, refresh, knowledgeDate, period } = useScope();
+  const {
+    view, sourceLabel, refresh, knowledgeDate, period, clients, clientId,
+  } = useScope();
   const { theme, toggle } = useTheme();
   const { user, requiresAuth, signOut } = useAuth();
 
@@ -20,19 +22,39 @@ export function Header() {
   const bases = new Set(view?.vehicles.map((v) => v.currency) ?? []);
   const translated = Boolean(view) && bases.size === 1 && ![...bases].includes(view!.currency);
 
+  // Whose book this is. It shows even for somebody who can reach only one
+  // house — the client row is hidden for them, and the name of the product
+  // alone does not say whose it is.
+  const client = clients.find((row) => row.id === clientId);
+  const accent = client?.accent;
+
 
   return (
     <header
       className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3"
-      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}
+      style={{
+        borderColor: 'var(--border)',
+        background: 'var(--surface-1)',
+        // The house's colour down the edge of the page, so the identity is on
+        // screen even where the client row is not.
+        borderLeft: accent ? `4px solid ${accent}` : undefined,
+      }}
     >
       <div className="min-w-0">
-        <h1 className="truncate text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+        <h1 className="truncate text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
           {view?.vehicles[0]
             ? view.vehicles[0].name
             : 'Fund Reporting & Monitoring'}
         </h1>
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+          {client && (
+            <>
+              <span className="font-semibold" style={{ color: accent ?? 'var(--text-primary)' }}>
+                {client.name}
+              </span>
+              <span aria-hidden>·</span>
+            </>
+          )}
           <span>{period ? formatPeriod(period) : '—'}</span>
           {view && (
             <>

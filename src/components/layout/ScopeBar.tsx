@@ -9,6 +9,12 @@
  * client's own team sees their products and no indication that other clients
  * exist, which is what their membership already entitles them to; showing a
  * disabled row of other people's names would leak the client list.
+ *
+ * Whose book it is and which product it is are set larger than the rest and
+ * carry the house's own colour. Somebody working across three houses in an
+ * afternoon should be able to tell from the corner of their eye whose figures
+ * are in front of them: the surest way to publish one client's number under
+ * another's name is for the two screens to look identical.
  */
 
 import { useMemo } from 'react';
@@ -34,6 +40,11 @@ export function ScopeBar() {
   const positions = usePositions();
   const viewingPast = knowledgeDate !== undefined;
   const showClients = clients.length > 1;
+
+  // The house's colour, from the book rather than from this file. Absent, the
+  // application's own accent stands and nothing is invented.
+  const accent = clients.find((client) => client.id === clientId)?.accent
+    ?? 'var(--series-1)';
 
   // The currency the product itself reports in — the basis, set with the
   // product and kept in the book.
@@ -77,9 +88,13 @@ export function ScopeBar() {
             id: client.id,
             label: client.shortName,
             title: client.name,
+            accent: client.accent,
           }))}
           selected={clientId}
           onSelect={setClientId}
+          accent={accent}
+          size="large"
+          monogram
           emphasis
         />
       )}
@@ -93,6 +108,8 @@ export function ScopeBar() {
           tabs={vehicleTabs}
           selected={vehicleId ?? ''}
           onSelect={(id) => setVehicleId(id || undefined)}
+          accent={accent}
+          size="large"
         />
       )}
 
@@ -177,6 +194,8 @@ interface Tab {
   id: string;
   label: string;
   title?: string;
+  /** The house's own colour, where the tab is a house. */
+  accent?: string;
 }
 
 /**
@@ -188,13 +207,19 @@ interface Tab {
  * form.
  */
 function TabRow({
-  label, tabs, selected, onSelect, emphasis = false,
+  label, tabs, selected, onSelect, emphasis = false, accent = 'var(--series-1)',
+  size = 'normal', monogram = false,
 }: {
   label: string;
   tabs: Tab[];
   selected: string;
   onSelect: (id: string) => void;
   emphasis?: boolean;
+  /** The colour selection is carried in. */
+  accent?: string;
+  size?: 'normal' | 'large';
+  /** Show each tab's own colour as a chip beside its name. */
+  monogram?: boolean;
 }) {
   const move = (event: React.KeyboardEvent, index: number) => {
     const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
@@ -235,14 +260,28 @@ function TabRow({
               title={tab.title}
               onClick={() => onSelect(tab.id)}
               onKeyDown={(event) => move(event, index)}
-              className="whitespace-nowrap px-3 py-2 text-xs transition-colors"
+              className={`flex items-center gap-2 whitespace-nowrap transition-colors ${
+                size === 'large' ? 'px-3.5 py-2.5 text-sm' : 'px-3 py-2 text-xs'
+              }`}
               style={{
                 color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
                 fontWeight: active ? 600 : 400,
-                // The underline is what carries selection where colour cannot.
-                boxShadow: active ? 'inset 0 -2px 0 0 var(--series-1)' : 'none',
+                // The underline is what carries selection where colour cannot —
+                // and it is the house's colour, so the screen says whose it is
+                // before anybody reads a word of it.
+                boxShadow: active ? `inset 0 -3px 0 0 ${accent}` : 'none',
               }}
             >
+              {monogram && (
+                <span
+                  aria-hidden
+                  className="inline-block h-3.5 w-3.5 shrink-0 rounded-[3px]"
+                  style={{
+                    background: active ? (tab.accent ?? accent) : 'transparent',
+                    border: `2px solid ${tab.accent ?? 'var(--border-strong)'}`,
+                  }}
+                />
+              )}
               {tab.label}
             </button>
           );

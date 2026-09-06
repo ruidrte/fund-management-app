@@ -68,7 +68,9 @@ export async function openBook(
     label,
 
     async listClients(): Promise<ClientSummary[]> {
-      return clients.map((c) => ({ id: c.id, name: c.name, shortName: c.shortName }));
+      return clients.map((c) => ({
+        id: c.id, name: c.name, shortName: c.shortName, accent: c.accent,
+      }));
     },
 
     async loadClient(clientId: string): Promise<DataSet> {

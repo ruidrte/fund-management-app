@@ -21,6 +21,17 @@ export interface Client {
   reportingCurrency: CurrencyCode;
   /** House conventions that travel with the client's reports. */
   conventions?: ReportingConventions;
+  /**
+   * The house's own colour, as a hex value.
+   *
+   * A property of the house rather than of the screen. Somebody who works
+   * across three of them should be able to tell from the corner of their eye
+   * whose figures are in front of them, and the surest way to publish one
+   * client's number under another's name is for the two screens to look
+   * identical. Absent, the application's own accent is used and nothing is
+   * invented.
+   */
+  accent?: string;
 }
 
 /**

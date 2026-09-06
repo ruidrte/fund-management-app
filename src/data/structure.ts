@@ -37,6 +37,11 @@ export interface ClientDefinition {
   shortName: string;
   reportingCurrency: CurrencyCode;
   manager: string;
+  /**
+   * The house's own colour. Somebody who works across three of them should be
+   * able to tell whose figures are in front of them without reading the name.
+   */
+  accent: string;
   vehicles: VehicleDefinition[];
 }
 
@@ -47,6 +52,7 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
     shortName: 'PAM',
     reportingCurrency: 'CHF',
     manager: 'Patrimonium Asset Management AG',
+    accent: '#20588f',
     vehicles: [
       {
         key: 'pciof-i',
@@ -98,6 +104,7 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
     shortName: 'EBG',
     reportingCurrency: 'CHF',
     manager: 'EBG Investment Solutions AG',
+    accent: '#00875a',
     vehicles: [
       {
         key: 'abif',
@@ -157,6 +164,7 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
     shortName: 'UT',
     reportingCurrency: 'EUR',
     manager: 'Una Terra',
+    accent: '#a9721b',
     vehicles: [
       {
         key: 'ut-early-growth',
@@ -183,6 +191,7 @@ export const KNOWN_CLIENTS = CLIENT_DEFINITIONS.map((client) => ({
   id: `client-${client.key}`,
   name: client.name,
   shortName: client.shortName,
+  accent: client.accent,
 }));
 
 /**
@@ -208,6 +217,7 @@ export function buildClientStructure(clientId: string): {
       name: seed.name,
       shortName: seed.shortName,
       reportingCurrency: seed.reportingCurrency,
+      accent: seed.accent,
     },
     vehicles: seed.vehicles.map((vehicle) => ({
       id: `veh-${vehicle.key}`,
