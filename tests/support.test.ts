@@ -44,12 +44,18 @@ describe('the portfolio ledger', () => {
     expect(acquisition.affectsCommitment).toBe(false);
   });
 
-  it('follows the sign of a call rather than its column heading', () => {
+  it('carries the sign of a negative call without turning it into a distribution', () => {
+    // A negative row in the call column is capital coming back out of the
+    // denominator, not a distribution of profit. The workbook's own paid-in is
+    // the sum of that column, so reading it as a distribution would put the
+    // same amount into the numerator and the denominator at once — which moves
+    // TVPI and DPI both, and away from what the source file states.
     const { cashflows } = plan();
     const receipt = cashflows.find((c) => c.description === 'Net receipt')!;
 
-    expect(receipt.type).toBe('Distribution');
+    expect(receipt.type).toBe('Capital Call');
     expect(receipt.amount).toBe(30_000);
+    expect(receipt.affectsCommitment).toBe(true);
   });
 
   it('signs calls out and distributions in, from the product’s side', () => {

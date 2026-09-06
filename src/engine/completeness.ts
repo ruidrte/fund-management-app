@@ -17,6 +17,7 @@
  *      A draft built on a fifth of the portfolio is not a draft, it is a guess.
  */
 
+import { moved } from './metrics';
 import { comparePeriods, formatPeriod, periodsBetween, type PeriodId } from '../domain/period';
 import type {
   Cashflow,
@@ -413,7 +414,7 @@ function netCapitalDrawnBetween(
  */
 function sumCapital(rows: Cashflow[]): number {
   return rows
-    .filter((c) => c.status !== 'Draft')
+    .filter((c) => moved(c))
     .filter((c) => c.type === 'Capital Call' || c.type === 'Distribution' || c.type === 'Return of Capital')
     .reduce((total, c) => total - c.amount, 0);
 }

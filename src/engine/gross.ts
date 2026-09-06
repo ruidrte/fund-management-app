@@ -20,7 +20,7 @@ import type {
 import { throughPeriod, forPeriod } from './asof';
 import type { RateLookup } from './fx';
 import { flowRateKind } from './fx';
-import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples } from './metrics';
+import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples, moved } from './metrics';
 import {
   resolvePositionStates, weakest,
   type CoverageSummary, type PositionState, type Translate,
@@ -141,12 +141,16 @@ export function computeGross(inputs: GrossInputs): GrossResult {
 
     const positionFlows = cashflows.filter((c) => c.positionId === position.id);
     const toDate = throughPeriod(positionFlows, period, knowledgeDate)
-      .filter((c) => c.status !== 'Draft');
+      .filter((c) => moved(c));
     const inPeriod = forPeriod(positionFlows, period, knowledgeDate)
-      .filter((c) => c.status !== 'Draft');
+      .filter((c) => moved(c));
 
+    // At the rate of the day it moved, as the return is. A cumulative figure
+    // built at the quarter's rate and a return built at each flow's own rate
+    // are two different histories, and putting them on one page invites the
+    // question of which is wrong.
     const convertFlow = (c: Cashflow) =>
-      c.amount * (rates.tryRate(c.currency, presentationCurrency, c.period, flowKind) ?? 1);
+      c.amount * (rates.onDate(c.currency, presentationCurrency, c.date, flowKind) ?? 1);
 
     // Calls are negative from the vehicle's perspective; report them positive.
     const ledgerDrawn = -sum(toDate.filter(isCall).map(convertFlow));
@@ -288,7 +292,7 @@ function aggregate(
     cashflows.filter((c) => c.positionId),
     prior,
     knowledgeDate,
-  ).filter((c) => c.status !== 'Draft');
+  ).filter((c) => moved(c));
   const drawnPrior = -sum(priorFlows.filter(isCall).map(priorConvert));
 
   const commitmentsPrior = sum(
@@ -303,11 +307,16 @@ function aggregate(
     period,
     knowledgeDate,
   )
-    .filter((c) => c.status !== 'Draft')
+    .filter((c) => moved(c))
     .filter((c) => isCall(c) || isDistribution(c))
     .map((c) => ({
       date: new Date(c.date),
-      amount: c.amount * (rates.tryRate(c.currency, currency, c.period, flowKind) ?? 1),
+      // At the rate of the day it moved, where the book records one. A flow
+      // translated at its quarter's rate carries a currency movement that did
+      // not happen to it, and over a series of calls in a currency that has
+      // moved, that is most of the difference between this return and the one
+      // the source workbook states.
+      amount: c.amount * (rates.onDate(c.currency, currency, c.date, flowKind) ?? 1),
     }));
 
   return {

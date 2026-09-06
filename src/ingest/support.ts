@@ -567,10 +567,13 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     const flows: Array<{ type: CashflowType; amount: number; recallable?: boolean; commits: boolean; note: string }> = [];
 
     if (row.call) {
-      // Positive is money out of the product, negative is money back into it;
-      // the sign is followed rather than the column heading.
+      // A negative call is capital coming back out of the denominator, not a
+      // distribution. The workbook's own paid-in is the sum of this column, so
+      // reading a negative row as a distribution puts the same amount into the
+      // numerator and the denominator at once and moves both multiples. The
+      // sign is carried; the type is what the column says.
       flows.push({
-        type: row.call >= 0 ? 'Capital Call' : 'Distribution',
+        type: 'Capital Call',
         amount: -row.call,
         commits: true,
         note: row.comment || 'Capital call',
@@ -625,6 +628,10 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
         recordedAt,
         affectsCommitment: flow.commits && flow.type === 'Capital Call',
         recallable: flow.recallable,
+        // A basis adjustment restates an earlier figure onto a later basis.
+        // Nothing was paid or received on its date — the workbook's own note
+        // says as much — so it stays in the ledger and out of every return.
+        restatement: /^basis adj/i.test(row.event.trim()) || undefined,
         description: flow.note,
         // The notice, the components, the account it was booked to. Dropping
         // it means finding it again in the file, which is the thing this
@@ -647,8 +654,24 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     // closing rate is the last of them rather than a different figure; keeping
     // only that one leaves every earlier conversion unreproducible.
     if (row.rate && row.currency !== summary.currency) {
-      rates.set(`${row.currency}/${row.date}`, {
-        id: `fx-${row.currency}-${row.date}`,
+      // Keyed by the figure as well as the day. One date can carry two — two
+      // notices from the same fund converted at rates a week apart in the
+      // manager's own paperwork — and collapsing them to one silently
+      // reconverts whichever movement lost. Both are kept; the disagreement is
+      // reported below rather than resolved here.
+      const held = [...rates.values()].find(
+        (kept) => kept.base === row.currency && kept.date === row.date && kept.rate !== row.rate,
+      );
+      if (held) {
+        problems.push(
+          `Investments row ${row.line} (${row.asset}, ${row.date}): the file states `
+          + `${row.rate} for ${row.currency}/${summary.currency} where an earlier row on the same `
+          + `date states ${held.rate}. Both are kept and the first stands for anything converted `
+          + 'by date, so one of the two movements is translated at the other\'s rate.',
+        );
+      }
+      rates.set(`${row.currency}/${row.date}/${row.rate}`, {
+        id: `fx-${row.currency}-${row.date}-${row.rate}`,
         base: row.currency,
         quote: summary.currency,
         rate: row.rate,
@@ -662,10 +685,14 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
     }
   }
 
-  if (ledger.some((row) => row.event.toLowerCase().startsWith('basis adj'))) {
+  const adjustments = ledger.filter((row) => row.event.toLowerCase().startsWith('basis adj'));
+  if (adjustments.length > 0) {
     notes.push(
-      'The basis adjustments are filed as movements on their own dates, so the quarter they '
-      + 'belong to carries them and earlier quarters stay as they were published.',
+      `${adjustments.length} basis adjustment(s) are kept as rows and excluded from every `
+      + 'return. They restate an earlier figure onto a later basis rather than recording money '
+      + 'that moved, so a return that admitted them would measure the presentation rather than '
+      + 'the investment — while dropping them would lose the comparison the change has to be '
+      + 'explained by.',
     );
   }
 

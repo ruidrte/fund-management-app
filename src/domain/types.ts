@@ -269,6 +269,22 @@ export interface Cashflow {
   recordedAt: string; // ISO timestamp
   /** Whether this flow moves undrawn commitment. */
   affectsCommitment: boolean;
+  /**
+   * True where the row restates an earlier figure onto a different basis rather
+   * than recording money that moved.
+   *
+   * A book that changes how it presents performance carries the change as
+   * entries dated the day the basis changed — an equalisation reclassified out
+   * of the denominator, a notice reversed and shown gross. Nothing was paid or
+   * received on that day, so a return that admits them is measuring the
+   * presentation rather than the investment.
+   *
+   * They are kept rather than dropped: the previous basis was published, the
+   * comparison between the two is what the change has to be explained by, and a
+   * workbook this system emits has to carry the rows the workbook it read did.
+   * Every return excludes them; the ledger does not.
+   */
+  restatement?: boolean;
   recallable?: boolean;
   description?: string;
   status: 'Draft' | 'Confirmed' | 'Settled';

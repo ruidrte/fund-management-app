@@ -7,6 +7,18 @@
  * quietly is worse than returning `undefined`, so an unsolved IRR is undefined.
  */
 
+/**
+ * The rows a figure may be built from.
+ *
+ * A draft has not happened yet. A restatement never will — it exists to put an
+ * earlier figure on a later basis, and a return that admits one is measuring
+ * the presentation rather than the investment. Both stay in the ledger; neither
+ * enters a total.
+ */
+export function moved(flow: { status: string; restatement?: boolean }): boolean {
+  return flow.status !== 'Draft' && !flow.restatement;
+}
+
 export interface DatedFlow {
   date: Date;
   /** Signed: money leaving the investor is negative, money returned positive. */

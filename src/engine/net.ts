@@ -23,7 +23,7 @@ import type {
 } from '../domain/types';
 import { forPeriod, latestThrough, throughPeriod } from './asof';
 import { flowRateKind, type RateLookup } from './fx';
-import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples } from './metrics';
+import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples, moved } from './metrics';
 import type { GrossResult } from './gross';
 
 export interface NavComponents {
@@ -187,9 +187,9 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
     (c) => inScope.has(c.vehicleId) && c.investorId !== undefined,
   );
   const toDate = throughPeriod(investorFlows, period, knowledgeDate)
-    .filter((c) => c.status !== 'Draft');
+    .filter((c) => moved(c));
   const inPeriod = forPeriod(investorFlows, period, knowledgeDate)
-    .filter((c) => c.status !== 'Draft');
+    .filter((c) => moved(c));
 
   // Investor flows are signed from the vehicle's side, as every flow here is: a
   // capital call is money in and positive, a distribution money out and
@@ -207,12 +207,12 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   const feeFlows = cashflows.filter((c) => inScope.has(c.vehicleId) && isCost(c));
   const feesCumulative = sum(
     throughPeriod(feeFlows, period, knowledgeDate)
-      .filter((c) => c.status !== 'Draft')
+      .filter((c) => moved(c))
       .map((c) => convert(Math.abs(c.amount), c.currency, c.period)),
   );
   const feesInPeriod = sum(
     forPeriod(feeFlows, period, knowledgeDate)
-      .filter((c) => c.status !== 'Draft')
+      .filter((c) => moved(c))
       .map((c) => convert(Math.abs(c.amount), c.currency, c.period)),
   );
 
@@ -325,7 +325,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   // would misallocate whenever investors entered at different times.
   const accounts = investors.map((investor) => {
     const own = cashflows.filter(
-      (c) => c.investorId === investor.id && c.status !== 'Draft',
+      (c) => c.investorId === investor.id && moved(c),
     );
     const toDate = throughPeriod(own, period, knowledgeDate);
     const toPrior = throughPeriod(own, prior, knowledgeDate);

@@ -11,7 +11,7 @@
  * lie about where the quarter's return came from.
  */
 
-import { comparePeriods, type PeriodId } from '../domain/period';
+import { comparePeriods, periodForDate, type PeriodId } from '../domain/period';
 import type { CurrencyCode, FxAuthority, FxRate, ReportingConventions } from '../domain/types';
 import { visibleAt } from './asof';
 
@@ -35,6 +35,17 @@ export interface RateLookup {
   rate(from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number;
   /** Same, but returns undefined instead of throwing. */
   tryRate(from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number | undefined;
+  /**
+   * The rate for a particular day, where the book records one, falling back to
+   * the rate for the day's quarter where it does not.
+   *
+   * A flow happened on a day, and a book that keeps a rate beside every movement
+   * is stating the rate it happened at. Translating it at the quarter's rate
+   * instead invents a currency movement between the two dates and puts it in the
+   * return — which is precisely the difference between a figure that ties to the
+   * source workbook and one that argues with it.
+   */
+  onDate(from: CurrencyCode, to: CurrencyCode, date: string, kind?: 'closing' | 'average'): number | undefined;
   convert(amount: number, from: CurrencyCode, to: CurrencyCode, period: PeriodId, kind?: 'closing' | 'average'): number;
   /**
    * Which stored rate was used for a pair, and what it displaced.
@@ -156,6 +167,38 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     };
   }
 
+  /**
+   * The rate recorded for one exact day, in either direction.
+   *
+   * The kind is asked for first and only then relaxed: a quarter end carries
+   * more than one — the last fee of the quarter converts at the average and the
+   * book is struck at the closing — and choosing between them by which was
+   * loaded first is no rule at all.
+   */
+  function onExactDate(
+    from: CurrencyCode, to: CurrencyCode, date: string, rateKind: 'closing' | 'average',
+  ): number | undefined {
+    const rows = visible.filter((row) => row.date === date);
+    if (rows.length === 0) return undefined;
+    const preferred = rows.filter((row) => row.kind === rateKind);
+    for (const set of [preferred, rows]) {
+      const direct = set.filter((row) => row.base === from && row.quote === to);
+      if (direct.length > 0) return best(direct).rate;
+      const inverse = set.filter((row) => row.base === to && row.quote === from);
+      if (inverse.length > 0) return 1 / best(inverse).rate;
+    }
+    return undefined;
+  }
+
+  /** Of several rows for one day and pair, the one that outranks the rest. */
+  function best(rows: FxRate[]): FxRate {
+    return rows.reduce((winner, row) => {
+      const byAuthority = AUTHORITY_RANK[authorityOf(row)] - AUTHORITY_RANK[authorityOf(winner)];
+      if (byAuthority !== 0) return byAuthority > 0 ? row : winner;
+      return Date.parse(row.recordedAt) >= Date.parse(winner.recordedAt) ? row : winner;
+    }, rows[0]);
+  }
+
   function directRate(
     from: CurrencyCode,
     to: CurrencyCode,
@@ -246,6 +289,12 @@ export function buildRateLookup(rates: FxRate[], knowledgeDate?: string): RateLo
     rate,
     tryRate,
     explain,
+    onDate: (from, to, date, rateKind = 'closing') => {
+      if (from === to) return 1;
+      const exact = onExactDate(from, to, date, rateKind);
+      if (exact !== undefined) return exact;
+      return tryRate(from, to, periodForDate(date), rateKind);
+    },
     convert: (amount, from, to, period, rateKind = 'closing') =>
       amount * rate(from, to, period, rateKind),
   };
