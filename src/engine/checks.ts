@@ -177,6 +177,10 @@ export function runChecks(
     net.investors.length > 0,
     investorNav,
     components.vehicleNav,
+    // It ties by construction while the accounts are a split of the fund. It
+    // stops doing so the moment they are the administrator's own confirmed
+    // statements, which are rounded to the cent one at a time — and then this
+    // is the check that says by how much.
     'Every unit of net asset value belongs to exactly one investor',
   );
 

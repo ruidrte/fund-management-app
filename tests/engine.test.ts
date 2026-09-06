@@ -99,6 +99,123 @@ describe('the rate a flow is translated at', () => {
   });
 });
 
+describe('a vehicle that is owned in shares', () => {
+  // Two investors who paid in the same amount, a year apart, at different
+  // prices. Split by contributed capital they look identical; they are not.
+  const unitised = (withRegister: boolean): DataSet => ({
+    client: {
+      id: 'c', name: 'A house', shortName: 'X', reportingCurrency: 'EUR',
+      conventions: DEFAULT_CONVENTIONS,
+    },
+    vehicles: [{
+      id: 'v', clientId: 'c', kind: 'fund-of-funds', name: 'An Anlagegruppe', shortName: 'AG',
+      currency: 'EUR', unitScale: 1, inceptionDate: '2024-01-01',
+      investorCommitment: 2_000_000, status: 'Investing',
+    }],
+    positions: [{
+      id: 'p', vehicleId: 'v', kind: 'fund', name: 'A holding', currency: 'EUR',
+      vintage: 2024, commitmentDate: '2024-01-01', commitment: 2_000_000, ownership: 1,
+      assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
+    }],
+    assets: [],
+    investors: [
+      {
+        id: 'early', vehicleId: 'v', name: 'Early', type: 'Institution', currency: 'EUR',
+        commitment: 1_000_000, entryDate: '2024-01-01',
+      },
+      {
+        id: 'late', vehicleId: 'v', name: 'Late', type: 'Institution', currency: 'EUR',
+        commitment: 1_000_000, entryDate: '2025-01-01',
+      },
+    ],
+    positionValuations: [{
+      id: 'val', positionId: 'p', period: '2026Q2', recordedAt: '2026-07-01T00:00:00.000Z',
+      nav: 2_400_000, source: 'statement',
+    }],
+    assetValuations: [],
+    cashflows: [
+      {
+        id: 'c1', vehicleId: 'v', investorId: 'early', type: 'Capital Call', amount: 1_000_000,
+        currency: 'EUR', date: '2024-01-15', period: '2024Q1',
+        recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: true, status: 'Settled',
+      },
+      {
+        id: 'c2', vehicleId: 'v', investorId: 'late', type: 'Capital Call', amount: 1_000_000,
+        currency: 'EUR', date: '2025-01-15', period: '2025Q1',
+        recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: true, status: 'Settled',
+      },
+      {
+        id: 'p1', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -2_000_000,
+        currency: 'EUR', date: '2025-01-20', period: '2025Q1',
+        recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: true, status: 'Settled',
+      },
+    ],
+    balanceSheets: [],
+    metrics: withRegister
+      ? ([
+        ['early', 'units', 1_000], ['late', 'units', 800],
+        ['early', 'capitalAccount', 1_333_333.33], ['late', 'capitalAccount', 1_066_666.67],
+      ] as Array<[string, string, number]>).map(([id, metric, value]) => ({
+        id: `met-${id}-${metric}`,
+        scope: { kind: 'investor' as const, id },
+        period: '2026Q2' as PeriodId,
+        recordedAt: '2026-07-01T00:00:00.000Z',
+        metric,
+        value,
+        source: 'register',
+      }))
+      : [],
+    fxRates: [],
+  });
+
+  const view = (withRegister: boolean) => analyse(unitised(withRegister), {
+    clientId: 'c', vehicleId: 'v', period: '2026Q2', presentationCurrency: 'EUR',
+  });
+
+  it('splits by contributed capital when nothing says otherwise', () => {
+    const [early, late] = view(false).net.investors;
+    expect(early.ownership).toBeCloseTo(0.5, 9);
+    expect(late.ownership).toBeCloseTo(0.5, 9);
+    expect(early.nav).toBeCloseTo(late.nav, 6);
+    expect(early.navStated).toBe(false);
+  });
+
+  it('splits by shares held once the register states them', () => {
+    const [early, late] = view(true).net.investors;
+    expect(early.units).toBe(1_000);
+    expect(early.ownership).toBeCloseTo(1_000 / 1_800, 9);
+    expect(late.ownership).toBeCloseTo(800 / 1_800, 9);
+  });
+
+  it('prefers the account the administrator confirmed to any split of the fund', () => {
+    const [early, late] = view(true).net.investors;
+    expect(early.nav).toBe(1_333_333.33);
+    expect(late.nav).toBe(1_066_666.67);
+    expect(early.navStated).toBe(true);
+    // Which is not quite the fund, because seven statements rounded one at a
+    // time do not have to add to it. The identity check is what says so.
+    expect(view(true).checks.results.find((r) => r.id === 'investor_nav_sum')?.status)
+      .not.toBe('failed');
+  });
+
+  it('prices a share off the register rather than keeping the price as a figure', () => {
+    const units = view(true).net.product.units!;
+    expect(units.units).toBe(1_800);
+    expect(units.navPerShare).toBeCloseTo(2_400_000 / 1_800, 6);
+    expect(units.complete).toBe(true);
+    expect(view(false).net.product.units).toBeUndefined();
+  });
+
+  it('says the register is behind when somebody called holds no shares', () => {
+    const behind = unitised(true);
+    behind.metrics = behind.metrics.filter((m) => m.scope.id !== 'late');
+    const result = analyse(behind, {
+      clientId: 'c', vehicleId: 'v', period: '2026Q2', presentationCurrency: 'EUR',
+    });
+    expect(result.net.product.units!.complete).toBe(false);
+  });
+});
+
 describe('point-in-time selection', () => {
   it('hides facts recorded after the knowledge date', () => {
     const all = meridian.positionValuations;

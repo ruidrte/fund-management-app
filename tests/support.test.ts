@@ -12,7 +12,9 @@
 import { describe, expect, it } from 'vitest';
 import { isSupportWorkbook, planSupportImport, summariseSupport } from '../src/ingest/support';
 import { buildRateLookup } from '../src/engine/fx';
-import { supportSheets as sheets, BS, INVESTMENTS, INVESTORS } from './fixtures/support';
+import {
+  supportSheets as sheets, registeredSheets, BS, INVESTMENTS, INVESTORS,
+} from './fixtures/support';
 import type { TableData } from '../src/ingest/types';
 
 const plan = () => planSupportImport(sheets(), { vehicleId: 'veh-balt' });
@@ -195,6 +197,43 @@ describe('the balance sheet', () => {
     const { balanceSheets } = plan();
 
     expect(balanceSheets[0].otherAssets).toBe(1_000 + 3_000);
+  });
+});
+
+describe('the register the administrator is fed from', () => {
+  const built = () => planSupportImport(registeredSheets(), { vehicleId: 'veh-balt' });
+
+  it('reads the shares held and the account confirmed, per investor per quarter', () => {
+    const facts = built().metrics.filter((m) => m.scope.kind === 'investor');
+    const of = (name: string, metric: string) => facts.find(
+      (m) => m.metric === metric && m.scope.id.includes(name),
+    )?.value;
+
+    expect(of('nord', 'units')).toBe(1_500);
+    expect(of('nord', 'capitalAccount')).toBe(1_650_000);
+    expect(of('baltic', 'units')).toBeCloseTo(818.1818, 4);
+  });
+
+  it('keeps shares issued against a call apart from shares held at a quarter end', () => {
+    // The first says what was bought, the second what is owned. Only the second
+    // can split a fund.
+    const facts = built().metrics.filter((m) => m.scope.kind === 'investor');
+    expect(facts.filter((m) => m.metric === 'unitsIssued')).toHaveLength(2);
+    expect(facts.filter((m) => m.metric === 'units').every((m) => m.period === '2026Q2')).toBe(true);
+  });
+
+  it('joins the two sheets on the identifier they share, not on the names', () => {
+    // `PK Nord` in the ledger, `Pensionskasse Nord` in the feed. Matching those
+    // is guesswork where the file has given a number.
+    expect(built().problems.some((p) => /match no investor/.test(p))).toBe(false);
+  });
+
+  it('says when the feed has not been rolled to the reported quarter', () => {
+    const stale = registeredSheets().map((sheet) => (sheet.sheetName === 'OneSource'
+      ? { ...sheet, rows: sheet.rows.filter((row) => row[3] !== 46_203) }
+      : sheet));
+    const behind = planSupportImport(stale, { vehicleId: 'veh-balt' });
+    expect(behind.problems.some((p) => /register feed stops at/.test(p))).toBe(true);
   });
 });
 

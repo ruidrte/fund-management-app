@@ -8,6 +8,7 @@
  */
 
 import type { QuarterView } from '../engine';
+import type { InvestorNetResult } from '../engine/net';
 import { Card, ChartCard } from '../components/common/Card';
 import { DataTable } from '../components/common/DataTable';
 import { KpiTile } from '../components/common/KpiTile';
@@ -193,6 +194,30 @@ export function Investors({ view }: { view: QuarterView }) {
               render: (row) => percent(row.ownership),
               total: percent(view.net.investors.reduce((t, i) => t + i.ownership, 0)),
             },
+            // Only where the vehicle is owned in shares. Two columns of dashes
+            // on every closed-end fund is worse than no columns at all.
+            ...(view.net.product.units ? [
+              {
+                key: 'units', header: 'Shares', align: 'right' as const,
+                render: (row: InvestorNetResult) => (row.units === undefined
+                  ? '—'
+                  : row.units.toLocaleString('en-GB', { maximumFractionDigits: 4 })),
+                total: view.net.product.units.units.toLocaleString('en-GB', {
+                  maximumFractionDigits: 4,
+                }),
+              },
+              {
+                key: 'navPerShare', header: 'NAV / share', align: 'right' as const,
+                render: (row: InvestorNetResult) => (row.navPerShare === undefined
+                  ? '—'
+                  : row.navPerShare.toLocaleString('en-GB', {
+                    minimumFractionDigits: 2, maximumFractionDigits: 2,
+                  })),
+                total: view.net.product.units.navPerShare.toLocaleString('en-GB', {
+                  minimumFractionDigits: 2, maximumFractionDigits: 2,
+                }),
+              },
+            ] : []),
             { key: 'tvpi', header: 'TVPI', align: 'right', render: (row) => multiple(row.multiples.tvpi) },
             { key: 'irr', header: 'IRR', align: 'right', render: (row) => percent(row.irr) },
             {
@@ -200,7 +225,11 @@ export function Investors({ view }: { view: QuarterView }) {
               render: (row) => (
                 row.allocated
                   ? <StatusPill tone="warning">Allocated pro rata</StatusPill>
-                  : <ProvenanceBadge provenance={row.provenance} />
+                  : row.navStated
+                    // Not a split of the fund at all: what the administrator
+                    // told this investor they have.
+                    ? <StatusPill tone="good">Confirmed account</StatusPill>
+                    : <ProvenanceBadge provenance={row.provenance} />
               ),
             },
           ]}

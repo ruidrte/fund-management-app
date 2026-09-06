@@ -7,7 +7,7 @@
  */
 
 import { useMemo } from 'react';
-import { analyse, type QuarterView } from '../engine';
+import { analyse, returnBases, type QuarterView, type ReturnBasis } from '../engine';
 import { formatPeriod, sortPeriods } from '../domain/period';
 import { useMoney, useScope } from '../context/ScopeContext';
 import { KpiTile } from '../components/common/KpiTile';
@@ -24,6 +24,42 @@ export function Dashboard({ view }: { view: QuarterView }) {
   const { dataset, clientId, vehicleId, periods, currency, knowledgeDate } = useScope();
   const gross = view.gross.totals;
   const net = view.net.product;
+
+  /**
+   * The holder's return on each basis, per holding.
+   *
+   * One holding, four answers, and all four are correct — they differ in which
+   * flows the question admits. Where the answers do not differ there is nothing
+   * to show, so the section only appears for a book that has flows outside the
+   * commitment, a fee charged for a holding, or a currency to restate into.
+   */
+  const bases = useMemo<Array<{ name: string; rows: ReturnBasis[] }>>(() => {
+    if (!dataset) return [];
+    const held = dataset.positions.filter((position) => position.vehicleId === vehicleId);
+    // The currency the holder reports in: whatever the book keeps a rate out of
+    // the product's currency into. Two and it does not say which, so neither.
+    const into = [...new Set(
+      dataset.fxRates.filter((rate) => rate.base === currency).map((rate) => rate.quote),
+    )];
+
+    return held
+      .map((position) => ({
+        name: position.name,
+        rows: returnBases({
+          cashflows: dataset.cashflows,
+          valuations: dataset.positionValuations,
+          fxRates: dataset.fxRates,
+          positionId: position.id,
+          currency: position.currency,
+          period: view.period,
+          restateIn: into.length === 1 ? into[0] : undefined,
+        }),
+      }))
+      // Where every basis gives the same answer, the four are one and the table
+      // says nothing the tiles above have not.
+      .filter(({ rows }) => rows.length > 1
+        && new Set(rows.map((row) => row.irr?.toFixed(6) ?? '—')).size > 1);
+  }, [dataset, vehicleId, currency, view.period]);
 
   // NAV history, recomputed through the same engine so a drafted quarter in the
   // series is marked as one rather than sitting in the line looking reported.
@@ -113,8 +149,74 @@ export function Dashboard({ view }: { view: QuarterView }) {
             comparison={`${money(net.called, view.currency)} of ${money(net.commitment, view.currency)}`}
             note={`${money(net.feesInPeriod, view.currency)} of fees this quarter`}
           />
+          {/*
+            Only for a vehicle that is owned in shares. A closed-end fund has
+            capital accounts and no share price, and a tile showing one for it
+            would be a figure that reconciles to nothing.
+          */}
+          {net.units && (
+            <KpiTile
+              label="Net asset value per share"
+              value={net.units.navPerShare.toLocaleString('en-GB', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2,
+              })}
+              comparison={`${net.units.units.toLocaleString('en-GB', {
+                maximumFractionDigits: 4,
+              })} shares in issue`}
+              note={net.units.complete
+                ? undefined
+                : 'The register does not yet hold shares for everybody who has been called'}
+              provenance={net.units.complete ? net.provenance : 'estimated'}
+            />
+          )}
         </div>
       </section>
+
+      {bases.length > 0 && (
+        <Card
+          title="What the holder earned, on each basis"
+          subtitle={
+            'The four differ in which flows the question admits, and they are cumulative — '
+            + 'the gap between any two is exactly what the wider one takes in.'
+          }
+        >
+          <div className="flex flex-col gap-4">
+            {bases.map(({ name, rows }) => (
+              <div key={name}>
+                <div className="mb-1 text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                  {name}
+                </div>
+                <DataTable
+                  rows={rows}
+                  rowKey={(row) => row.key}
+                  columns={[
+                    { key: 'basis', header: 'Basis', render: (row) => row.label },
+                    { key: 'ccy', header: 'Currency', render: (row) => row.currency },
+                    { key: 'irr', header: 'IRR', align: 'right', render: (row) => percent(row.irr) },
+                    {
+                      key: 'paidIn', header: 'Paid in', align: 'right',
+                      render: (row) => money(row.paidIn, row.currency),
+                    },
+                    {
+                      key: 'distributed', header: 'Distributed', align: 'right',
+                      render: (row) => money(row.distributed, row.currency),
+                    },
+                    { key: 'dpi', header: 'DPI', align: 'right', render: (row) => multiple(row.dpi) },
+                    { key: 'rvpi', header: 'RVPI', align: 'right', render: (row) => multiple(row.rvpi) },
+                    { key: 'tvpi', header: 'TVPI', align: 'right', render: (row) => multiple(row.tvpi) },
+                    {
+                      key: 'missing', header: 'Left out',
+                      // A basis that could not admit every flow says so where
+                      // the figure is read, not in a footnote somewhere else.
+                      render: (row) => (row.missing.length === 0 ? '' : row.missing.join('; ')),
+                    },
+                  ]}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 xl:grid-cols-2">
         <ChartCard

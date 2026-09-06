@@ -148,6 +148,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     vehicles,
     cashflows,
     balanceSheets,
+    metrics: dataset.metrics,
     period: scope.period,
     presentationCurrency: currency,
     rates,

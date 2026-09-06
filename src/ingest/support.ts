@@ -51,6 +51,7 @@ const SHEETS = {
   investors: 'investors cf',
   income: 'p&l',
   acquisitionCosts: 'acquisition costs',
+  register: 'onesource',
 } as const;
 
 /** What the workbook is about, before anything is imported from it. */
@@ -405,6 +406,8 @@ function readAcquisitionTotal(sheets: TableData[]): number | undefined {
 }
 
 interface InvestorRow {
+  /** The identifier the register and the outbound feed share. */
+  key: string;
   line: number;
   name: string;
   date: string;
@@ -436,6 +439,11 @@ function readInvestorRows(sheets: TableData[]): InvestorRow[] {
 
     rows.push({
       line: i + 1,
+      // The number the administrator's feed knows this investor by, which is
+      // what joins the two sheets. Names differ between them — `PK Horgen`
+      // here, `Pensionskasse der Gemeinde Horgen` there — and matching on those
+      // is guesswork where the file has given an identifier.
+      key: id,
       name,
       date,
       period: periodForDate(date),
@@ -444,6 +452,56 @@ function readInvestorRows(sheets: TableData[]): InvestorRow[] {
       called: col.number(row, 'Capital Called'),
       fees: col.number(row, 'Other (fees)'),
       rebate: col.number(row, 'Rebates'),
+    });
+  }
+  return rows;
+}
+
+/* ------------------------------------------------------------------ *
+ * The register the administrator is fed from
+ *
+ * A unitised vehicle is not owned in proportion to capital contributed. Two
+ * investors who put in the same amount a year apart hold different numbers of
+ * shares, and their accounts diverge from that day on. Splitting the fund's net
+ * asset value by contributed capital gives each of them the other's return.
+ *
+ * This sheet is the outbound feed to the administrator, and it is the only
+ * place the book states what each investor actually holds: the shares issued
+ * against each call, the shares held at each quarter end, and the capital
+ * account the administrator confirmed. Read, those replace an allocation with a
+ * statement — and a statement is what an investor is entitled to be shown.
+ * ------------------------------------------------------------------ */
+
+interface RegisterRow {
+  investor: string;
+  date: string;
+  period: PeriodId;
+  event: string;
+  value: number;
+  unit: string;
+}
+
+function readRegisterRows(sheets: TableData[]): RegisterRow[] {
+  const table = sheet(sheets, SHEETS.register);
+  if (!table) return [];
+  const header = headerRow(table, ['Investor_name', 'Event_type', 'Value']);
+  if (header < 0) return [];
+  const col = columns(table.rows[header]);
+
+  const rows: RegisterRow[] = [];
+  for (let i = header + 1; i < table.rows.length; i += 1) {
+    const row = table.rows[i];
+    const investor = col.text(row, 'Investor_name');
+    const date = col.date(row, 'Date');
+    const value = col.number(row, 'Value');
+    if (!investor || !date || value === undefined) continue;
+    rows.push({
+      investor,
+      date,
+      period: periodForDate(date),
+      event: col.text(row, 'Event_type'),
+      value,
+      unit: col.text(row, 'Unit'),
     });
   }
   return rows;
@@ -847,6 +905,80 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
 
   if (investors.length === 0) {
     problems.push('No investor rows were found, so the capital accounts will be empty.');
+  }
+
+  /* --- what each investor actually holds --------------------------- */
+
+  const register = readRegisterRows(sheets);
+  if (register.length > 0) {
+    const byKey = new Map<string, Investor>();
+    for (const row of investorRows) {
+      const held = investorOf.get(row.name);
+      if (held && !byKey.has(row.key)) byKey.set(row.key, held);
+    }
+    // The feed carries the identifier in a column of its own; where it does
+    // not, the order the investors first appear in is the same on both sheets.
+    const byOrder = [...new Set(register.map((row) => row.investor))];
+
+    const unmatched = new Set<string>();
+    const latest = new Map<string, RegisterRow>();
+    for (const row of register) {
+      const key = String(byOrder.indexOf(row.investor) + 1);
+      const investor = byKey.get(key);
+      if (!investor) {
+        unmatched.add(row.investor);
+        continue;
+      }
+      // Shares issued against a call and the shares held at a quarter end are
+      // two different statements. Only the second says what is held.
+      const name = /number of shares/i.test(row.event) ? 'units'
+        : /capital account/i.test(row.event) ? 'capitalAccount'
+          : /shares issued/i.test(row.event) ? 'unitsIssued'
+            : undefined;
+      if (!name) continue;
+      const at = `${investor.id}/${name}/${row.period}`;
+      const held = latest.get(at);
+      // A quarter can carry several rows; the last one dated in it is the
+      // position at its end.
+      if (held && held.date > row.date) continue;
+      latest.set(at, row);
+      periods.add(row.period);
+      metrics.push({
+        id: `met-${investor.id}-${row.period}-${name}`,
+        scope: { kind: 'investor', id: investor.id },
+        period: row.period,
+        recordedAt,
+        metric: name,
+        value: row.value,
+        unit: name === 'capitalAccount' ? summary.currency : 'units',
+        source: `${summary.fund} — register feed, ${row.date}`,
+      });
+    }
+
+    const accounts = [...latest.keys()].filter((key) => key.includes('/capitalAccount/')).length;
+    const held = [...latest.keys()].filter((key) => key.includes('/units/')).length;
+    notes.push(
+      `The register feed states ${held} quarter-end share count(s) and ${accounts} confirmed `
+      + 'capital account(s). A unitised vehicle is not owned in proportion to capital '
+      + 'contributed — two investors who paid in the same amount a year apart hold different '
+      + 'numbers of shares — so these replace an allocation with a statement.',
+    );
+
+    const lastRegister = register.map((row) => row.period).sort().pop();
+    if (lastRegister && summary.reportingDate
+      && lastRegister < periodForDate(summary.reportingDate)) {
+      problems.push(
+        `The register feed stops at ${lastRegister} and the workbook reports `
+        + `${periodForDate(summary.reportingDate)}. The shares issued against this quarter's `
+        + 'call are not in it, so the newest capital accounts are worked out rather than stated.',
+      );
+    }
+    if (unmatched.size > 0) {
+      problems.push(
+        `${unmatched.size} name(s) in the register feed match no investor in the ledger: `
+        + `${[...unmatched].join('; ')}.`,
+      );
+    }
   }
 
   return {

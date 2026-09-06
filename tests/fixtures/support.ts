@@ -81,7 +81,34 @@ export const INVESTORS: TableData = {
   ],
 };
 
+/**
+ * The outbound feed to the administrator: what each investor actually holds.
+ *
+ * The two who paid in the same quarter hold shares at different prices, which
+ * is the whole reason a split by contributed capital is wrong for a vehicle
+ * like this one.
+ */
+export const REGISTER: TableData = {
+  sheetName: 'OneSource',
+  rows: [
+    ['EXPORT — outbound feed'],
+    ['Fund_Compartiment', 'Investor_name', 'Investor_Fund_ID', 'Date', 'Event_type', 'Value',
+      'Unit', 'Source'],
+    ['BALT INFRA', 'Pensionskasse Nord', 1, serial('2024-11-01'), 'Subscription', 3_000_000, 'EUR', 'Confirmation'],
+    ['BALT INFRA', 'Baltic Trust Foundation', 2, serial('2025-02-01'), 'Subscription', 2_000_000, 'EUR', 'Confirmation'],
+    ['BALT INFRA', 'Pensionskasse Nord', 1, serial('2025-01-20'), 'Shares issued', 1_500, 'Shares', 'Abrechnung'],
+    ['BALT INFRA', 'Baltic Trust Foundation', 2, serial('2025-02-20'), 'Shares issued', 818.1818, 'Shares', 'Abrechnung'],
+    ['BALT INFRA', 'Pensionskasse Nord', 1, serial('2026-06-30'), 'Number of shares', 1_500, 'Shares', 'Capital Account Statement'],
+    ['BALT INFRA', 'Baltic Trust Foundation', 2, serial('2026-06-30'), 'Number of shares', 818.1818, 'Shares', 'Capital Account Statement'],
+    ['BALT INFRA', 'Pensionskasse Nord', 1, serial('2026-06-30'), 'Capital Account Statement', 1_650_000, 'EUR', 'Capital Account Statement'],
+    ['BALT INFRA', 'Baltic Trust Foundation', 2, serial('2026-06-30'), 'Capital Account Statement', 900_000, 'EUR', 'Capital Account Statement'],
+  ],
+};
+
 export const supportSheets = (): TableData[] => [COVER, INVESTMENTS, BS, INVESTORS];
+
+/** The same book with the administrator's register beside it. */
+export const registeredSheets = (): TableData[] => [...supportSheets(), REGISTER];
 
 /** The fixture as it stands, for a test that does not vary it. */
 export const SUPPORT_WORKBOOK = supportSheets();

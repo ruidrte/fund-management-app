@@ -16,12 +16,13 @@ import type {
   Cashflow,
   CurrencyCode,
   Investor,
+  Metric,
   Provenance,
   ReportingConventions,
   Vehicle,
   VehicleBalanceSheet,
 } from '../domain/types';
-import { forPeriod, latestThrough, throughPeriod } from './asof';
+import { forPeriod, latestThrough, throughPeriod, visibleAt } from './asof';
 import { flowRateKind, type RateLookup } from './fx';
 import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples, moved } from './metrics';
 import type { GrossResult } from './gross';
@@ -56,6 +57,27 @@ export interface ProductNetResult {
   provenance: Provenance;
   /** True when the balance sheet for the period was not available. */
   balanceSheetEstimated: boolean;
+  /**
+   * Shares in issue and what one is worth, for a vehicle that is unitised.
+   *
+   * Absent for one that is not, which is most of them: a closed-end fund has
+   * commitments and capital accounts and no share price at all, and inventing
+   * one for it would be a figure nobody could reconcile to anything.
+   */
+  units?: ProductUnits;
+}
+
+export interface ProductUnits {
+  /** Shares in issue at the period end, where the register states them. */
+  units: number;
+  /** The fund's net asset value divided by them. */
+  navPerShare: number;
+  /**
+   * True where every investor's shares are stated for this period. False means
+   * the register has not been rolled and the price is carried by whoever is in
+   * it — which is a number to look at rather than to publish.
+   */
+  complete: boolean;
 }
 
 export interface InvestorNetResult {
@@ -67,8 +89,14 @@ export interface InvestorNetResult {
   undrawn: number;
   nav: number;
   navPrior: number;
-  /** Share of the vehicle, by capital account rather than by commitment. */
+  /** Share of the vehicle, by units where it is unitised, else by capital account. */
   ownership: number;
+  /** Shares held at the period end, where the register states them. */
+  units?: number;
+  /** What one share is worth on this account. */
+  navPerShare?: number;
+  /** True where the net asset value is the administrator's confirmed account. */
+  navStated: boolean;
   multiples: Multiples;
   irr?: number;
   provenance: Provenance;
@@ -92,6 +120,12 @@ export interface NetInputs {
   vehicles: Vehicle[];
   cashflows: Cashflow[];
   balanceSheets: VehicleBalanceSheet[];
+  /**
+   * What the book states beside the flows — for a unitised vehicle, the shares
+   * each investor holds and the capital account the administrator confirmed.
+   * Where they exist an account is stated rather than allocated.
+   */
+  metrics: Metric[];
   period: PeriodId;
   presentationCurrency: CurrencyCode;
   rates: RateLookup;
@@ -114,6 +148,7 @@ export interface NetResult {
 
 export function computeNet(inputs: NetInputs): NetResult {
   const product = computeProductNet(inputs);
+  product.units = productUnits(inputs, product);
   const investors = computeInvestorNet(inputs, product);
   return { product, investors, restricted: isRestricted(inputs) };
 }
@@ -302,12 +337,70 @@ function buildComponents(
  * commitment and flagged — an allocated account is an approximation of an
  * equalised one and must not be presented as a statement of account.
  */
+/**
+ * The shares an investor holds at a period end, and the account the
+ * administrator confirmed for it, as the book states them.
+ *
+ * Only for the period asked about: a share count is a position at a date, and
+ * carrying last quarter's forward across a quarter in which shares were issued
+ * splits the fund by a register that no longer describes it.
+ */
+function stated(
+  metrics: Metric[], investorId: string, period: PeriodId, name: string, knowledgeDate?: string,
+): number | undefined {
+  const rows = visibleAt(
+    metrics.filter(
+      (m) => m.scope.kind === 'investor' && m.scope.id === investorId
+        && m.period === period && m.metric === name,
+    ),
+    knowledgeDate,
+  );
+  return rows.length > 0 ? rows[rows.length - 1].value : undefined;
+}
+
+/**
+ * The shares in issue and the price of one.
+ *
+ * Summed from the register rather than kept as a figure of its own: a share
+ * count that is stored and a share count that is the sum of the accounts are
+ * two numbers that will one day disagree, and the register is the one an
+ * investor's statement is written from.
+ */
+export function productUnits(
+  inputs: NetInputs, product: ProductNetResult,
+): ProductUnits | undefined {
+  const held = inputs.investors.map(
+    (investor) => stated(inputs.metrics, investor.id, inputs.period, 'units', inputs.knowledgeDate),
+  );
+  const counted = held.filter((units): units is number => units !== undefined && units > 0);
+  if (counted.length === 0) return undefined;
+  const units = counted.reduce((total, value) => total + value, 0);
+
+  // An investor who has been called and holds no shares is the register being
+  // behind. One who has committed and not been called holds none because there
+  // are none to hold, which is not the same thing and is not a gap.
+  const missing = inputs.investors.filter((investor, index) => {
+    if (held[index] !== undefined) return false;
+    return throughPeriod(
+      inputs.cashflows.filter((c) => c.investorId === investor.id && moved(c)),
+      inputs.period,
+      inputs.knowledgeDate,
+    ).some(isInvestorCall);
+  });
+
+  return {
+    units,
+    navPerShare: product.components.vehicleNav / units,
+    complete: missing.length === 0,
+  };
+}
+
 function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): InvestorNetResult[] {
   // No vehicle filter here: `cashflows` and `investors` are already narrowed to
   // the vehicles in scope before they reach the engine, so matching on the
   // investor alone is both correct and one fewer place to get the set wrong.
   const {
-    investors, cashflows, period,
+    investors, cashflows, metrics, period,
     presentationCurrency, rates, conventions, knowledgeDate,
   } = inputs;
 
@@ -361,7 +454,22 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   const totalNetContributedPrior = sum(accounts.map((a) => a.netContributedPrior));
   const anyOwnFlows = accounts.some((a) => a.hasOwnFlows);
 
-  return accounts.map((account) => {
+  // A unitised vehicle is owned in shares, not in proportion to money paid in.
+  // Where the register states the shares held at this period end for everybody,
+  // that is the split — and the price of a share falls out of it rather than
+  // being another figure to keep.
+  const units = accounts.map(
+    (a) => stated(metrics, a.investor.id, period, 'units', knowledgeDate),
+  );
+  const unitsPrior = accounts.map(
+    (a) => stated(metrics, a.investor.id, prior, 'units', knowledgeDate),
+  );
+  const unitised = units.every((held) => held !== undefined && held > 0);
+  const totalUnits = unitised ? sum(units as number[]) : 0;
+  const unitisedPrior = unitsPrior.every((held) => held !== undefined && held > 0);
+  const totalUnitsPrior = unitisedPrior ? sum(unitsPrior as number[]) : 0;
+
+  return accounts.map((account, index) => {
     // Allocating is what to do when the book has no investors' ledger at all
     // and there is no other way to give anybody a capital account. It is not
     // what to do for one investor in a register that holds everybody else's
@@ -373,16 +481,27 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
 
     const byCommitment = totalCommitment > 0 ? account.commitment / totalCommitment : 0;
 
-    const share = restricted || allocated || totalNetContributed <= 0
-      ? byCommitment
-      : account.netContributed / totalNetContributed;
+    const byUnits = unitised && totalUnits > 0 ? (units[index] as number) / totalUnits : undefined;
+    const byUnitsPrior = unitisedPrior && totalUnitsPrior > 0
+      ? (unitsPrior[index] as number) / totalUnitsPrior
+      : undefined;
 
-    const sharePrior = restricted || allocated || totalNetContributedPrior <= 0
+    const share = byUnits ?? (restricted || allocated || totalNetContributed <= 0
       ? byCommitment
-      : account.netContributedPrior / totalNetContributedPrior;
+      : account.netContributed / totalNetContributed);
 
-    const nav = product.components.vehicleNav * share;
-    const navPrior = product.componentsPrior.vehicleNav * sharePrior;
+    const sharePrior = byUnitsPrior ?? (restricted || allocated || totalNetContributedPrior <= 0
+      ? byCommitment
+      : account.netContributedPrior / totalNetContributedPrior);
+
+    // A confirmed capital account outranks any split of the fund: it is what
+    // the administrator told this investor they have. Where the two disagree
+    // the identity check says so rather than either quietly winning.
+    const confirmed = stated(metrics, account.investor.id, period, 'capitalAccount', knowledgeDate);
+    const confirmedPrior = stated(metrics, account.investor.id, prior, 'capitalAccount', knowledgeDate);
+
+    const nav = confirmed ?? product.components.vehicleNav * share;
+    const navPrior = confirmedPrior ?? product.componentsPrior.vehicleNav * sharePrior;
 
     const called = allocated ? product.called * share : account.called;
     const distributed = allocated ? product.distributed * share : account.distributed;
@@ -399,6 +518,14 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
       nav,
       navPrior,
       ownership: share,
+      units: units[index],
+      // What one share is worth, from the account the register states or from
+      // the share of the fund it carries. Reported per investor because a
+      // register that has not been rolled for the quarter gives one investor a
+      // stated price and another a derived one, and the difference is the thing
+      // worth seeing.
+      navPerShare: units[index] ? nav / (units[index] as number) : undefined,
+      navStated: confirmed !== undefined,
       multiples: multiples({ paidIn: called, distributed, nav }),
       irr: flows.length > 0
         ? irrWithTerminalValue(flows, nav, new Date(periodEndDate(period)))
