@@ -368,6 +368,23 @@ export function Storage() {
         </Card>
       )}
 
+      <Card
+        title="The houses&rsquo; own marks"
+        subtitle="Optional, and read from the folder rather than shipped with the application"
+      >
+        <p className="mb-2 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+          Put a file named after the client in a <code>brand</code> folder beside the data —
+          {' '}<code>brand/pam.svg</code>, <code>brand/ebg.png</code>, <code>brand/ut.svg</code> — and
+          it appears beside the client&rsquo;s name and on its tab. SVG, PNG, JPEG, WebP or GIF, up to
+          half a megabyte. Nothing is needed: without one, the house&rsquo;s colour stands on its own.
+        </p>
+        <p className="mb-0 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+          A logo belongs to the house rather than to this software, which is why it is not carried in
+          the application. The file stays in the folder — it is read into the page directly, and the
+          page asks nobody else for it.
+        </p>
+      </Card>
+
       <Card title="What a folder is not" subtitle="So it is chosen knowingly">
         <ul className="m-0 list-disc space-y-1.5 pl-4 text-xs leading-relaxed"
           style={{ color: 'var(--text-secondary)' }}>

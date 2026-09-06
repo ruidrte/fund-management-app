@@ -16,6 +16,7 @@ import type { DataSet } from '../../domain/types';
 import type { SourceDocument } from '../../ingest/types';
 import type { ClientSummary, Repository } from '../repository';
 import type { Cipher } from './crypto';
+import { brandFor } from './brand';
 import {
   appendFacts, clientsIn, readClient, readManifest, replaceReference, storeDocument,
   vaultFor, type BookManifest, type ClientEntry, type FactBatch, type ReferenceUpdate, type Vault,
@@ -54,6 +55,15 @@ export async function openBook(
   const clients = await clientsIn(manifest, cipher);
   const problems = new Map<string, string[]>();
 
+  // The houses' own marks, where the folder carries them. Read once when the
+  // book opens: a logo does not change between one screen and the next, and
+  // reading it per render would put a file read behind every keystroke.
+  const marks = new Map<string, string>();
+  await Promise.all(clients.map(async (client) => {
+    const mark = await brandFor(root, client.slug);
+    if (mark) marks.set(client.id, mark);
+  }));
+
   const slugOf = (clientId: string): string => {
     const entry = clients.find((c) => c.id === clientId);
     if (!entry) throw new Error(`This folder holds no client with id ${clientId}.`);
@@ -70,6 +80,7 @@ export async function openBook(
     async listClients(): Promise<ClientSummary[]> {
       return clients.map((c) => ({
         id: c.id, name: c.name, shortName: c.shortName, accent: c.accent,
+        logo: marks.get(c.id),
       }));
     },
 
