@@ -1106,6 +1106,12 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     row: LedgerRow, type: CashflowType, amount: number,
     affectsCommitment: boolean, side: 'position' | 'investor',
   ) => {
+    // `chargedFor` says a flow belongs to a fund's return without being a
+    // movement with that fund, which is true of the adviser's fee and of
+    // nothing else here. The holder's leg of a capital call is the very money
+    // the fund leg already carries, so marking it too would have the fee basis
+    // count the same call twice, once each way, and net it to nothing.
+    const against = type === 'Fee' ? positionOf.get(row.fund)?.id : undefined;
     periods.add(row.period);
     cashflows.push({
       id: distinct(factId(
@@ -1114,7 +1120,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       vehicleId,
       positionId: side === 'position' ? positionOf.get(row.fund)?.id : undefined,
       investorId: side === 'investor' ? investor.id : undefined,
-      chargedFor: side === 'investor' ? positionOf.get(row.fund)?.id : undefined,
+      chargedFor: side === 'investor' ? against : undefined,
       type,
       amount,
       currency,
@@ -1141,12 +1147,25 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     // this application uses throughout.
     if (row.paid !== undefined && row.paid !== 0) {
       flow(row, 'Capital Call', row.paid, true, 'position');
+      // And the same movement from the holder's side. An adviser runs no
+      // vehicle, so there is nothing between Pensionskasse Thurgau and the
+      // funds: the money the mandate paid out is the money the holder paid in,
+      // one event seen from two sides. Filing only the fund side leaves the
+      // capital account with no money in it — called nil, undrawn the whole
+      // commitment, and no multiple at all — which is what the screen showed.
+      //
+      // The two legs cannot be one row, because a row carries one sign and the
+      // two sides read it in opposite directions. They do not double: the
+      // portfolio sums rows carrying a positionId and the capital account sums
+      // rows carrying an investorId, and no row carries both.
+      flow(row, 'Capital Call', -row.paid, true, 'investor');
       const byPeriod = paidInAt.get(row.fund) ?? new Map<PeriodId, number>();
       byPeriod.set(row.period, (byPeriod.get(row.period) ?? 0) + Math.abs(row.paid));
       paidInAt.set(row.fund, byPeriod);
     }
     if (row.distribution !== undefined && row.distribution !== 0) {
       flow(row, 'Distribution', row.distribution, false, 'position');
+      flow(row, 'Distribution', -row.distribution, false, 'investor');
       const byPeriod = distributedAt.get(row.fund) ?? new Map<PeriodId, number>();
       byPeriod.set(row.period, (byPeriod.get(row.period) ?? 0) + row.distribution);
       distributedAt.set(row.fund, byPeriod);

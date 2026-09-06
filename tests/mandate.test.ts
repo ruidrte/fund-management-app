@@ -198,11 +198,31 @@ describe('the ledger', () => {
   const flows = () => plan().cashflows;
 
   it('keeps the holder’s own signs: capital out negative, money back positive', () => {
-    const calls = flows().filter((flow) => flow.type === 'Capital Call');
+    const calls = flows().filter((flow) => flow.type === 'Capital Call' && flow.positionId);
     expect(calls.reduce((sum, flow) => sum + flow.amount, 0)).toBe(-11_000_000);
     expect(calls.every((flow) => flow.affectsCommitment)).toBe(true);
-    const distributions = flows().filter((flow) => flow.type === 'Distribution');
+    const distributions = flows().filter((flow) => flow.type === 'Distribution' && flow.positionId);
     expect(distributions.reduce((sum, flow) => sum + flow.amount, 0)).toBe(500_000);
+  });
+
+  it('writes each movement twice, once from each side, and never on one row', () => {
+    // An adviser runs no vehicle, so the holder is the limited partner and the
+    // money the mandate paid out is the money they paid in. Filed only against
+    // the funds, the capital account had nothing in it: nil called, the whole
+    // commitment undrawn, no multiple. The two legs cannot share a row, since
+    // a row carries one sign and the two sides read it opposite ways.
+    const calls = flows().filter((flow) => flow.type === 'Capital Call');
+    const fund = calls.filter((flow) => flow.positionId);
+    const holder = calls.filter((flow) => flow.investorId);
+    expect(holder).toHaveLength(fund.length);
+    expect(calls.every((flow) => !(flow.positionId && flow.investorId))).toBe(true);
+    expect(holder.reduce((sum, flow) => sum + flow.amount, 0)).toBe(11_000_000);
+
+    // And the holder's leg is not charged for a fund. `chargedFor` puts a flow
+    // into a fund's return without it being a movement with that fund, which
+    // is the adviser's fee and nothing else — marking the holder's leg too
+    // would count every call twice, once each way, and net it to nothing.
+    expect(holder.every((flow) => flow.chargedFor === undefined)).toBe(true);
   });
 
   it('files the adviser’s fee against the holder and never against the funds', () => {

@@ -694,8 +694,14 @@ function ledger(
     // The adviser's fee is filed against the holder rather than against a
     // fund, so it goes back beside the fund it was charged for. A fee with no
     // fund recorded is written under the first, and said so below.
+    //
+    // Fees and nothing else. The holder also carries a leg of every capital
+    // call and distribution — the same movement as the fund's, seen from their
+    // side — and the ledger has one line per movement, which the reader turns
+    // back into two. Writing the holder's leg as well would put every call in
+    // the file twice.
     const fees = cashflows.filter(
-      (flow) => flow.investorId && !flow.positionId
+      (flow) => flow.type === 'Fee' && flow.investorId && !flow.positionId
         && (flow.chargedFor === fund.position.id
           || (!flow.chargedFor && fund === funds[0])),
     );
