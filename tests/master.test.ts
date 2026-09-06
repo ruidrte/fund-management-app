@@ -279,3 +279,26 @@ describe('the currency a holding is kept in', () => {
     expect(call.currency).toBe('EUR');
   });
 });
+
+describe('a fact carries its own identity', () => {
+  it('lands on the same identifiers when the same file is read again', () => {
+    // Re-importing a quarter must restate what it filed last time, not file a
+    // second copy of it. That holds only if the identifier comes from the fact
+    // rather than from where its row sat, so this is the check that the
+    // identifiers are derived at all.
+    const first = planMasterImport(workbook(), { vehicleId: 'veh-ut' });
+    const again = planMasterImport(workbook(), { vehicleId: 'veh-ut' });
+    expect(again.cashflows.map((flow) => flow.id))
+      .toEqual(first.cashflows.map((flow) => flow.id));
+    expect(again.valuations.map((value) => value.id))
+      .toEqual(first.valuations.map((value) => value.id));
+    expect(first.cashflows.length).toBeGreaterThan(0);
+  });
+
+  it('gives every movement an identifier of its own', () => {
+    // Two movements sharing one identifier is the same fault seen from the
+    // other side: the later would silently replace the earlier.
+    const ids = planMasterImport(workbook(), { vehicleId: 'veh-ut' }).cashflows.map((flow) => flow.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});

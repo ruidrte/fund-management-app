@@ -41,7 +41,7 @@ import type {
   Asset, AssetValuation, Attribution, Cashflow, CashflowType, CurrencyCode, FxRate,
   Investor, Metric, Position, PositionValuation,
 } from '../domain/types';
-import { slug } from './ids';
+import { distinctly, factId, slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -1046,8 +1046,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   // first on the next import.
   const book = slug(summary.holder, 16);
 
-  let sequence = 0;
-  const id = (prefix: string) => `${prefix}-${book}-${(sequence += 1)}`;
+  const distinct = distinctly();
 
   /* --- the funds the mandate holds -------------------------------- */
 
@@ -1109,7 +1108,9 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   ) => {
     periods.add(row.period);
     cashflows.push({
-      id: id('cf'),
+      id: distinct(factId(
+        'cf', book, row.fund, side, type, row.date, amount, row.description,
+      )),
       vehicleId,
       positionId: side === 'position' ? positionOf.get(row.fund)?.id : undefined,
       investorId: side === 'investor' ? investor.id : undefined,
@@ -1252,7 +1253,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       periods.add(period);
       derived += 1;
       valuations.push({
-        id: id('val'),
+        id: factId('val', position.id, period),
         positionId: position.id,
         period,
         recordedAt,
@@ -1265,7 +1266,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
 
     if (reported) {
       valuations.push({
-        id: id('val'),
+        id: factId('val', position.id, reported.period),
         positionId: position.id,
         period: reported.period,
         recordedAt,

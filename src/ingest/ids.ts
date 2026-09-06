@@ -59,6 +59,41 @@ export function slug(value: string, limit = 40): string {
  * distinguishes them, so everything that does is passed in.
  */
 export function factId(prefix: string, ...parts: Array<string | number | undefined>): string {
-  const said = parts.map((part) => (part === undefined ? '' : String(part))).join('|');
+  // The parts are joined and then slugged, and slugging collapses every run of
+  // punctuation into one hyphen — so the joins themselves do not survive. A
+  // part that is absent and a part that is present but says nothing a slug can
+  // keep ("—", say, as a note) would otherwise both contribute nothing and give
+  // one identifier to two facts. Present-and-empty is marked, absent is not:
+  // most optional parts are simply absent, and those identifiers stay as they
+  // are.
+  const said = parts
+    .map((part) => {
+      if (part === undefined) return '';
+      const written = String(part);
+      return slug(written, 56) === 'x' && !/[a-z0-9]/i.test(written) ? 'x' : written;
+    })
+    .join('|');
   return `${prefix}-${slug(said, 56)}`;
+}
+
+/**
+ * Keeps genuinely identical facts apart, without numbering the rest.
+ *
+ * A ledger can state the same thing twice and mean it: two calls of the same
+ * amount, from the same investor, on the same day, described the same way. They
+ * are two facts, and an identity derived from what they say cannot tell them
+ * apart — so the second one gets a suffix, and the first is left as it is.
+ *
+ * This is the only place order still enters an identifier, and it enters it
+ * narrowly: deleting one of a pair of identical rows renumbers the other, while
+ * everything not duplicated is untouched by anything happening elsewhere in the
+ * file. A sequence over every row had the opposite property.
+ */
+export function distinctly(): (id: string) => string {
+  const seen = new Map<string, number>();
+  return (id) => {
+    const count = (seen.get(id) ?? 0) + 1;
+    seen.set(id, count);
+    return count === 1 ? id : `${id}-${count}`;
+  };
 }

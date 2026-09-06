@@ -41,7 +41,7 @@ import type {
   Asset, AssetValuation, Cashflow, CashflowType, CurrencyCode, FxRate, Investor,
   Metric, Position, PositionKind, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
-import { slug } from './ids';
+import { distinctly, factId, slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 
@@ -354,8 +354,8 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
   const cashflows: Cashflow[] = [];
   const valuations: PositionValuation[] = [];
   const periods = new Set<PeriodId>();
-  let sequence = 0;
-  const id = (prefix: string) => `${prefix}-${slug(program)}-${(sequence += 1)}`;
+  const book = slug(program, 16);
+  const distinct = distinctly();
 
   const emit = (
     row: Cell[], position: Position | undefined, investorId: string | undefined,
@@ -401,7 +401,10 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
 
     for (const flow of flows) {
       cashflows.push({
-        id: id('cf'),
+        id: distinct(factId(
+          'cf', book, position?.id ?? investorId, flow.type, date, flow.amount,
+          tx.text(row, 'Description'),
+        )),
         vehicleId,
         positionId: position?.id,
         investorId,
@@ -424,7 +427,7 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
     // would count the vehicle twice.
     if (nav !== undefined && position) {
       valuations.push({
-        id: id('val'),
+        id: factId('val', position.id, period),
         positionId: position.id,
         period,
         recordedAt,

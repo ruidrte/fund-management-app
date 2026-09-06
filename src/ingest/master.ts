@@ -37,7 +37,7 @@ import type {
   Asset, AssetValuation, Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Metric,
   Position, PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
-import { slug } from './ids';
+import { distinctly, factId, slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -672,9 +672,8 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
   const notes: string[] = [];
   const periods = new Set<PeriodId>();
   const book = slug(summary.fund, 16);
+  const distinct = distinctly();
 
-  let sequence = 0;
-  const id = (prefix: string) => `${prefix}-${book}-${(sequence += 1)}`;
 
   const register = readRegister(sheets);
   const investments = readInvestments(sheets);
@@ -794,7 +793,7 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     const invested = amountIn(row, 'invested', currency);
     if (invested) {
       cashflows.push({
-        id: id('cf'),
+        id: distinct(factId('cf', book, position.id, 'call', row.date, invested, row.instrument)),
         vehicleId,
         positionId: position.id,
         type: 'Capital Call',
@@ -813,7 +812,7 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     const proceeds = amountIn(row, 'proceeds', currency);
     if (proceeds) {
       cashflows.push({
-        id: id('cf'),
+        id: distinct(factId('cf', book, position.id, 'proceeds', row.date, proceeds, row.instrument)),
         vehicleId,
         positionId: position.id,
         type: 'Distribution',
@@ -859,7 +858,7 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
       if (row.fairValue === undefined) continue;
       periods.add(asAt);
       valuations.push({
-        id: id('val'),
+        id: factId('val', position.id, asAt),
         positionId: position.id,
         period: asAt,
         recordedAt,
@@ -975,7 +974,7 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     for (const entry of row.contributions) {
       const column = CONTRIBUTION_COLUMNS.find(([name]) => name === entry.column)!;
       cashflows.push({
-        id: id('cf'),
+        id: distinct(factId('cf', book, investor.id, entry.column, row.date, entry.amount, row.description)),
         vehicleId,
         investorId: investor.id,
         type: column[1],

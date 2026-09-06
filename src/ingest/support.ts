@@ -39,7 +39,7 @@ import type {
   Cashflow, CashflowType, CurrencyCode, FxRate, Investor, Metric, Position, PositionKind,
   PositionValuation, VehicleBalanceSheet,
 } from '../domain/types';
-import { factId, slug } from './ids';
+import { distinctly, factId, slug } from './ids';
 import type { TableData } from './types';
 import type { Cell } from './workbook';
 import type { ImportPlan } from './pfdb';
@@ -544,6 +544,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
   const periods = new Set<PeriodId>();
 
   const book = slug(summary.fund).slice(0, 24);
+  const distinct = distinctly();
 
   /* --- holdings --------------------------------------------------- */
 
@@ -681,7 +682,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
         // that emits one flow fewer than it used to would otherwise renumber
         // every movement after it, and re-importing the corrected file would
         // add a second copy of each rather than replacing the first.
-        id: factId('cf', book, position.id, flow.type, row.date, flow.amount, flow.note),
+        id: distinct(factId('cf', book, position.id, flow.type, row.date, flow.amount, flow.note)),
         vehicleId,
         positionId: position.id,
         type: flow.type,
@@ -881,7 +882,7 @@ export function planSupportImport(sheets: TableData[], options: SupportOptions):
 
     const emit = (type: CashflowType, amount: number, note: string) => {
       cashflows.push({
-        id: factId('cf', book, investor!.id, type, row.date, amount, note),
+        id: distinct(factId('cf', book, investor!.id, type, row.date, amount, note)),
         vehicleId,
         investorId: investor!.id,
         type,
