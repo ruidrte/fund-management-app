@@ -1065,10 +1065,15 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       vintage: Number((opened?.date ?? recordedAt).slice(0, 4)),
       commitmentDate: opened?.date ?? recordedAt.slice(0, 10),
       commitment: fund.commitment,
-      // The share of the vehicle the mandate holds. It is what turns a figure
-      // reported for the whole fund into the holder's own exposure, and is
-      // never applied to the capital account, which is already theirs.
+      // The share of the vehicle the mandate holds. It is never applied to the
+      // capital account, which is already theirs, and — see `lookThrough` — it
+      // is not applied to the properties either.
       ownership: fund.share ?? 1,
+      // The properties are the fund's whole portfolio, at 100%, and are read
+      // as such: the question they answer is how the fund's portfolio is
+      // doing, not where the mandate's own few per cent sit. So the register
+      // does not sum to the position, and is not meant to.
+      lookThrough: 'underlying',
       // The register counts units, occupancy, rents and mortgages, so what
       // these funds hold is property; nothing finer is stated and nothing
       // finer is invented.
@@ -1409,34 +1414,34 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     const quarter = quarters.get(fund.key);
     if (!position || !quarter) continue;
 
-    // The properties are reported at 100% of the whole fund; the vehicle the
-    // mandate invests through holds a slice of it. That slice is what the fund
-    // sheet's portfolio fair value is of the fund's total equity, and it is the
-    // missing step between a property's figures and the holder's exposure.
+    // What share of the whole fund the vehicle the mandate invests through
+    // holds: the fund sheet's portfolio fair value over the fund's total
+    // equity. It is a monitor, and the workbook's own control sheet carries it
+    // as one — it is not applied to anything.
     //
-    // The denominator is the whole fund, including any property whose row the
-    // register does not have. Leaving such a property out of it would spread
-    // its value across the ones that are there, and the house convention is the
-    // opposite: a look-through that falls short of the portfolio says so, as
-    // coverage, rather than making up the difference.
+    // It used to be. Every property's value was multiplied by it and then by
+    // the mandate's own share, so a portfolio the fund reports at 485 million
+    // reached the screen as 17. That answered a question nobody asked. The
+    // properties are read at 100% of the fund, which is the level they are
+    // reported at and the level they are analysed at, and their register does
+    // not sum to the mandate's position.
     //
-    // Which is why the total is filed rather than recomputed. Recomputed from
-    // the rows that survived, it moves the moment one does not — and a ratio
-    // every look-through figure is scaled by must not depend on which rows a
-    // reader could use.
+    // The denominator is filed rather than recomputed, because recomputed from
+    // the rows that survived it moves the moment one does not, and a monitor
+    // somebody compares across quarters must not depend on which rows a reader
+    // could use.
     const equityTotal = (quarter.period
       ? get(series, GESAMT_EQUITY, fund.key, quarter.period)
       : undefined) ?? 0;
     const vehiclePortfolio = quarter.period
       ? get(series, PORTFOLIO, fund.key, quarter.period)
       : undefined;
-    const slice = equityTotal > 0 && vehiclePortfolio ? vehiclePortfolio / equityTotal : 1;
 
-    if (slice !== 1) {
-      notes.push(
-        `${fund.name}: the properties are reported at 100% of the fund and the vehicle holds `
-        + `${(slice * 100).toFixed(1)}% of it, so the look-through is scaled by that and then by `
-        + `the mandate's ${((fund.share ?? 1) * 100).toFixed(2)}%.`,
+    if (quarter.period && equityTotal > 0 && vehiclePortfolio) {
+      metric(
+        { kind: 'position', id: position.id }, quarter.period,
+        'vehicleShareOfFund', { value: vehiclePortfolio / equityTotal },
+        `${fund.name}: the vehicle's portfolio at fair value over the fund's total equity`,
       );
     }
 
@@ -1491,10 +1496,12 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
         name: entry.name,
         currency,
         investmentDate: entry.acquired ?? position.commitmentDate,
-        // The share of the property that reaches the vehicle. The mandate's own
-        // share of the vehicle is carried on the position and applied after,
-        // so neither level is applied twice.
-        ownership: slice,
+        // The property as the fund reports it, which is at 100%. What used to
+        // sit here was the vehicle's share of the fund's equity — a scaling
+        // smuggled into a field that means the fund's stake in the property,
+        // and applied on top of the mandate's own share, so a property worth
+        // 20m reached the screen as 700k.
+        ownership: 1,
         assetClass: 'Real Estate',
         sector,
         region: entry.region || 'Unclassified',

@@ -128,6 +128,21 @@ export interface Position {
   commitment: number;
   /** Vehicle's share of the position, as a fraction (0..1). */
   ownership: number;
+  /**
+   * The level the position's look-through assets are stated at.
+   *
+   * `vehicle`, the default: they are the vehicle's own exposure, so a
+   * breakdown of them sums to what the vehicle holds and is a decomposition of
+   * its net asset value.
+   *
+   * `underlying`: they are the underlying fund's whole portfolio as the fund
+   * reports it, at 100%, and a breakdown of them is about that portfolio. It
+   * does not sum to the position and is not meant to — an adviser monitoring a
+   * fund reads the fund's portfolio, not a sliver of it scaled to their own
+   * share. Scaling it down would answer a question nobody asked and lose the
+   * one figure that matters, the fund's own multiple on its properties.
+   */
+  lookThrough?: 'vehicle' | 'underlying';
   assetClass: string;
   subAssetClass?: string;
   region: string;

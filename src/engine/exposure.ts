@@ -107,7 +107,15 @@ export function positionExposure(
     weakest(results.map((r) => r.provenance)));
 }
 
-/** Exposure from look-through assets, scaled to the vehicle's economic share. */
+/**
+ * Exposure from look-through assets.
+ *
+ * Scaled to the vehicle's economic share, except where the position says its
+ * assets are the underlying fund's own portfolio at 100%. There the breakdown
+ * is about that portfolio and deliberately does not sum to the position: an
+ * adviser monitoring a fund reads the fund's properties, and scaling them to
+ * the holder's few per cent would answer a question nobody asked.
+ */
 export function lookThroughExposure(
   results: PositionResult[],
   assets: Asset[],
@@ -152,8 +160,12 @@ export function lookThroughExposure(
 
       const rate = rates.tryRate(asset.currency, currency, period) ?? 1;
       // The vehicle's economic exposure: the asset's value, its share held by
-      // the position, and the vehicle's share of the position.
-      const value = latest.unrealised * asset.ownership * result.position.ownership * rate;
+      // the position, and the vehicle's share of the position — unless the
+      // assets are the underlying fund's portfolio, which is read whole.
+      const share = result.position.lookThrough === 'underlying'
+        ? 1
+        : asset.ownership * result.position.ownership;
+      const value = latest.unrealised * share * rate;
       total += value;
 
       for (const [label, weight] of splitAttribution(assetDimension(asset, dimension))) {
@@ -168,7 +180,13 @@ export function lookThroughExposure(
 
   const breakdown = assemble(dimension, 'look-through', currency, total, 0, classified, buckets,
     weakest(provenances));
-  return {
+  // What the breakdown should add up to, for a screen that checks how much of
+  // the portfolio it accounts for. Absent where the assets are the underlying
+  // fund's own portfolio: there is nothing on this vehicle it should sum to,
+  // and comparing it with the position would report a fund thirty times its
+  // holder's stake as a coverage failure.
+  const whole = results.every((r) => r.position.lookThrough === 'underlying');
+  return whole ? breakdown : {
     ...breakdown,
     benchmarkTotal: results.reduce((sum, r) => sum + r.nav, 0),
   };

@@ -264,27 +264,39 @@ describe('the ledger', () => {
 });
 
 describe('the properties inside the funds', () => {
-  it('multiplies the two levels down instead of adding across them', () => {
+  it('reads the fund\u2019s portfolio whole, and does not scale it to the holder', () => {
+    // The properties answer how the fund's portfolio is doing. Scaling them by
+    // the vehicle's share of the fund and again by the holder's share of the
+    // vehicle answered a question nobody asked, and turned 90 million of
+    // property into 4.5 — which is neither the fund's portfolio nor anything
+    // the holder could check against a statement.
     const built = plan();
     const position = built.positions[0];
-    const exposure = built.assets
+    const whole = built.assets
       .filter((asset) => asset.positionId === position.id)
       .reduce((sum, asset) => {
         const filed = built.assetValuations
           .find((v) => v.assetId === asset.id && v.period === '2024Q2');
-        return sum + (filed?.unrealised ?? 0) * asset.ownership * position.ownership;
+        return sum + (filed?.unrealised ?? 0) * asset.ownership;
       }, 0);
-    // 90,000,000 at 100% of the fund, of which the vehicle holds half, of
-    // which the holder has a tenth.
-    expect(exposure).toBeCloseTo(4_500_000, 6);
+    expect(whole).toBeCloseTo(90_000_000, 6);
+    expect(built.assets.every((asset) => asset.ownership === 1)).toBe(true);
   });
 
-  it('states the level each figure was reported at rather than flattening it', () => {
+  it('says the register is the fund\u2019s portfolio, so nothing expects it to sum to the position', () => {
     const built = plan();
-    expect(built.assets[0].ownership).toBeCloseTo(0.5, 6);
+    expect(built.positions.every((position) => position.lookThrough === 'underlying')).toBe(true);
     expect(built.assetValuations[0].source).toContain('at 100% of the fund');
-    expect(built.notes.some((note) =>
-      /Rowan Housing Fund I: the properties are reported at 100%/.test(note))).toBe(true);
+  });
+
+  it('files the vehicle\u2019s share of the fund as a monitor rather than applying it', () => {
+    // The workbook's own control sheet carries this ratio as a monitor. It is
+    // worth keeping and worth not multiplying anything by.
+    const built = plan();
+    const share = built.metrics.filter((m) => m.metric === 'vehicleShareOfFund');
+    expect(share.length).toBeGreaterThan(0);
+    expect(share[0].value).toBeCloseTo(0.5, 6);
+    expect(share[0].scope.kind).toBe('position');
   });
 
   it('turns the affordability bands into the split a property is let under', () => {
