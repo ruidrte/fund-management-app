@@ -28,19 +28,24 @@ function folder(files: Record<string, Uint8Array>): FileSystemDirectoryHandle {
     }),
   });
 
+  const directoryHandle = (held: Map<string, Uint8Array>) => ({
+    kind: 'directory' as const,
+    async getFileHandle(file: string) {
+      const bytes = held.get(file);
+      if (!bytes) throw new Error('NotFoundError');
+      return fileHandle(bytes);
+    },
+    async *[Symbol.asyncIterator]() {
+      for (const [name, bytes] of held) yield [name, fileHandle(bytes)];
+    },
+  });
+
   return {
     kind: 'directory',
     async getDirectoryHandle(name: string) {
       const held = directories.get(name);
       if (!held) throw new Error('NotFoundError');
-      return {
-        kind: 'directory',
-        async getFileHandle(file: string) {
-          const bytes = held.get(file);
-          if (!bytes) throw new Error('NotFoundError');
-          return fileHandle(bytes);
-        },
-      };
+      return directoryHandle(held);
     },
   } as unknown as FileSystemDirectoryHandle;
 }
@@ -49,30 +54,30 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
 
 describe('reading a mark out of the folder', () => {
   it('renders it inline, so the page asks nobody for it', async () => {
-    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: PNG }), 'pam');
+    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: PNG }), ['pam']);
     expect(mark).toBe(`data:image/png;base64,${Buffer.from(PNG).toString('base64')}`);
   });
 
   it('takes whichever kind of file the house happens to have', async () => {
     const svg = new TextEncoder().encode('<svg/>');
-    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/ebg.svg`]: svg }), 'ebg');
+    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/ebg.svg`]: svg }), ['ebg']);
     expect(mark?.startsWith('data:image/svg+xml;base64,')).toBe(true);
   });
 
   it('has none for a house whose folder holds none', async () => {
     // The ordinary case. The house's colour stands on its own and nothing is
     // invented in its place.
-    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: PNG }), 'ut')).toBeUndefined();
-    expect(await brandFor(folder({}), 'pam')).toBeUndefined();
+    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: PNG }), ['ut'])).toBeUndefined();
+    expect(await brandFor(folder({}), ['pam'])).toBeUndefined();
   });
 
   it('passes over a file too large to be a mark', async () => {
     const huge = new Uint8Array(600 * 1024);
-    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: huge }), 'pam')).toBeUndefined();
+    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: huge }), ['pam'])).toBeUndefined();
   });
 
   it('passes over an empty file rather than rendering nothing at all', async () => {
-    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: new Uint8Array() }), 'pam'))
+    expect(await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: new Uint8Array() }), ['pam']))
       .toBeUndefined();
   });
 
@@ -80,8 +85,47 @@ describe('reading a mark out of the folder', () => {
     // `btoa(String.fromCharCode(...bytes))` throws above about sixty kilobytes,
     // which a logo comfortably is.
     const big = new Uint8Array(120 * 1024).fill(0x41);
-    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: big }), 'pam');
+    const mark = await brandFor(folder({ [`${BRAND_FOLDER}/pam.png`]: big }), ['pam']);
     expect(mark).toBeDefined();
     expect(mark!.length).toBeGreaterThan(150_000);
+  });
+});
+
+describe('the ways a filename can be off', () => {
+  const of = (name: string, names: string[]) =>
+    brandFor(folder({ [`${BRAND_FOLDER}/${name}`]: PNG }), names);
+
+  it('does not care about case, because Windows does not either', async () => {
+    // The drive treats `PAM.png` and `pam.png` as one file and this interface
+    // does not, so a mark named the obvious way would never be found.
+    expect(await of('PAM.PNG', ['pam'])).toBeDefined();
+  });
+
+  it('takes any of the names the house is known by', async () => {
+    // A book kept under a passphrase names its client folders with random hex,
+    // so the slug is no use as a filename — and somebody naming a file after
+    // their own house is as likely to write the whole name as the short one.
+    const names = ['4f2a91c0', 'PAM', 'Patrimonium Asset Management', 'pam'];
+    expect(await of('pam.png', names)).toBeDefined();
+    expect(await of('Patrimonium Asset Management.png', names)).toBeDefined();
+    expect(await of('4f2a91c0.png', names)).toBeDefined();
+  });
+
+  it('still refuses a file belonging to another house', async () => {
+    expect(await of('ebg.png', ['pam', 'Patrimonium Asset Management'])).toBeUndefined();
+  });
+
+  it('passes over a file the browser would not render', async () => {
+    expect(await of('pam.pdf', ['pam'])).toBeUndefined();
+    expect(await of('pam', ['pam'])).toBeUndefined();
+  });
+
+  it('resolves the same way every time where a house has two marks', async () => {
+    const both = folder({
+      [`${BRAND_FOLDER}/pam.svg`]: new TextEncoder().encode('<svg/>'),
+      [`${BRAND_FOLDER}/pam.png`]: PNG,
+    });
+    // Name order, not whatever the drive happens to list first.
+    expect((await brandFor(both, ['pam']))?.startsWith('data:image/png')).toBe(true);
   });
 });

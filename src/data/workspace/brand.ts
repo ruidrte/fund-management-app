@@ -37,25 +37,61 @@ export const BRAND_FOLDER = 'brand';
 /**
  * The mark for one client, as something an `img` can render directly.
  *
- * Undefined where the folder has none, which is the normal case: the house's
- * colour stands on its own and nothing is invented in its place.
+ * The folder is read and matched against rather than a path being guessed at,
+ * because there are three ways to get the guess wrong and each of them fails
+ * silently. A book kept under a passphrase names its client folders with random
+ * hex, so the slug is no use as a filename. Windows does not care whether the
+ * file is `PAM.svg` or `pam.svg` and this interface does. And somebody naming a
+ * file after their own house is as likely to write `patrimonium` as `pam`.
+ *
+ * So any of the names the house is known by will do, in any case, with any of
+ * the extensions a browser renders. Undefined where the folder has none, which
+ * is the normal case: the house's colour stands on its own and nothing is
+ * invented in its place.
  */
 export async function brandFor(
-  root: FileSystemDirectoryHandle, slug: string,
+  root: FileSystemDirectoryHandle, names: string[],
 ): Promise<string | undefined> {
-  for (const [extension, type] of Object.entries(TYPES)) {
-    let bytes: Uint8Array | undefined;
-    try {
-      bytes = await readBytes(root, `${BRAND_FOLDER}/${slug}.${extension}`);
-    } catch {
-      // A folder the browser will not read is not an error worth stopping for.
-      // The mark is decoration; the figures are not.
-      continue;
-    }
+  const wanted = new Set(
+    names.filter(Boolean).map((name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '')),
+  );
+  if (wanted.size === 0) return undefined;
+
+  let files: string[];
+  try {
+    files = await filesIn(root);
+  } catch {
+    // A folder the browser will not read is not an error worth stopping for.
+    // The mark is decoration; the figures are not.
+    return undefined;
+  }
+
+  for (const file of files) {
+    const parsed = /^(.*)\.([a-z0-9]+)$/i.exec(file);
+    if (!parsed) continue;
+    const type = TYPES[parsed[2].toLowerCase()];
+    if (!type) continue;
+    if (!wanted.has(parsed[1].toLowerCase().replace(/[^a-z0-9]+/g, ''))) continue;
+
+    const bytes = await readBytes(root, `${BRAND_FOLDER}/${file}`).catch(() => undefined);
     if (!bytes || bytes.length === 0 || bytes.length > LARGEST) continue;
     return `data:${type};base64,${base64(bytes)}`;
   }
   return undefined;
+}
+
+/** The names in the brand folder, or nothing where there is no such folder. */
+async function filesIn(root: FileSystemDirectoryHandle): Promise<string[]> {
+  const folder = await root.getDirectoryHandle(BRAND_FOLDER).catch(() => undefined);
+  if (!folder) return [];
+  const names: string[] = [];
+  const iterable = folder as unknown as AsyncIterable<[string, FileSystemHandle]>;
+  for await (const [name, handle] of iterable) {
+    if (handle.kind === 'file') names.push(name);
+  }
+  // In name order, so a folder holding two marks for one house resolves the
+  // same way every time rather than by whatever the drive happens to list first.
+  return names.sort();
 }
 
 /**

@@ -376,7 +376,8 @@ export function Storage() {
           Put a file named after the client in a <code>brand</code> folder beside the data —
           {' '}<code>brand/pam.svg</code>, <code>brand/ebg.png</code>, <code>brand/ut.svg</code> — and
           it appears beside the client&rsquo;s name and on its tab. SVG, PNG, JPEG, WebP or GIF, up to
-          half a megabyte. Nothing is needed: without one, the house&rsquo;s colour stands on its own.
+          half a megabyte. The short name, the full name or the folder name will all do, in any
+          case. Nothing is needed: without one, the house&rsquo;s colour stands on its own.
         </p>
         <p className="mb-0 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
           A logo belongs to the house rather than to this software, which is why it is not carried in

@@ -60,7 +60,9 @@ export async function openBook(
   // reading it per render would put a file read behind every keystroke.
   const marks = new Map<string, string>();
   await Promise.all(clients.map(async (client) => {
-    const mark = await brandFor(root, client.slug);
+    const mark = await brandFor(root, [
+      client.slug, client.shortName, client.name, client.id.replace(/^client-/, ''),
+    ]);
     if (mark) marks.set(client.id, mark);
   }));
 
