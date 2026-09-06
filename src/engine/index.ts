@@ -40,6 +40,7 @@ import { knownPeriods, restatementDates } from './asof';
 export * from './asof';
 export * from './fx';
 export * from './metrics';
+export * from './basis';
 export * from './completeness';
 export * from './gross';
 export * from './net';

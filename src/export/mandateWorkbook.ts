@@ -31,11 +31,12 @@ import {
   formatPeriod, periodEndDate, previousPeriod, sortPeriods, type PeriodId,
 } from '../domain/period';
 import type {
-  Asset, AssetValuation, Cashflow, DataSet, Metric, Position, PositionValuation,
+  Asset, AssetValuation, Cashflow, CurrencyCode, DataSet, Metric, Position, PositionValuation,
 } from '../domain/types';
 import { slug } from '../ingest/ids';
 import type { TableData } from '../ingest/types';
 import { visibleAt } from '../engine/asof';
+import { returnBases } from '../engine/basis';
 
 export interface MandateWorkbookOptions {
   dataset: DataSet;
@@ -153,6 +154,7 @@ export function buildMandateWorkbook(options: MandateWorkbookOptions): MandateWo
     fundQuarter(funds, period, before, metrics),
     fundHistory(funds, metrics),
     ledger(funds, cashflows, rates, currency, holder),
+    returns(funds, period, currency, cashflows, valuations, rates, problems),
   ];
 
   return {
@@ -489,6 +491,79 @@ function assetHistory(funds: Fund[], assetValuations: AssetValuation[]): TableDa
   }
 
   return { sheetName: '25 ASSET HISTORY', rows };
+}
+
+/* --- 41 RETURNS -------------------------------------------------- */
+
+/**
+ * The holder's own return, on each basis, for every fund.
+ *
+ * Computed here rather than read: a return is a function of the ledger and the
+ * valuation, and the moment one is stored it is a restatement away from
+ * disagreeing with them. The workbook it imitates says the same thing about its
+ * own sheet — calculated live from the ledger, do not type over.
+ *
+ * A basis that could not admit every flow says so on its own row. A blank cell
+ * with a footnote somewhere else is how a missing exchange rate becomes a
+ * published number that nobody can reproduce.
+ */
+function returns(
+  funds: Fund[], period: PeriodId, currency: CurrencyCode,
+  cashflows: Cashflow[], valuations: PositionValuation[], rates: DataSet['fxRates'],
+  problems: string[],
+): TableData {
+  // The currency the holder reports in, which is whatever the book keeps a rate
+  // out of the fund currency into. One is enough; two and the workbook would
+  // have to say which, so it says nothing and restates into neither.
+  const into = [...new Set(rates.filter((rate) => rate.base === currency).map((rate) => rate.quote))];
+  const restateIn = into.length === 1 ? into[0] : undefined;
+  if (into.length > 1) {
+    problems.push(
+      `The book holds rates out of ${currency} into ${into.join(' and ')}, so sheet 41 does not `
+      + 'restate: which of them the holder reports in is not something the ledger says.',
+    );
+  }
+
+  const rows: Cell[][] = [
+    [TITLE],
+    ['41  Holder returns'],
+    ['Internal rate of return and multiples, on each basis. Calculated from sheet 40.'],
+    [],
+  ];
+
+  for (const fund of funds) {
+    const bases = returnBases({
+      cashflows,
+      valuations,
+      fxRates: rates,
+      positionId: fund.position.id,
+      currency: fund.position.currency,
+      period,
+      restateIn,
+    });
+
+    rows.push([fund.position.name]);
+    rows.push([null, 'Basis', 'Currency', 'IRR', 'Paid in', 'Distributed', 'Residual value',
+      'DPI', 'RVPI', 'TVPI', 'Flows', 'Left out']);
+    for (const basis of bases) {
+      rows.push([
+        null, basis.label, basis.currency,
+        basis.irr ?? null, basis.paidIn, basis.distributed, basis.residual,
+        basis.dpi ?? null, basis.rvpi ?? null, basis.tvpi ?? null,
+        basis.flows,
+        basis.missing.join('; ') || null,
+      ]);
+      for (const left of basis.missing) {
+        problems.push(
+          `${fund.position.name}, ${basis.label}: ${left} carries no rate, so the `
+          + 'return on that basis is not the whole ledger.',
+        );
+      }
+    }
+    rows.push([]);
+  }
+
+  return { sheetName: '41 RETURNS', rows };
 }
 
 /* --- 30 FUND QUARTER, 35 FUND HISTORY ---------------------------- */

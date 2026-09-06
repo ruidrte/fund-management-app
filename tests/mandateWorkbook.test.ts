@@ -158,6 +158,35 @@ describe('what the emitted workbook says about itself', () => {
   });
 });
 
+describe('the returns the workbook states', () => {
+  const sheet = () => emitted.sheets.find((s) => s.sheetName === '41 RETURNS')!;
+
+  it('gives every fund a return on every basis', () => {
+    const rows = sheet().rows.filter((row) => typeof row[3] === 'number');
+    // Two funds, four bases each — three in the fund currency and one restated.
+    expect(rows).toHaveLength(8);
+    expect(rows.map((row) => row[2])).toEqual(
+      ['USD', 'USD', 'USD', 'EUR', 'USD', 'USD', 'USD', 'EUR'],
+    );
+  });
+
+  it('states them cumulatively, so each basis reads against the one before it', () => {
+    const rows = sheet().rows.filter((row) => typeof row[3] === 'number').slice(0, 3);
+    const paidIn = rows.map((row) => row[4] as number);
+    expect(paidIn[0]).toBeLessThan(paidIn[1]);
+    expect(paidIn[1]).toBeLessThan(paidIn[2]);
+  });
+
+  it('computes them rather than reading them, so they cannot drift', () => {
+    // Nothing in the book carries a return; the sheet is a function of the
+    // ledger and the valuation, which is what the file it imitates says of its
+    // own: calculated live from sheet 40, do not type over.
+    expect(first.metrics.some((m) => /irr|tvpi/i.test(m.metric))).toBe(false);
+    const irr = sheet().rows.find((row) => typeof row[3] === 'number')![3] as number;
+    expect(Number.isFinite(irr)).toBe(true);
+  });
+});
+
 describe('the file itself', () => {
   it('is a workbook a spreadsheet can open, and this reader can read', () => {
     const bytes = toWorkbook(emitted.sheets);
