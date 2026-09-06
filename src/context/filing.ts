@@ -11,6 +11,7 @@ import { useCallback } from 'react';
 import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
 import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from '../ingest';
+import { supersede } from '../ingest/reference';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
 import {
   DEFAULT_CONVENTIONS, type CurrencyCode, type ReportingConventions,
@@ -95,13 +96,19 @@ export function useImport() {
       );
     }
 
-    // Reference data is replaced rather than appended: importing the same
-    // programme twice should leave one set of holdings, not two.
-    const keep = <T extends { id: string }>(existing: T[], incoming: T[]): T[] => {
-      const replaced = new Set(incoming.map((row) => row.id));
-      return [...existing.filter((row) => !replaced.has(row.id)), ...incoming];
-    };
     const all = <T,>(pick: (plan: ImportPlan) => T[]): T[] => plans.flatMap(pick);
+
+    // Reference data is replaced rather than appended. Holdings and investors
+    // belong to a vehicle; a company belongs to the holding it sits inside, so
+    // an import restates one holding's companies without touching another's.
+    const incomingPositions = all((plan) => plan.positions);
+    const positionsKept = supersede(dataset.positions, incomingPositions, (row) => row.vehicleId);
+    const investorsKept = supersede(
+      dataset.investors, all((plan) => plan.investors), (row) => row.vehicleId,
+    );
+    const assetsKept = supersede(
+      dataset.assets, all((plan) => plan.assets), (row) => row.positionId,
+    );
 
     // Every programme in a workbook reads the same rate table, so the same
     // rate arrives once per programme. Filing it two or three times over is not
@@ -114,9 +121,9 @@ export function useImport() {
 
     await book.commit(clientId, {
       reference: {
-        positions: keep(dataset.positions, all((plan) => plan.positions)),
-        assets: keep(dataset.assets, all((plan) => plan.assets)),
-        investors: keep(dataset.investors, all((plan) => plan.investors)),
+        positions: positionsKept,
+        assets: assetsKept,
+        investors: investorsKept,
       },
       facts: {
         positionValuations: all((plan) => plan.valuations),

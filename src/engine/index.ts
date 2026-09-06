@@ -123,8 +123,20 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
   const assetIds = new Set(assets.map((a) => a.id));
   const assetValuations = dataset.assetValuations.filter((v) => assetIds.has(v.assetId));
 
+  // A flow naming a holding or an investor the book no longer has is a
+  // dangling reference, not a narrower view: it survived a record being
+  // replaced under a new identifier, and counting it would put a retired
+  // investor's fees into the fund's total with nobody to attribute them to.
+  //
+  // Judged against the whole book rather than against what is in scope, since
+  // an investor login sees one investor and every other investor's flows are
+  // in the book, not dangling. Which of those a restricted view should count
+  // is a different question, and `restricted` is where it is answered.
+  const knownInvestors = new Set(dataset.investors.map((i) => i.id));
   const cashflows = dataset.cashflows.filter(
-    (c) => vehicleIds.has(c.vehicleId) && (!c.positionId || positionIds.has(c.positionId)),
+    (c) => vehicleIds.has(c.vehicleId)
+      && (!c.positionId || positionIds.has(c.positionId))
+      && (!c.investorId || knownInvestors.has(c.investorId)),
   );
   const investors = dataset.investors.filter((i) => vehicleIds.has(i.vehicleId));
   const balanceSheets = dataset.balanceSheets.filter((b) => vehicleIds.has(b.vehicleId));

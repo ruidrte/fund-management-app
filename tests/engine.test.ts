@@ -355,6 +355,40 @@ describe('the administrator overrides the market fixing', () => {
   });
 });
 
+describe('a flow naming a record the book no longer has', () => {
+  it('is left out, rather than counted with nobody to attribute it to', () => {
+    // A record replaced under a new identifier leaves its old flows behind.
+    // Counted, a retired investor's fees land in the fund's totals attributed
+    // to no one; the same investor then appears twice on the capital accounts
+    // screen with the commitment counted once each.
+    const withGhost: DataSet = {
+      ...meridian,
+      cashflows: [
+        ...meridian.cashflows,
+        {
+          ...meridian.cashflows.find((flow) => flow.investorId)!,
+          id: 'cf-ghost',
+          investorId: 'inv-retired-under-an-older-name',
+        },
+      ],
+    };
+    const before = analyse(meridian, scope()).net.product;
+    const after = analyse(withGhost, scope()).net.product;
+    expect(after.called).toBeCloseTo(before.called, 6);
+    expect(after.distributed).toBeCloseTo(before.distributed, 6);
+    expect(after.feesCumulative).toBeCloseTo(before.feesCumulative, 6);
+  });
+
+  it('still counts every flow of an investor the book does have', () => {
+    // The rule is about dangling references, not about narrowing a view: an
+    // investor login sees one investor and the others are in the book.
+    const mine = meridian.cashflows.filter((flow) => flow.investorId);
+    expect(mine.length).toBeGreaterThan(0);
+    const kept = analyse(meridian, scope()).net.product;
+    expect(kept.called).toBeGreaterThan(0);
+  });
+});
+
 describe('gross and net analysis', () => {
   const view = analyse(meridian, scope());
 
