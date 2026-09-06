@@ -12,7 +12,8 @@
 import { describe, expect, it } from 'vitest';
 import { isSupportWorkbook, planSupportImport, summariseSupport } from '../src/ingest/support';
 import { buildRateLookup } from '../src/engine/fx';
-import { supportSheets as sheets, BS, INVESTORS } from './fixtures/support';
+import { supportSheets as sheets, BS, INVESTMENTS, INVESTORS } from './fixtures/support';
+import type { TableData } from '../src/ingest/types';
 
 const plan = () => planSupportImport(sheets(), { vehicleId: 'veh-balt' });
 
@@ -84,6 +85,39 @@ describe('the portfolio ledger', () => {
   });
 });
 
+describe('a row that restates an earlier basis', () => {
+  /** The same fixture with the two rows a change of basis is carried as. */
+  const restated = () => {
+    const rows = [...INVESTMENTS.rows];
+    const total = rows.pop()!;
+    rows.push(
+      ['— Q2 2026 basis adjustments —'],
+      ['Baltic Wind', 'Co-investment', 'EUR', 46_193, 'Basis adj', 'Equalisation reclassified',
+        null, null, -20_000, null, null, null, null, 1],
+      total,
+    );
+    return sheets().map((sheet) => (sheet.sheetName === 'Investments'
+      ? { ...sheet, rows } as TableData
+      : sheet));
+  };
+
+  it('keeps it in the ledger and marks it as a restatement', () => {
+    const built = planSupportImport(restated(), { vehicleId: 'veh-balt' });
+    const row = built.cashflows.find((c) => c.description === 'Equalisation reclassified')!;
+
+    // Kept, because the basis it restates was published and the comparison
+    // between the two is what the change has to be explained by.
+    expect(row.amount).toBe(20_000);
+    expect(row.restatement).toBe(true);
+    expect(built.notes.some((n) => /1 basis adjustment/.test(n))).toBe(true);
+  });
+
+  it('leaves every other row alone', () => {
+    const built = planSupportImport(restated(), { vehicleId: 'veh-balt' });
+    expect(built.cashflows.filter((c) => c.restatement)).toHaveLength(1);
+  });
+});
+
 describe('a figure in the NAV column of a row that is not a valuation', () => {
   it('is refused, and said so', () => {
     const { valuations, problems } = plan();
@@ -109,6 +143,28 @@ describe('the rates beside the movements', () => {
     // capitalised costs it converted no longer tie to the accounting ledger.
     expect(gbp.map((r) => [r.date, r.rate])).toContainEqual(['2026-04-10', 1.5]);
     expect(gbp.map((r) => r.quote)).toEqual(gbp.map(() => 'EUR'));
+  });
+
+  it('are all kept when a date carries two different ones, and the clash is named', () => {
+    // Two notices from the same fund on one day, converted at rates the
+    // manager's own paperwork puts a week apart. Collapsing them to one
+    // silently reconverts whichever movement lost.
+    const rows = [...INVESTMENTS.rows];
+    const total = rows.pop()!;
+    rows.push(
+      ['Sound Grid', 'Primary', 'GBP', 46_122, 'Distribution', 'Dist #2',
+        null, null, null, null, null, 10_000, null, 1.42],
+      total,
+    );
+    const clashing = sheets().map((sheet) => (sheet.sheetName === 'Investments'
+      ? { ...sheet, rows } as TableData
+      : sheet));
+    const built = planSupportImport(clashing, { vehicleId: 'veh-balt' });
+
+    const onTheDay = built.fxRates.filter((r) => r.base === 'GBP' && r.date === '2026-04-10');
+    expect(onTheDay.map((r) => r.rate).sort()).toEqual([1.42, 1.5]);
+    expect(built.problems.some((p) => /states 1.42 .* where an earlier row on the same date states 1.5/.test(p)))
+      .toBe(true);
   });
 
   it('still translate a stock at the closing rate, which is the last of them', () => {

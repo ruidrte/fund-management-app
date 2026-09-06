@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { PeriodId } from '../src/domain/period';
 import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engine';
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
@@ -17,6 +18,85 @@ const scope = (over: Partial<Scope> = {}): Scope => ({
   vehicleId: 'veh-abif',
   period: '2026Q1',
   ...over,
+});
+
+describe('the rate a flow is translated at', () => {
+  // One holding in sterling: a call when the pound bought 1.20 euros and a
+  // distribution when it bought 1.50, with the quarter closing at 1.10.
+  const dataset = (): DataSet => ({
+    client: {
+      id: 'c', name: 'A house', shortName: 'X', reportingCurrency: 'EUR',
+      conventions: DEFAULT_CONVENTIONS,
+    },
+    vehicles: [{
+      id: 'v', clientId: 'c', kind: 'fund-of-funds', name: 'A fund', shortName: 'A',
+      currency: 'EUR', unitScale: 1, inceptionDate: '2025-01-01',
+      investorCommitment: 1_000_000, status: 'Investing',
+    }],
+    positions: [{
+      id: 'p', vehicleId: 'v', kind: 'fund', name: 'Sterling', currency: 'GBP',
+      vintage: 2025, commitmentDate: '2025-01-01', commitment: 1_000_000, ownership: 1,
+      assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
+    }],
+    assets: [],
+    investors: [],
+    positionValuations: [{
+      id: 'val', positionId: 'p', period: '2026Q2', recordedAt: '2026-07-01T00:00:00.000Z',
+      nav: 500_000, source: 'statement',
+    }],
+    assetValuations: [],
+    cashflows: [
+      {
+        id: 'call', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -500_000,
+        currency: 'GBP', date: '2025-03-02', period: '2025Q1',
+        recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: true, status: 'Settled',
+      },
+      {
+        id: 'dist', vehicleId: 'v', positionId: 'p', type: 'Distribution', amount: 40_000,
+        currency: 'GBP', date: '2026-04-10', period: '2026Q2',
+        recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: false, status: 'Settled',
+      },
+    ],
+    balanceSheets: [],
+    metrics: [],
+    fxRates: ([
+      ['2025-03-02', '2025Q1', 1.2], ['2026-04-10', '2026Q2', 1.5], ['2026-06-30', '2026Q2', 1.1],
+    ] as Array<[string, PeriodId, number]>).map(([date, period, rate]) => ({
+      id: `fx-${date}`, base: 'GBP', quote: 'EUR', rate, date, period,
+      recordedAt: '2026-07-01T00:00:00.000Z', kind: 'closing' as const, source: 'ledger',
+      authority: 'manual' as const,
+    })),
+  });
+
+  const view = () => analyse(dataset(), {
+    clientId: 'c', vehicleId: 'v', period: '2026Q2', presentationCurrency: 'EUR',
+  });
+
+  it('takes the rate of the day it moved, not the rate of its quarter', () => {
+    // 500,000 at 1.20 is 600,000 — not 550,000, which is what the quarter's
+    // closing rate would make of a call paid fifteen months earlier.
+    expect(view().gross.totals.drawn).toBeCloseTo(600_000, 2);
+    expect(view().gross.totals.distributed).toBeCloseTo(60_000, 2);
+  });
+
+  it('leaves a restatement out of the totals and out of the return', () => {
+    const book = dataset();
+    const plain = analyse(book, {
+      clientId: 'c', vehicleId: 'v', period: '2026Q2', presentationCurrency: 'EUR',
+    });
+    book.cashflows.push({
+      id: 'adj', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -100_000,
+      currency: 'GBP', date: '2026-04-01', period: '2026Q2',
+      recordedAt: '2026-07-01T00:00:00.000Z', affectsCommitment: false, status: 'Settled',
+      restatement: true,
+    });
+    const after = analyse(book, {
+      clientId: 'c', vehicleId: 'v', period: '2026Q2', presentationCurrency: 'EUR',
+    });
+
+    expect(after.gross.totals.drawn).toBeCloseTo(plain.gross.totals.drawn, 2);
+    expect(after.gross.totals.irr).toBeCloseTo(plain.gross.totals.irr!, 9);
+  });
 });
 
 describe('point-in-time selection', () => {

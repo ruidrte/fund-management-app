@@ -1059,8 +1059,7 @@ export function planStagedImport(sheets: TableData[], options: StagedOptions): I
       recordedAt,
       status: 'Confirmed' as const,
       description: movement.description,
-      sourceDetail: movement.note || undefined,
-      source: `${source} — register`,
+      sourceDetail: movement.note ? `${movement.note} — ${source}` : `${source} — register`,
     };
     if (called !== 0) {
       cashflows.push({
@@ -1129,9 +1128,9 @@ export function planStagedImport(sheets: TableData[], options: StagedOptions): I
         status: 'Confirmed',
         affectsCommitment: true,
         description: text(row[at('description')]) || 'Capital call',
-        sourceDetail: `Paid ${format(toNumber(row[at('cashPaidEur')]) ?? 0)} ${control.currency} `
-          + `at ${toNumber(row[at('fxAtTradeDate')]) ?? '—'}`,
-        source: `${source} — portfolio database extract`,
+        sourceDetail: `${source} — portfolio database extract. Paid `
+          + `${format(toNumber(row[at('cashPaidEur')]) ?? 0)} ${control.currency} at `
+          + `${toNumber(row[at('fxAtTradeDate')]) ?? '—'}`,
       } as Cashflow);
 
       const rate = toNumber(row[at('fxAtTradeDate')]);
