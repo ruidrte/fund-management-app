@@ -57,7 +57,7 @@ export function Exposure({ view }: { view: QuarterView }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card
+      <Card tier="gross"
         title="Basis"
         subtitle="What the percentages are measured on"
         actions={
@@ -88,7 +88,7 @@ export function Exposure({ view }: { view: QuarterView }) {
         </p>
       </Card>
 
-      <Card title="Concentration" subtitle="How much of the portfolio sits in its largest holdings">
+      <Card tier="gross" title="Concentration" subtitle="How much of the portfolio sits in its largest holdings">
         <div className="grid gap-3 sm:grid-cols-4">
           <Stat label="Largest holding" value={percent(concentration.top1)} />
           <Stat label="Top three" value={percent(concentration.top3)} />
@@ -105,7 +105,7 @@ export function Exposure({ view }: { view: QuarterView }) {
           const breakdown = source[key];
           if (!breakdown || breakdown.slices.length === 0) return null;
           return (
-            <ChartCard
+            <ChartCard tier="gross"
               key={`${basis}-${key}`}
               title={label}
               subtitle={`Share of ${money(breakdown.total, view.currency)}`}

@@ -42,6 +42,12 @@ export interface ClientDefinition {
    * able to tell whose figures are in front of them without reading the name.
    */
   accent: string;
+  /**
+   * The house's mark, as a data URI. None of the three is here yet: a logo is
+   * somebody's registered brand, and drawing an approximation of one would be
+   * worse than the coloured chip that stands in its place.
+   */
+  logo?: string;
   vehicles: VehicleDefinition[];
 }
 
@@ -192,6 +198,7 @@ export const KNOWN_CLIENTS = CLIENT_DEFINITIONS.map((client) => ({
   name: client.name,
   shortName: client.shortName,
   accent: client.accent,
+  logo: client.logo,
 }));
 
 /**
@@ -218,6 +225,7 @@ export function buildClientStructure(clientId: string): {
       shortName: seed.shortName,
       reportingCurrency: seed.reportingCurrency,
       accent: seed.accent,
+      logo: seed.logo,
     },
     vehicles: seed.vehicles.map((vehicle) => ({
       id: `veh-${vehicle.key}`,

@@ -15,6 +15,8 @@ export interface ClientSummary {
   shortName: string;
   /** The house's own colour, where the book records one. */
   accent?: string;
+  /** The house's mark, where the book carries one. */
+  logo?: string;
 }
 
 export interface Repository {

@@ -13,6 +13,7 @@ import {
 } from 'react';
 import { analyse, availableKnowledgeDates, availablePeriods, type QuarterView } from '../engine';
 import type { ClientSummary } from '../data';
+import { houseOf, type House } from '../components/common/house';
 import { useDataSource } from './DataSourceContext';
 import { useAuth } from './AuthContext';
 import { boundInvestorId, visibleClientIds } from '../auth/permissions';
@@ -246,6 +247,19 @@ export function useScope(): ScopeValue {
   const value = useContext(ScopeContext);
   if (!value) throw new Error('useScope must be used inside a ScopeProvider');
   return value;
+}
+
+/**
+ * The colours of the house whose book is open.
+ *
+ * Read from the client rather than passed down: every card and tile on every
+ * page wants it, and threading a colour through twelve components is how one of
+ * them ends up on the wrong client's.
+ */
+export function useHouse(): House {
+  const { clients, clientId } = useScope();
+  const accent = clients.find((client) => client.id === clientId)?.accent;
+  return useMemo(() => houseOf(accent), [accent]);
 }
 
 /**

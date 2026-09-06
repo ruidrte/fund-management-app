@@ -32,13 +32,7 @@ export function Header() {
   return (
     <header
       className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-3"
-      style={{
-        borderColor: 'var(--border)',
-        background: 'var(--surface-1)',
-        // The house's colour down the edge of the page, so the identity is on
-        // screen even where the client row is not.
-        borderLeft: accent ? `4px solid ${accent}` : undefined,
-      }}
+      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}
     >
       <div className="min-w-0">
         <h1 className="truncate text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -49,6 +43,9 @@ export function Header() {
         <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
           {client && (
             <>
+              {client.logo && (
+                <img src={client.logo} alt="" aria-hidden className="h-4 w-4 object-contain" />
+              )}
               <span className="font-semibold" style={{ color: accent ?? 'var(--text-primary)' }}>
                 {client.name}
               </span>

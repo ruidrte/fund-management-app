@@ -42,7 +42,7 @@ export function Portfolio({ view }: { view: QuarterView }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <Card
+      <Card tier="gross"
         title="Portfolio register"
         subtitle={`${view.gross.positions.length} holdings at ${formatPeriod(view.period)}, gross of vehicle fees`}
         provenance={view.gross.provenance}
@@ -156,7 +156,7 @@ export function Portfolio({ view }: { view: QuarterView }) {
         />
       </Card>
 
-      <Card
+      <Card tier="gross"
         title="How each unreported holding was filled"
         subtitle="The draft calculation, position by position"
         note="A holding that has not reported is never zero. It is rolled forward from its last

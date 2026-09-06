@@ -32,6 +32,17 @@ export interface Client {
    * invented.
    */
   accent?: string;
+  /**
+   * The house's mark, as an image the browser can render directly: a data URI,
+   * or a path inside the application's own assets. Not a link to somewhere
+   * else — a logo that fails to load leaves a broken image where the client's
+   * identity should be, and a request to a third party from a page showing a
+   * client's figures is a request that says who is looking at what.
+   *
+   * Absent, the house's colour stands on its own, which is what the chips in
+   * the scope bar are.
+   */
+  logo?: string;
 }
 
 /**

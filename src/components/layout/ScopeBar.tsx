@@ -89,6 +89,7 @@ export function ScopeBar() {
             label: client.shortName,
             title: client.name,
             accent: client.accent,
+            logo: client.logo,
           }))}
           selected={clientId}
           onSelect={setClientId}
@@ -196,6 +197,8 @@ interface Tab {
   title?: string;
   /** The house's own colour, where the tab is a house. */
   accent?: string;
+  /** The house's mark, where the book carries one. */
+  logo?: string;
 }
 
 /**
@@ -272,16 +275,27 @@ function TabRow({
                 boxShadow: active ? `inset 0 -3px 0 0 ${accent}` : 'none',
               }}
             >
-              {monogram && (
-                <span
-                  aria-hidden
-                  className="inline-block h-3.5 w-3.5 shrink-0 rounded-[3px]"
-                  style={{
-                    background: active ? (tab.accent ?? accent) : 'transparent',
-                    border: `2px solid ${tab.accent ?? 'var(--border-strong)'}`,
-                  }}
-                />
-              )}
+              {monogram && (tab.logo
+                ? (
+                  <img
+                    src={tab.logo}
+                    alt=""
+                    aria-hidden
+                    className="h-4 w-4 shrink-0 object-contain"
+                    style={{ opacity: active ? 1 : 0.55 }}
+                  />
+                )
+                // No mark in the book, so the house's colour stands on its own.
+                : (
+                  <span
+                    aria-hidden
+                    className="inline-block h-3.5 w-3.5 shrink-0 rounded-[3px]"
+                    style={{
+                      background: active ? (tab.accent ?? accent) : 'transparent',
+                      border: `2px solid ${tab.accent ?? 'var(--border-strong)'}`,
+                    }}
+                  />
+                ))}
               {tab.label}
             </button>
           );

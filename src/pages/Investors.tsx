@@ -49,22 +49,22 @@ export function Investors({ view }: { view: QuarterView }) {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiTile
+        <KpiTile tier="net"
           label={restricted ? 'Your net asset value' : 'Net asset value'}
           value={money(headline.nav, view.currency)}
           comparison={`${signedMoney(headline.nav - headline.navPrior, view.currency)} on the quarter`}
           provenance={net.provenance}
         />
-        <KpiTile
+        <KpiTile tier="net"
           label={restricted ? 'Your net TVPI' : 'Net TVPI'} value={multiple(headline.tvpi)}
           comparison={`DPI ${multiple(headline.dpi)} · RVPI ${multiple(headline.rvpi)}`}
           provenance={net.provenance}
         />
-        <KpiTile
+        <KpiTile tier="net"
           label={restricted ? 'Your net IRR' : 'Net IRR'} value={percent(headline.irr)}
           comparison="After fees and expenses" provenance={net.provenance}
         />
-        <KpiTile
+        <KpiTile tier="net"
           label={restricted ? 'Your commitment' : 'Fees since inception'}
           value={money(restricted ? headline.commitment : net.feesCumulative, view.currency)}
           comparison={restricted
@@ -80,7 +80,7 @@ export function Investors({ view }: { view: QuarterView }) {
         </p>
       )}
 
-      <Card
+      <Card tier="net"
         title="From portfolio to net asset value"
         subtitle="The bridge between the gross and net tiers"
         provenance={net.provenance}
@@ -117,7 +117,7 @@ export function Investors({ view }: { view: QuarterView }) {
         />
       </Card>
 
-      <ChartCard
+      <ChartCard tier="net"
         title={view.bridges.productNav.label}
         subtitle={`${formatPeriod(view.priorPeriod)} to ${formatPeriod(view.period)}, net of everything the vehicle charges`}
         provenance={view.bridges.productNav.provenance}
@@ -138,7 +138,7 @@ export function Investors({ view }: { view: QuarterView }) {
         }
       />
 
-      <Card
+      <Card tier="net"
         title="Capital accounts"
         subtitle={seesAll.allowed
           ? `${view.net.investors.length} investors at ${formatPeriod(view.period)}`

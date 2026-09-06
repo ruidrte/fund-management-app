@@ -7,6 +7,7 @@ import { DataSourceProvider } from './context/DataSourceContext';
 import { SignIn } from './components/auth/SignIn';
 import { Header } from './components/layout/Header';
 import { ScopeBar } from './components/layout/ScopeBar';
+import { useHouse } from './context/ScopeContext';
 import { Navigation, type PageId } from './components/layout/Navigation';
 import { Dashboard } from './pages/Dashboard';
 import { Portfolio } from './pages/Portfolio';
@@ -69,6 +70,7 @@ const WITHOUT_FIGURES: PageId[] = [...WITHOUT_DATA, 'intake', 'export', 'coverag
 function Shell() {
   const [page, setPage] = useState<PageId>('dashboard');
   const { loading, error, view, dataset, clientId } = useScope();
+  const house = useHouse();
   const standalone = WITHOUT_DATA.includes(page);
 
   // Nothing has been filed for this client. Every figure below would be zero,
@@ -80,7 +82,22 @@ function Shell() {
     && !WITHOUT_FIGURES.includes(page);
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="flex h-full flex-col"
+      style={{
+        // The house's colour framing the whole page. It is the one piece of
+        // context that cannot scroll away: whatever screen somebody is on and
+        // however far down it they are, the frame says whose book they are
+        // reading. A figure copied off the wrong client's screen is the
+        // expensive mistake this exists to prevent.
+        //
+        // A border rather than an inset shadow. A shadow is painted under the
+        // children, and the header and the scope bar paint their own
+        // backgrounds over it — which left the frame showing on two sides out
+        // of four.
+        border: house.base === 'var(--series-1)' ? undefined : `3px solid ${house.base}`,
+      }}
+    >
       <Header />
       <ScopeBar />
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

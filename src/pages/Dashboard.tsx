@@ -18,9 +18,11 @@ import { Waterfall } from '../components/charts/Waterfall';
 import { AllocationBars } from '../components/charts/AllocationBars';
 import { TrendLine, type TrendPoint } from '../components/charts/TrendLine';
 import { multiple, percent } from '../components/common/format';
+import { useHouse } from '../context/ScopeContext';
 
 export function Dashboard({ view }: { view: QuarterView }) {
   const { money, signedMoney } = useMoney();
+  const house = useHouse();
   const { dataset, clientId, vehicleId, periods, currency, knowledgeDate } = useScope();
   const gross = view.gross.totals;
   const net = view.net.product;
@@ -96,27 +98,30 @@ export function Dashboard({ view }: { view: QuarterView }) {
       </Card>
 
       <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+        <h2
+          className="mb-2 border-l-[3px] pl-2 text-xs font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--text-secondary)', borderColor: house.gross }}
+        >
           Gross — the portfolio, before anything the vehicle charges
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiTile
+          <KpiTile tier="gross"
             label="Portfolio NAV" value={money(gross.nav, view.currency)}
             comparison={`${signedMoney(navMove, view.currency)} on the quarter`}
             tone={navMove >= 0 ? 'positive' : 'negative'}
             provenance={view.gross.provenance}
           />
-          <KpiTile
+          <KpiTile tier="gross"
             label="Gross TVPI" value={multiple(gross.multiples.tvpi)}
             comparison={`DPI ${multiple(gross.multiples.dpi)} · RVPI ${multiple(gross.multiples.rvpi)}`}
             provenance={view.gross.provenance}
           />
-          <KpiTile
+          <KpiTile tier="gross"
             label="Gross IRR" value={percent(gross.irr)}
             comparison="Since inception, money-weighted"
             provenance={view.gross.provenance}
           />
-          <KpiTile
+          <KpiTile tier="gross"
             label="Invested" value={percent(gross.percentInvested)}
             comparison={`${money(gross.drawn, view.currency)} of ${money(gross.commitments, view.currency)}`}
             note={`${money(gross.openCommitment, view.currency)} still open`}
@@ -125,26 +130,29 @@ export function Dashboard({ view }: { view: QuarterView }) {
       </section>
 
       <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+        <h2
+          className="mb-2 border-l-[3px] pl-2 text-xs font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--text-secondary)', borderColor: house.net }}
+        >
           Net — what the investor holds, after fees and expenses
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <KpiTile
+          <KpiTile tier="net"
             label="Net asset value" value={money(net.components.vehicleNav, view.currency)}
             comparison={`Portfolio ${money(net.components.portfolio, view.currency)} + cash and accruals`}
             provenance={net.provenance}
           />
-          <KpiTile
+          <KpiTile tier="net"
             label="Net TVPI" value={multiple(net.multiples.tvpi)}
             comparison={`DPI ${multiple(net.multiples.dpi)} · RVPI ${multiple(net.multiples.rvpi)}`}
             provenance={net.provenance}
           />
-          <KpiTile
+          <KpiTile tier="net"
             label="Net IRR" value={percent(net.irr)}
             comparison="After management fees and expenses"
             provenance={net.provenance}
           />
-          <KpiTile
+          <KpiTile tier="net"
             label="Called" value={percent(net.percentCalled)}
             comparison={`${money(net.called, view.currency)} of ${money(net.commitment, view.currency)}`}
             note={`${money(net.feesInPeriod, view.currency)} of fees this quarter`}
@@ -155,7 +163,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
             would be a figure that reconciles to nothing.
           */}
           {net.units && (
-            <KpiTile
+            <KpiTile tier="net"
               label="Net asset value per share"
               value={net.units.navPerShare.toLocaleString('en-GB', {
                 minimumFractionDigits: 2, maximumFractionDigits: 2,
