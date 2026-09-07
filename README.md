@@ -55,7 +55,10 @@ protecting.
 On a machine that has never run it. Chrome or Edge — folder access needs one of
 them.
 
-On Windows there is nothing to type. Download `setup.bat` from this repository
+On Windows there is nothing to type. `repair.bat` is the companion for when
+files go missing or get changed by something other than you — a sync client, an
+interrupted download: it replaces every file here with a clean copy and leaves
+your book alone. Download `setup.bat` from this repository
 into the folder the code should live in, and double-click it. It checks for Git
 and Node and names the installer to run if either is missing, fetches the code,
 and hands over to `start.bat` — which is what opens the application every day
