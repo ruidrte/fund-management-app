@@ -56,7 +56,7 @@ cd /d "%~dp0"
 echo   [2/4] Putting it in "%CD%\%FOLDER%"...
 
 if exist "%FOLDER%\.git" (
-  if exist "%FOLDER%\package.json" (
+  if exist "%FOLDER%\src\main.tsx" (
     echo         Already here. Nothing to copy down.
     goto :ready
   )
@@ -98,7 +98,7 @@ rem notices: npm install says "up to date" over an empty folder in half a
 rem second, and the first thing that complains is the dev server, about a file
 rem nobody has heard of. So the thing that was supposed to arrive is checked
 rem for by name.
-if not exist "%FOLDER%\package.json" (
+if not exist "%FOLDER%\src\main.tsx" (
   echo.
   echo         The download finished but the files are not here - only the
   echo         hidden .git folder arrived. Usually a sign-in window was closed
