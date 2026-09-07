@@ -28,7 +28,11 @@ echo   [1/3] Looking for a newer version...
 git pull --ff-only >"%TEMP%\fr-pull.txt" 2>&1
 if errorlevel 1 (
   echo         Could not check. The version you already have still runs.
-  echo         ^(Usually this means no internet, or a file here was edited by hand.^)
+  echo         Git said:
+  rem Its own words, indented. A message naming the cause is worth more than a
+  rem guess at it: "could not check" with no reason sends somebody hunting
+  rem through their internet connection when the answer was a sign-in prompt.
+  for /f "usebackq delims=" %%l in ("%TEMP%\fr-pull.txt") do echo           %%l
 ) else (
   for /f "delims=" %%v in ('git rev-parse --short HEAD 2^>nul') do set AFTER=%%v
   if "!BEFORE!"=="!AFTER!" (
