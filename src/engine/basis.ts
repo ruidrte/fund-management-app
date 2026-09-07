@@ -100,7 +100,7 @@ const NOT_CASH: CashflowType[] = ['Commitment'];
  * The identity survives either way: TVPI is still DPI plus RVPI, because all
  * three are over the same denominator.
  */
-const PAID_IN: CashflowType[] = ['Capital Call', 'Equalisation', 'Fee', 'Expense'];
+export const PAID_IN: CashflowType[] = ['Capital Call', 'Equalisation', 'Fee', 'Expense'];
 
 export interface BasisRequest {
   cashflows: Cashflow[];

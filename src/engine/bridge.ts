@@ -86,7 +86,10 @@ export function commitmentsBridge(gross: GrossResult): Bridge {
   const steps: BridgeStep[] = [
     { key: 'opening', label: `Undrawn ${formatPeriod(prior)}`, value: t.undrawnPrior, type: 'anchor' },
     { key: 'new_commitments', label: 'New commitments', value: newCommitments, type: 'delta' },
-    { key: 'calls', label: 'Capital calls', value: -t.callsInPeriod, type: 'delta' },
+    // The calls that consumed commitment, not every call: an equalisation is
+    // cash with the fund and steps the net asset value bridge, but it takes
+    // nothing out of what was promised and must not step this one.
+    { key: 'calls', label: 'Capital calls', value: -t.commitmentCallsInPeriod, type: 'delta' },
     { key: 'closing', label: `Undrawn ${formatPeriod(gross.period)}`, value: t.undrawn, type: 'anchor' },
   ];
 

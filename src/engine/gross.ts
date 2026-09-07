@@ -21,6 +21,7 @@ import { throughPeriod, forPeriod } from './asof';
 import type { RateLookup } from './fx';
 import { flowRateKind } from './fx';
 import { irrWithTerminalValue, multiples, type DatedFlow, type Multiples, moved } from './metrics';
+import { PAID_IN } from './basis';
 import {
   resolvePositionStates, weakest,
   type CoverageSummary, type PositionState, type Translate,
@@ -34,6 +35,8 @@ export interface PositionResult {
   nav: number;
   navPrior: number;
   commitment: number;
+  /** Every unit paid, the denominator of the multiples. */
+  paidIn: number;
   drawn: number;
   distributed: number;
   recallable: number;
@@ -41,6 +44,8 @@ export interface PositionResult {
   /** Undrawn plus recallable — what the vehicle may still have to fund. */
   openCommitment: number;
   callsInPeriod: number;
+  /** Of those, the part that consumed the commitment. */
+  commitmentCallsInPeriod: number;
   distributionsInPeriod: number;
   valueChange: number;
   fxEffect: number;
@@ -73,6 +78,8 @@ export interface GrossResult {
     undrawnPrior: number;
     openCommitment: number;
     callsInPeriod: number;
+    commitmentCallsInPeriod: number;
+    paidIn: number;
     distributionsInPeriod: number;
     valueChange: number;
     fxEffect: number;
@@ -153,7 +160,7 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       c.amount * (rates.onDate(c.currency, presentationCurrency, c.date, flowKind) ?? 1);
 
     // Calls are negative from the vehicle's perspective; report them positive.
-    const ledgerDrawn = -sum(toDate.filter(isCall).map(convertFlow));
+    const ledgerDrawn = -sum(toDate.filter(drawsCommitment).map(convertFlow));
     const ledgerDistributed = sum(toDate.filter(isDistribution).map(convertFlow));
     const ledgerRecallable = sum(
       toDate.filter((c) => isDistribution(c) && c.recallable).map(convertFlow),
@@ -176,7 +183,7 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       ? toDate.filter((c) => comparePeriods(c.period, reportedPeriod) > 0)
       : [];
     // Calls are stored negative; both of these are reported positive.
-    const callsSince = -sum(after.filter(isCall).map(convertFlow));
+    const callsSince = -sum(after.filter(drawsCommitment).map(convertFlow));
     const distributionsSince = sum(after.filter(isDistribution).map(convertFlow));
     const recallableSince = sum(
       after.filter((c) => isDistribution(c) && c.recallable).map(convertFlow),
@@ -199,7 +206,20 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       ? ledgerRecallable
       : statedRecallable + recallableSince;
     const callsInPeriod = -sum(inPeriod.filter(isCall).map(convertFlow));
+    // What the quarter took out of the commitment, which is what the
+    // commitments bridge steps by. Different from the line above, which is
+    // cash and is what the net asset value bridge steps by.
+    const commitmentCallsInPeriod = -sum(inPeriod.filter(drawsCommitment).map(convertFlow));
     const distributionsInPeriod = sum(inPeriod.filter(isDistribution).map(convertFlow));
+
+    // Everything paid, whether or not it consumed the commitment.
+    //
+    // Where there is no ledger to compute it from — a book loaded from
+    // historical statements has cumulative drawn per holding and no flows at
+    // all — what the statement says was drawn stands in. It is all that is
+    // known, and a multiple over a denominator of nothing is no multiple.
+    const paying = toDate.filter(isPaidIn);
+    const paidIn = paying.length > 0 ? -sum(paying.map(convertFlow)) : drawn;
 
     const commitment = position.commitment * closingRate;
     // Not clamped at zero. A position drawn beyond its commitment — recycling,
@@ -240,7 +260,9 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       distributionsInPeriod,
       valueChange,
       fxEffect,
-      multiples: multiples({ paidIn: drawn, distributed, nav }),
+      paidIn,
+      commitmentCallsInPeriod,
+      multiples: multiples({ paidIn, distributed, nav }),
       ledger: { drawn: ledgerDrawn, distributed: ledgerDistributed },
       stated: state.reported
         ? { drawn: statedDrawn, distributed: statedDistributed }
@@ -286,14 +308,21 @@ function aggregate(
   // commitments bridge closes; carrying them at current rates would leave the
   // whole translation effect stranded in the residual.
   const flowKind = flowRateKind(conventions);
+  // At the rate of the day each one moved, exactly as the current cumulative
+  // is. Drawn is not a stock that gets retranslated at a closing rate — it is
+  // the sum of what was paid, and each payment happened once, at one rate.
+  // Converting last quarter's at the quarter rate and this quarter's at the
+  // day rate left the difference between the two bases in the commitments
+  // bridge, where it read as 15,327.80 of PAS Infra commitment that was
+  // neither drawn nor undrawn.
   const priorConvert = (c: Cashflow) =>
-    c.amount * (rates.tryRate(c.currency, currency, c.period, flowKind) ?? 1);
+    c.amount * (rates.onDate(c.currency, currency, c.date, flowKind) ?? 1);
   const priorFlows = throughPeriod(
     cashflows.filter((c) => c.positionId),
     prior,
     knowledgeDate,
   ).filter((c) => moved(c));
-  const drawnPrior = -sum(priorFlows.filter(isCall).map(priorConvert));
+  const drawnPrior = -sum(priorFlows.filter(drawsCommitment).map(priorConvert));
 
   const commitmentsPrior = sum(
     positions
@@ -332,17 +361,53 @@ function aggregate(
     undrawnPrior,
     openCommitment: sum(results.map((r) => r.openCommitment)),
     callsInPeriod: sum(results.map((r) => r.callsInPeriod)),
+    commitmentCallsInPeriod: sum(results.map((r) => r.commitmentCallsInPeriod)),
+    paidIn: sum(results.map((r) => r.paidIn)),
     distributionsInPeriod: sum(results.map((r) => r.distributionsInPeriod)),
     valueChange: sum(results.map((r) => r.valueChange)),
     fxEffect: sum(results.map((r) => r.fxEffect)),
     percentInvested: commitments > 0 ? drawn / commitments : 0,
-    multiples: multiples({ paidIn: drawn, distributed, nav }),
+    multiples: multiples({ paidIn: sum(results.map((r) => r.paidIn)), distributed, nav }),
     irr: irrWithTerminalValue(allFlows, nav, new Date(periodEndDate(period))),
   };
 }
 
 function isCall(c: Cashflow): boolean {
   return c.type === 'Capital Call' || c.type === 'Equalisation';
+}
+
+/**
+ * A call that consumes the commitment, as against one that is merely money
+ * with the fund.
+ *
+ * `drawn` and `undrawn` are the two halves of a commitment, so only the flows
+ * that use it up belong in them. An equalisation is real money — paid, earning,
+ * and in the return — but it does not consume what was promised: a fund that
+ * has called its whole commitment and taken an equalisation beside it is fully
+ * drawn, not over-drawn. The test is what a drawdown notice states as remaining
+ * commitment, and that is the figure this has to tie to.
+ *
+ * Counting it put PK TG's ledger 23,599 above the statement it reconciles
+ * against and pushed the undrawn bridge out by the same amount: one definition,
+ * two checks failing.
+ */
+function drawsCommitment(c: Cashflow): boolean {
+  return isCall(c) && c.affectsCommitment !== false;
+}
+
+/**
+ * Every unit the holding was paid, which is the denominator of a multiple.
+ *
+ * A different question from how much commitment was consumed, and the reason
+ * one figure could not serve both: PAS Infra has drawn 22,650,587 against its
+ * commitment and 22,800,502 paid in, and both are right. Multiples and rates of
+ * return run on the second; `drawn` and `undrawn` on the first.
+ *
+ * Shares its definition with `basis.ts` rather than restating it, because two
+ * definitions of paid-in is how two answers to one question begin.
+ */
+function isPaidIn(c: Cashflow): boolean {
+  return PAID_IN.includes(c.type);
 }
 
 function isDistribution(c: Cashflow): boolean {

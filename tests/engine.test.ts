@@ -994,3 +994,76 @@ describe('coverage across currencies', () => {
     expect(carried.nav).toBeCloseTo(11_220 / 11, 2);
   });
 });
+
+describe('what a commitment is drawn through, and what a multiple is measured on', () => {
+  // Two questions that were answered by one number, and could not both be
+  // right: PK TG's statement says 28,400,000 drawn and its ledger carries
+  // 28,423,599 paid, the difference being five equalisations. An equalisation
+  // is money with the fund — it earns, and it belongs in the return — and it
+  // consumes none of what was promised.
+  const commitment = 1_000_000;
+  const book = (): DataSet => ({
+    client: { id: 'c', name: 'C', shortName: 'C', reportingCurrency: 'EUR' },
+    vehicles: [{
+      id: 'v', clientId: 'c', kind: 'fund-of-funds', name: 'V', shortName: 'V', currency: 'EUR',
+      unitScale: 1, inceptionDate: '2024-01-01', investorCommitment: commitment,
+      manager: 'M', administrator: 'A', domicile: 'LU', status: 'Investing',
+    }],
+    positions: [{
+      id: 'p', vehicleId: 'v', kind: 'fund', name: 'Holding', currency: 'EUR',
+      vintage: 2024, commitmentDate: '2024-01-01', commitment, ownership: 1,
+      assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
+    }],
+    assets: [], investors: [], assetValuations: [], balanceSheets: [], metrics: [], fxRates: [],
+    positionValuations: [{
+      id: 'val', positionId: 'p', period: '2026Q1', recordedAt: '2026-04-01T00:00:00Z',
+      nav: 900_000, source: 'GP report',
+    }],
+    cashflows: [
+      {
+        id: 'call', vehicleId: 'v', positionId: 'p', type: 'Capital Call', amount: -800_000,
+        currency: 'EUR', date: '2024-03-31', period: '2024Q1', recordedAt: '2024-04-01T00:00:00Z',
+        affectsCommitment: true, status: 'Settled',
+      },
+      {
+        id: 'eq', vehicleId: 'v', positionId: 'p', type: 'Equalisation', amount: -50_000,
+        currency: 'EUR', date: '2024-03-31', period: '2024Q1', recordedAt: '2024-04-01T00:00:00Z',
+        affectsCommitment: false, status: 'Settled',
+      },
+    ],
+  });
+
+  const held = () => analyse(book(), { clientId: 'c', vehicleId: 'v', period: '2026Q1' });
+
+  it('draws the commitment down by the calls alone', () => {
+    const [holding] = held().gross.positions;
+    expect(holding.drawn).toBe(800_000);
+    expect(holding.undrawn).toBe(200_000);
+  });
+
+  it('measures the multiple over everything paid, equalisation included', () => {
+    const [holding] = held().gross.positions;
+    expect(holding.paidIn).toBe(850_000);
+    expect(holding.multiples.tvpi).toBeCloseTo(900_000 / 850_000, 10);
+  });
+
+  it('leaves the return alone: an equalisation is a flow with the fund', () => {
+    // The internal rate of return runs over every flow whatever it consumed.
+    expect(held().gross.totals.irr).toBeDefined();
+  });
+
+  it('steps the commitments bridge by the calls and the value bridge by the cash', () => {
+    const totals = held().gross.totals;
+    expect(totals.commitmentCallsInPeriod).toBe(0);
+    expect(totals.callsInPeriod).toBe(0);
+    // And in the quarter they landed, the two differ by the equalisation.
+    const opening = analyse(book(), { clientId: 'c', vehicleId: 'v', period: '2024Q1' }).gross.totals;
+    expect(opening.commitmentCallsInPeriod).toBe(800_000);
+    expect(opening.callsInPeriod).toBe(850_000);
+  });
+
+  it('closes every identity it is checked against', () => {
+    const report = held().checks;
+    expect(report.results.filter((c) => c.status === 'fail')).toEqual([]);
+  });
+});
