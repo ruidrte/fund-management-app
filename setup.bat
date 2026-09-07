@@ -56,8 +56,18 @@ cd /d "%~dp0"
 echo   [2/4] Putting it in "%CD%\%FOLDER%"...
 
 if exist "%FOLDER%\.git" (
-  echo         Already here. Nothing to copy down.
-  goto :ready
+  if exist "%FOLDER%\package.json" (
+    echo         Already here. Nothing to copy down.
+    goto :ready
+  )
+  echo.
+  echo         There is a half-finished copy here: the hidden .git folder
+  echo         arrived and the files did not.
+  echo.
+  echo         Delete the "%FOLDER%" folder and run this file again.
+  echo.
+  pause
+  exit /b 1
 )
 
 if exist "%FOLDER%" (
@@ -81,6 +91,24 @@ if errorlevel 1 (
   exit /b 1
 )
 echo         Done.
+
+rem A clone can return success and still leave nothing behind - an interrupted
+rem checkout, a sign-in that was closed, a disk that filled. Nothing downstream
+rem notices: npm install says "up to date" over an empty folder in half a
+rem second, and the first thing that complains is the dev server, about a file
+rem nobody has heard of. So the thing that was supposed to arrive is checked
+rem for by name.
+if not exist "%FOLDER%\package.json" (
+  echo.
+  echo         The download finished but the files are not here - only the
+  echo         hidden .git folder arrived. Usually a sign-in window was closed
+  echo         or the connection dropped part way.
+  echo.
+  echo         Delete the "%FOLDER%" folder and run this file again.
+  echo.
+  pause
+  exit /b 1
+)
 
 :ready
 echo   [4/4] Handing over to start.bat, which is what you use from now on.
