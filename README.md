@@ -52,8 +52,18 @@ protecting.
 
 ### Getting to your own data, from nothing
 
-On a machine that has never run it, in order. Chrome or Edge — folder access
-needs one of them.
+On a machine that has never run it. Chrome or Edge — folder access needs one of
+them.
+
+On Windows there is nothing to type. Download `setup.bat` from this repository
+into the folder the code should live in, and double-click it. It checks for Git
+and Node and names the installer to run if either is missing, fetches the code,
+and hands over to `start.bat` — which is what opens the application every day
+after that. Moving to a second computer is the same file: the code comes from
+here, and only the book, which is your data and is not in this repository, has
+to travel with you.
+
+Elsewhere, or by hand:
 
 ```
 1  Install Node LTS            nodejs.org, the LTS installer, defaults are fine
