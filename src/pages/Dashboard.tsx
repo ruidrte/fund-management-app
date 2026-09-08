@@ -145,6 +145,24 @@ export function Dashboard({ view }: { view: QuarterView }) {
         >
           Net — {levels.net}
         </h2>
+        {/*
+          Narrowed to one holding, the net tier either narrows with it or says
+          it cannot. An LP commits to the fund of funds, not to what the fund of
+          funds holds, so for most books there is no called capital to put
+          beside a single holding — and the mandate's own called capital divided
+          into one holding's value is a multiple describing neither.
+        */}
+        {view.net.about === 'unattributed' ? (
+          <p
+            className="rounded border p-3 text-xs"
+            style={{ color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+          >
+            The net figures are the whole vehicle&rsquo;s and this view is one holding&rsquo;s.
+            An investor commits to the vehicle rather than to what it holds, so its called
+            capital and its multiples cannot be attributed to a single holding — clear the
+            holding filter to see them.
+          </p>
+        ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiTile tier="net"
             label="Net asset value" value={money(net.components.vehicleNav, view.currency)}
@@ -187,6 +205,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
             />
           )}
         </div>
+        )}
       </section>
 
       {bases.length > 0 && (

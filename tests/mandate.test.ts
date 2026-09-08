@@ -223,6 +223,23 @@ describe('the ledger', () => {
     // is the adviser's fee and nothing else — marking the holder's leg too
     // would count every call twice, once each way, and net it to nothing.
     expect(holder.every((flow) => flow.chargedFor === undefined)).toBe(true);
+
+    // It does say which fund it is the other side of, though. Without that a
+    // capital account can only be the mandate's whole account, and a screen
+    // narrowed to one fund divides that whole account into one fund's value.
+    const funds = new Set(fund.map((flow) => flow.positionId));
+    expect(holder.every((flow) => flow.mirrors !== undefined && funds.has(flow.mirrors)))
+      .toBe(true);
+  });
+
+  it('marks the adviser’s fee as charged for a fund, not as mirroring one', () => {
+    // The two markers answer different questions. `chargedFor` admits the fee
+    // into the fund's return, which is the whole point of an after-fees basis;
+    // `mirrors` only says which fund a leg belongs to. A fee is not the other
+    // side of anything — it was paid to the adviser, not to the fund.
+    const fees = flows().filter((flow) => flow.type === 'Fee');
+    expect(fees.every((fee) => fee.chargedFor !== undefined)).toBe(true);
+    expect(fees.every((fee) => fee.mirrors === undefined)).toBe(true);
   });
 
   it('files the adviser’s fee against the holder and never against the funds', () => {

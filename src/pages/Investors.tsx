@@ -140,9 +140,18 @@ export function Investors({ view }: { view: QuarterView }) {
 
       <Card tier="net"
         title="Capital accounts"
-        subtitle={seesAll.allowed
+        subtitle={`${seesAll.allowed
           ? `${view.net.investors.length} investors at ${formatPeriod(view.period)}`
-          : `Your capital account at ${formatPeriod(view.period)}`}
+          : `Your capital account at ${formatPeriod(view.period)}`}${
+          // The holding filter reaches this page too. Where the book attributes
+          // its investor flows the accounts narrow with it, and where it does
+          // not they stay the vehicle's — either way the reader is told which,
+          // because the two look identical and are not.
+          view.net.about === 'holding'
+            ? ' — narrowed to the holding in scope'
+            : view.net.about === 'unattributed'
+              ? ' — the whole vehicle’s, which its book cannot attribute to a holding'
+              : ''}`}
         note={seesAll.allowed
           ? `Ownership is the share of net capital contributed, not of commitment — the two differ whenever investors entered at different times.`
           : `${seesAll.reason} Ownership is your share of net capital contributed, not of commitment.`}

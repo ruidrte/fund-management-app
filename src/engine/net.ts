@@ -131,11 +131,39 @@ export interface NetInputs {
   rates: RateLookup;
   conventions: ReportingConventions;
   knowledgeDate?: string;
+  /**
+   * The holding the view has been narrowed to, where it has been narrowed to
+   * one.
+   *
+   * A capital account is the investor's whole account with the vehicle. Asked
+   * about a single holding inside it, the account has to narrow with the
+   * portfolio or every multiple divides one fund's value by the mandate's
+   * entire called capital — which is what put a 0.30x under a holding worth
+   * 0.97x. Only a book that attributes its investor flows to holdings can
+   * answer the narrower question; `about` on the result says whether this one
+   * did.
+   */
+  holding?: string;
 }
+
+/**
+ * What a set of net figures is about.
+ *
+ *   vehicle      the vehicle as a whole, which is the usual case
+ *   holding      one holding, with the investor flows attributed to it
+ *   unattributed one holding was asked for and the book cannot say which of the
+ *                investor's flows went to it, so these are still the vehicle's
+ *                figures. They must not be shown beside the holding's NAV: an
+ *                LP commits to a fund of funds and not to what it holds, and
+ *                for most books that is the honest answer rather than a gap.
+ */
+export type NetAbout = 'vehicle' | 'holding' | 'unattributed';
 
 export interface NetResult {
   product: ProductNetResult;
   investors: InvestorNetResult[];
+  /** Whether the figures narrowed with the scope. */
+  about: NetAbout;
   /**
    * True when the investor list is incomplete — an investor login sees only its
    * own account. Ownership is then taken on commitment against the vehicle's
@@ -147,10 +175,54 @@ export interface NetResult {
 }
 
 export function computeNet(inputs: NetInputs): NetResult {
-  const product = computeProductNet(inputs);
+  const narrowed = narrowing(inputs);
+  const product = computeProductNet(inputs, narrowed);
   product.units = productUnits(inputs, product);
-  const investors = computeInvestorNet(inputs, product);
-  return { product, investors, restricted: isRestricted(inputs) };
+  const investors = computeInvestorNet(inputs, product, narrowed);
+  return { product, investors, about: narrowed.about, restricted: isRestricted(inputs) };
+}
+
+/**
+ * How far the investor side can follow the scope, and which flows come with it.
+ *
+ * A book attributes its investor flows only if every one of them says which
+ * holding it belongs to — the holder's leg of a call through `mirrors`, the
+ * adviser's fee through `chargedFor`. Half an attribution is worse than none,
+ * because the flows that carry no marker would simply vanish from the account
+ * and the multiple would be built on what is left.
+ */
+interface Narrowing {
+  about: NetAbout;
+  /** The holding's own commitment, where the figures are that holding's. */
+  scale: number;
+  keep: (flow: Cashflow) => boolean;
+}
+
+function narrowing(inputs: NetInputs): Narrowing {
+  const whole: Narrowing = { about: 'vehicle', scale: 1, keep: () => true };
+  const holding = inputs.holding;
+  if (holding === undefined) return whole;
+
+  const investorSide = inputs.cashflows.filter((c) => c.investorId !== undefined && moved(c));
+  const attributed = investorSide.length > 0
+    && investorSide.every((c) => c.mirrors !== undefined || c.chargedFor !== undefined);
+  if (!attributed) return { ...whole, about: 'unattributed' };
+
+  // The commitment narrows with the flows. The holding's own commitment is
+  // what the portfolio side already computed for this scope, in presentation
+  // currency, so it is taken from there rather than re-derived — two routes to
+  // one figure is two figures waiting to disagree.
+  const held = inputs.gross.totals.commitments;
+  const total = sum(inputs.vehicles.map((v) => v.investorCommitment
+    * (inputs.rates.tryRate(v.currency, inputs.presentationCurrency, inputs.period) ?? 1)));
+
+  return {
+    about: 'holding',
+    scale: total > 0 ? held / total : 1,
+    keep: (flow) => flow.investorId === undefined
+      || flow.mirrors === holding
+      || flow.chargedFor === holding,
+  };
 }
 
 /**
@@ -164,12 +236,16 @@ export function computeNet(inputs: NetInputs): NetResult {
 function totalCommitmentOf(
   inputs: NetInputs,
   convert: (amount: number, currency: CurrencyCode, period: PeriodId) => number,
+  narrowed: Narrowing,
 ): number {
   const visible = sum(inputs.investors.map((i) => convert(i.commitment, i.currency, inputs.period)));
   const stated = sum(inputs.vehicles.map(
     (v) => convert(v.investorCommitment, v.currency, inputs.period),
   ));
-  return Math.max(visible, stated);
+  // Narrowed to one holding, the commitment is the part of the vehicle's that
+  // went to it. Scaled rather than replaced, so an investor's own commitment
+  // narrows in the same proportion as the fund's and the two still agree.
+  return Math.max(visible, stated) * narrowed.scale;
 }
 
 /** True when the visible investors do not account for the vehicle's commitment. */
@@ -187,7 +263,7 @@ function isRestricted(inputs: NetInputs): boolean {
   return visible < stated * 0.999;
 }
 
-function computeProductNet(inputs: NetInputs): ProductNetResult {
+function computeProductNet(inputs: NetInputs, narrowed: Narrowing): ProductNetResult {
   const {
     gross, cashflows, balanceSheets, vehicles, period,
     presentationCurrency, rates, conventions, knowledgeDate,
@@ -212,14 +288,21 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
     };
   });
 
-  const current = selectSheets(period);
+  // A vehicle's cash, receivables and accruals belong to the vehicle. Asked
+  // about one holding inside it there is nothing to apportion them by, so the
+  // holding's net asset value is its portfolio value and nothing else — adding
+  // the mandate's whole cash balance to one fund's NAV would be an answer to a
+  // question nobody asked.
+  const current = narrowed.about === 'holding' ? [] : selectSheets(period);
   const components = buildComponents(gross.totals.nav, current, rates, presentationCurrency, period);
   const componentsPrior = buildComponents(
-    gross.totals.navPrior, selectSheets(prior), rates, presentationCurrency, prior,
+    gross.totals.navPrior,
+    narrowed.about === 'holding' ? [] : selectSheets(prior),
+    rates, presentationCurrency, prior,
   );
 
   const investorFlows = cashflows.filter(
-    (c) => inScope.has(c.vehicleId) && c.investorId !== undefined,
+    (c) => inScope.has(c.vehicleId) && c.investorId !== undefined && narrowed.keep(c),
   );
   const toDate = throughPeriod(investorFlows, period, knowledgeDate)
     .filter((c) => moved(c));
@@ -239,7 +322,9 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
   const called = sum(toDate.filter(isInvestorCall).map((c) => convert(c.amount, c.currency, c.period)));
   const distributed = -sum(toDate.filter(isInvestorDistribution).map((c) => convert(c.amount, c.currency, c.period)));
 
-  const feeFlows = cashflows.filter((c) => inScope.has(c.vehicleId) && isCost(c));
+  const feeFlows = cashflows.filter(
+    (c) => inScope.has(c.vehicleId) && isCost(c) && narrowed.keep(c),
+  );
   const feesCumulative = sum(
     throughPeriod(feeFlows, period, knowledgeDate)
       .filter((c) => moved(c))
@@ -251,7 +336,7 @@ function computeProductNet(inputs: NetInputs): ProductNetResult {
       .map((c) => convert(Math.abs(c.amount), c.currency, c.period)),
   );
 
-  const commitment = totalCommitmentOf(inputs, convert);
+  const commitment = totalCommitmentOf(inputs, convert, narrowed);
 
   const flows: DatedFlow[] = toDate
     .filter((c) => isInvestorCall(c) || isInvestorDistribution(c))
@@ -395,7 +480,9 @@ export function productUnits(
   };
 }
 
-function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): InvestorNetResult[] {
+function computeInvestorNet(
+  inputs: NetInputs, product: ProductNetResult, narrowed: Narrowing,
+): InvestorNetResult[] {
   // No vehicle filter here: `cashflows` and `investors` are already narrowed to
   // the vehicles in scope before they reach the engine, so matching on the
   // investor alone is both correct and one fewer place to get the set wrong.
@@ -409,7 +496,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   const convert = (amount: number, currency: CurrencyCode, p: PeriodId) =>
     amount * (rates.tryRate(currency, presentationCurrency, p, flowKind) ?? 1);
 
-  const totalCommitment = totalCommitmentOf(inputs, convert);
+  const totalCommitment = totalCommitmentOf(inputs, convert, narrowed);
   // With an incomplete register the net-contributed denominator is unknowable,
   // so ownership falls back to commitment against the vehicle's stated total.
   const restricted = isRestricted(inputs);
@@ -418,7 +505,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
   // would misallocate whenever investors entered at different times.
   const accounts = investors.map((investor) => {
     const own = cashflows.filter(
-      (c) => c.investorId === investor.id && moved(c),
+      (c) => c.investorId === investor.id && moved(c) && narrowed.keep(c),
     );
     const toDate = throughPeriod(own, period, knowledgeDate);
     const toPrior = throughPeriod(own, prior, knowledgeDate);
@@ -434,7 +521,7 @@ function computeInvestorNet(inputs: NetInputs, product: ProductNetResult): Inves
     return {
       investor,
       hasOwnFlows: toDate.length > 0,
-      commitment: convert(investor.commitment, investor.currency, period),
+      commitment: convert(investor.commitment, investor.currency, period) * narrowed.scale,
       called,
       distributed,
       netContributed: called - distributed,

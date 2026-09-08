@@ -212,6 +212,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     rates,
     conventions,
     knowledgeDate: scope.knowledgeDate,
+    holding: scope.positionId,
   });
 
   const bridges = {
@@ -241,6 +242,9 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
 
   const qualifications = [
     ...gross.qualifications,
+    ...(net.about === 'unattributed'
+      ? ['Narrowed to one holding — the net figures remain the vehicle\u2019s, which its book cannot attribute to a holding']
+      : []),
     ...(net.product.balanceSheetEstimated
       ? ['No vehicle balance sheet for the period — net NAV carries the last known one']
       : []),

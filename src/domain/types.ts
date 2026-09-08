@@ -303,6 +303,21 @@ export interface Cashflow {
    */
   chargedFor?: string;
   /**
+   * The holding whose flow this one is the other side of.
+   *
+   * An adviser runs no vehicle, so a capital call is one event seen twice: the
+   * money the mandate paid to the fund, and the money the holder paid out. Both
+   * legs are filed, one carrying `positionId` and one carrying `investorId`, and
+   * without this nothing on the holder's leg says which fund it went to. That is
+   * what makes a capital account answerable for one holding rather than only for
+   * the mandate as a whole.
+   *
+   * Deliberately not `chargedFor`, which admits a flow into a holding's own
+   * return: this leg is the same money the position leg already carries, and
+   * admitting it would net the two to nothing.
+   */
+  mirrors?: string;
+  /**
    * How the figure was arrived at, as the source states it: the notice it came
    * from, the components that were added up, the account it was booked to.
    *

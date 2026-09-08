@@ -875,6 +875,69 @@ describe('scoping', () => {
     const view = analyse(meridian, { clientId: 'client-ebg', period: '2026Q1' });
     expect(view.vehicles.every((v) => v.clientId === 'client-ebg')).toBe(true);
   });
+
+  /**
+   * The gross tier narrows to a holding and the net tier has to go with it, or
+   * say it cannot. It used to do neither: the vehicle's whole called capital
+   * stayed in the denominator under one holding's value, and a fund worth 0.97x
+   * of what was paid for it printed a net multiple of 0.30x. Both halves of the
+   * fix are pinned here — the answer where the book can attribute its investor
+   * flows to holdings, and the refusal where it cannot.
+   */
+  it('will not put the vehicle’s called capital beside one holding’s value', () => {
+    const one = analyse(meridian, scope({ positionId: 'pos-abif-social-infra' }));
+    const whole = analyse(meridian, scope());
+
+    // An LP commits to the fund of funds, not to what the fund of funds holds,
+    // so there is no attribution to be had and the view says so.
+    expect(one.net.about).toBe('unattributed');
+    expect(one.net.product.called).toBeCloseTo(whole.net.product.called, 6);
+    expect(one.qualifications.some((note) => note.startsWith('Narrowed to one holding')))
+      .toBe(true);
+
+    // And nothing changes for the vehicle itself, which is the usual case.
+    expect(whole.net.about).toBe('vehicle');
+    expect(whole.qualifications.some((note) => note.startsWith('Narrowed to one holding')))
+      .toBe(false);
+  });
+
+  it('narrows the capital account to the holding its flows name', () => {
+    const source = analyse(meridian, scope());
+    const positions = meridian.positions.filter((p) => p.vehicleId === 'veh-abif');
+    const mine = positions[0];
+    const investor = meridian.investors.find((i) => i.vehicleId === 'veh-abif')!;
+
+    // A mandate files each call twice — the money paid to the fund, and the
+    // same money paid out by the holder — and the holder's leg carries
+    // `mirrors` so it can be traced back to one fund. Built here by marking
+    // the book's existing investor flows, which is what the reader does.
+    const attributed: DataSet = {
+      ...meridian,
+      cashflows: meridian.cashflows.map((flow) => (
+        flow.vehicleId === 'veh-abif' && flow.investorId !== undefined
+          ? { ...flow, mirrors: flow.investorId === investor.id ? mine.id : positions[1].id }
+          : flow
+      )),
+    };
+
+    const narrowed = analyse(attributed, scope({ positionId: mine.id }));
+    expect(narrowed.net.about).toBe('holding');
+
+    // Only that investor's flows remain, and the commitment narrows with them:
+    // the holding's own commitment rather than the vehicle's.
+    const others = analyse(attributed, scope({ positionId: positions[1].id }));
+    expect(narrowed.net.product.called + others.net.product.called)
+      .toBeCloseTo(source.net.product.called, 6);
+    expect(narrowed.net.product.commitment)
+      .toBeLessThan(analyse(attributed, scope()).net.product.commitment);
+    expect(narrowed.net.product.commitment)
+      .toBeCloseTo(narrowed.gross.totals.commitments, 6);
+
+    // The holding's net asset value is its portfolio value: a vehicle's cash
+    // and accruals belong to the vehicle and there is nothing to split them by.
+    expect(narrowed.net.product.components.vehicleNav)
+      .toBeCloseTo(narrowed.gross.totals.nav, 6);
+  });
 });
 
 describe('where a book gets its conventions', () => {

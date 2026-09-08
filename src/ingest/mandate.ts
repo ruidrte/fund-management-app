@@ -1154,6 +1154,12 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     // the fund leg already carries, so marking it too would have the fee basis
     // count the same call twice, once each way, and net it to nothing.
     const against = type === 'Fee' ? positionOf.get(row.fund)?.id : undefined;
+    // Which fund the holder's leg is the other side of. It attributes without
+    // admitting: a capital account asked about Fund V alone can be built from
+    // it, and no basis counts the leg as a flow with the fund.
+    const mirrors = side === 'investor' && type !== 'Fee'
+      ? positionOf.get(row.fund)?.id
+      : undefined;
     periods.add(row.period);
     cashflows.push({
       id: distinct(factId(
@@ -1163,6 +1169,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       positionId: side === 'position' ? positionOf.get(row.fund)?.id : undefined,
       investorId: side === 'investor' ? investor.id : undefined,
       chargedFor: side === 'investor' ? against : undefined,
+      mirrors,
       type,
       amount,
       currency,
