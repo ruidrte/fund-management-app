@@ -263,6 +263,28 @@ describe('the ledger', () => {
   });
 });
 
+describe('the three levels a mandate reports at', () => {
+  it('names the vehicle the interest is held through, and the holder’s position in it', () => {
+    const built = planMandateImport(workbook(), { vehicleId: 'veh-mandate', holder: 'PK TG' });
+    const [first] = built.positions;
+    // The gross figures the manager publishes are the REIT LP's, not the
+    // fund's, and the holder's own position is a fraction of that. Three
+    // levels, and the fund's name belongs to none of them on its own.
+    expect(first.levels?.gross).toBe(built.metrics.find(
+      (m) => m.scope.id === first.id && m.metric === 'interestHeldThrough',
+    )?.text);
+    expect(first.levels?.net.startsWith('PK TG ')).toBe(true);
+  });
+
+  it('falls back to the file’s own wording when the application has no short name', () => {
+    // The workbook is written by the holder about themselves and has no reason
+    // to abbreviate their name, so the abbreviation comes from the book.
+    const built = planMandateImport(workbook(), { vehicleId: 'veh-mandate' });
+    expect(built.positions[0].levels?.net.startsWith('PK TG ')).toBe(false);
+    expect(built.positions[0].levels?.net).toBeTruthy();
+  });
+});
+
 describe('the properties inside the funds', () => {
   it('reads the fund\u2019s portfolio whole, and does not scale it to the holder', () => {
     // The properties answer how the fund's portfolio is doing. Scaling them by

@@ -192,7 +192,15 @@ export function DatabaseImport({
         : model
         ? planModelImport(outcome.sheets, { vehicleId: target.vehicleId })
         : mandate
-          ? planMandateImport(outcome.sheets, { vehicleId: target.vehicleId })
+          // The short name the application knows the holder by, so the screen
+          // can label the holder's own level "PK TG V" rather than repeating
+          // the whole of Pensionskasse Thurgau against every figure. The
+          // workbook does not carry it; a file written by the holder about
+          // themselves has no reason to abbreviate their name.
+          ? planMandateImport(outcome.sheets, {
+            vehicleId: target.vehicleId,
+            holder: vehicles.find((v) => v.id === target.vehicleId)?.shortName,
+          })
           : master
           ? planMasterImport(outcome.sheets, { vehicleId: target.vehicleId })
           : support

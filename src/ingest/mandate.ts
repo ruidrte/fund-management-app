@@ -352,6 +352,16 @@ export interface MandateSummary {
 export interface MandateOptions {
   vehicleId: string;
   recordedAt?: string;
+  /**
+   * The short name the application knows the holder by — "PK TG" rather than
+   * "Pensionskasse Thurgau".
+   *
+   * Used to name the holder's own level, so a screen showing three levels of
+   * one fund can label the middle one. The workbook does not carry it: it is
+   * written by and for the holder, and a file about yourself has no reason to
+   * abbreviate your name. Absent, the file's own wording stands.
+   */
+  holder?: string;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1045,6 +1055,7 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
   // somebody rewrites it, which would file a second set of holdings beside the
   // first on the next import.
   const book = slug(summary.holder, 16);
+  const holder = options.holder?.trim() || summary.holder;
 
   const distinct = distinctly();
 
@@ -1074,6 +1085,12 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       // doing, not where the mandate's own few per cent sit. So the register
       // does not sum to the position, and is not meant to.
       lookThrough: 'underlying',
+      // Three levels, and the fund's name belongs to none of them on its own.
+      // The gross figures are the REIT LP's, the holder's position is a
+      // fraction of that, and the properties below are the whole fund's.
+      levels: fund.vehicleName
+        ? { gross: fund.vehicleName, net: `${holder} ${fund.key}` }
+        : undefined,
       // The register counts units, occupancy, rents and mortgages, so what
       // these funds hold is property; nothing finer is stated and nothing
       // finer is invented.

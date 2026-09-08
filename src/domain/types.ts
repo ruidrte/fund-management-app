@@ -129,6 +129,21 @@ export interface Position {
   /** Vehicle's share of the position, as a fraction (0..1). */
   ownership: number;
   /**
+   * What the gross and net figures for this holding are about, where neither of
+   * them is the holding itself.
+   *
+   * Usually they are: a fund-of-funds holds a fund, the gross figures are that
+   * fund's and the net ones are the vehicle's share of it, and naming either
+   * would be repeating the holding's own name back.
+   *
+   * A mandate is the case where they are not. Pensionskasse Thurgau's interest
+   * in Rose Affordable Housing Preservation Fund V is held through Fund V REIT
+   * LP: the gross figures the manager reports are the REIT LP's, and the
+   * holder's own position is a fraction of it. Three levels, and the screen
+   * called all three by the fund's name until it said so.
+   */
+  levels?: { gross: string; net: string };
+  /**
    * The level the position's look-through assets are stated at.
    *
    * `vehicle`, the default: they are the vehicle's own exposure, so a

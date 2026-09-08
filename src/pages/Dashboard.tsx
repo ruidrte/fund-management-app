@@ -19,6 +19,7 @@ import { AllocationBars } from '../components/charts/AllocationBars';
 import { TrendLine, type TrendPoint } from '../components/charts/TrendLine';
 import { multiple, percent } from '../components/common/format';
 import { useHouse } from '../context/ScopeContext';
+import { levelsOf } from '../components/common/levels';
 
 export function Dashboard({ view }: { view: QuarterView }) {
   const { money, signedMoney } = useMoney();
@@ -83,6 +84,14 @@ export function Dashboard({ view }: { view: QuarterView }) {
 
   const navMove = gross.nav - gross.navPrior;
 
+  // What the two tiers are about, from the holdings themselves. For most
+  // products this is the generic wording; for a mandate it names the vehicle
+  // the interest is held through and the holder's own position in it.
+  const levels = useMemo(
+    () => levelsOf((dataset?.positions ?? []).filter((p) => p.vehicleId === vehicleId)),
+    [dataset, vehicleId],
+  );
+
   return (
     <div className="flex flex-col gap-4">
       <DraftBanner view={view} />
@@ -102,7 +111,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
           className="mb-2 border-l-[3px] pl-2 text-xs font-semibold uppercase tracking-wide"
           style={{ color: 'var(--text-secondary)', borderColor: house.gross }}
         >
-          Gross — the portfolio, before anything the vehicle charges
+          Gross — {levels.gross}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiTile tier="gross"
@@ -134,7 +143,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
           className="mb-2 border-l-[3px] pl-2 text-xs font-semibold uppercase tracking-wide"
           style={{ color: 'var(--text-secondary)', borderColor: house.net }}
         >
-          Net — what the investor holds, after fees and expenses
+          Net — {levels.net}
         </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <KpiTile tier="net"
