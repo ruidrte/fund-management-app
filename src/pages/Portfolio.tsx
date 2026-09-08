@@ -11,13 +11,14 @@ import { DataTable } from '../components/common/DataTable';
 import { ProvenanceBadge } from '../components/common/Badges';
 import { multiple, percent } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
-import { useMoney, useScope } from '../context/ScopeContext';
+import { useMoney, useScope, useHouse } from '../context/ScopeContext';
 
 type SortKey = 'name' | 'nav' | 'valueChange' | 'tvpi' | 'commitment';
 
 export function Portfolio({ view }: { view: QuarterView }) {
   const { money, signedMoney } = useMoney();
   const { setPositionId } = useScope();
+  const house = useHouse();
   const [sort, setSort] = useState<SortKey>('nav');
   const [onlyDrafted, setOnlyDrafted] = useState(false);
 
@@ -40,8 +41,62 @@ export function Portfolio({ view }: { view: QuarterView }) {
 
   const t = view.gross.totals;
 
+  /**
+   * The holdings whose gross and net figures are about something other than
+   * the holding itself.
+   *
+   * Empty for nearly every product, and the card is then not drawn: a
+   * fund-of-funds holds a fund, and a table saying so three times would be
+   * noise. It fills for a mandate, where the manager's figures are the
+   * vehicle's, the holder's position is a fraction of it, and the properties
+   * underneath are the whole fund's — three levels that do not reconcile and
+   * are not meant to.
+   */
+  const levelled = useMemo(
+    () => view.gross.positions.filter((row) => row.position.levels),
+    [view.gross.positions],
+  );
+
   return (
     <div className="flex flex-col gap-4">
+      {levelled.length > 0 && (
+        <Card
+          title="The levels this product reports at"
+          subtitle={`${levelled.length} holding(s) whose figures are about more than one thing`}
+          note="These do not add up to one another, and are not meant to. The gross figures are
+                the vehicle's, the net ones are this product's share of it, and the portfolio
+                below is the underlying fund's own, at 100%."
+        >
+          <DataTable
+            rows={levelled}
+            rowKey={(row) => row.position.id}
+            dense
+            columns={[
+              {
+                key: 'holding', header: 'Holding',
+                render: (row) => (
+                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {row.position.name}
+                  </span>
+                ),
+              },
+              {
+                key: 'gross', header: 'Gross',
+                render: (row) => (
+                  <span style={{ color: house.gross }}>{row.position.levels!.gross}</span>
+                ),
+              },
+              {
+                key: 'net', header: 'Net',
+                render: (row) => (
+                  <span style={{ color: house.net }}>{row.position.levels!.net}</span>
+                ),
+              },
+            ]}
+          />
+        </Card>
+      )}
+
       <Card tier="gross"
         title="Portfolio register"
         subtitle={`${view.gross.positions.length} holdings at ${formatPeriod(view.period)}, gross of vehicle fees`}
