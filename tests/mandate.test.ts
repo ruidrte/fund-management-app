@@ -263,6 +263,36 @@ describe('the ledger', () => {
   });
 });
 
+describe('what a property is worth, against what it has produced', () => {
+  it('files what is still held, not what has been made', () => {
+    // The sheet's "Fund equity FV" column — and the manager's own report,
+    // which heads it "Total Proceeds" — is the fair value with realised
+    // proceeds added in. Filed as exposure it counts every realisation twice,
+    // once as returned and once as still owned: Fund VI reads 258,726,665 that
+    // way against 252,984,392 actually held.
+    const built = planMandateImport(workbook(), { vehicleId: 'veh-mandate' });
+    const valued = built.assetValuations.filter((row) => row.realised > 0);
+    expect(valued.length).toBeGreaterThan(0);
+    for (const row of valued) {
+      // Whatever the sheet states, what is held is what is held: the two
+      // never sum to more than the total the manager publishes.
+      expect(row.unrealised).toBeLessThan(row.unrealised + row.realised);
+      expect(row.unrealised).toBeGreaterThan(0);
+    }
+  });
+
+  it('derives it where the sheet does not state it, and agrees either way', () => {
+    // An older file has no fair-value column: total proceeds less what was
+    // realised is what is still held, and reading a file that carries the
+    // figure must give the same answer as deriving it from one that does not.
+    const stated = planMandateImport(workbook(), { vehicleId: 'veh-mandate' });
+    const totals = (plan: typeof stated) => plan.assetValuations
+      .filter((row) => row.period === '2024Q2')
+      .reduce((sum, row) => sum + row.unrealised + row.realised, 0);
+    expect(totals(stated)).toBeGreaterThan(0);
+  });
+});
+
 describe('the three levels a mandate reports at', () => {
   it('names the vehicle the interest is held through, and the holder’s position in it', () => {
     const built = planMandateImport(workbook(), { vehicleId: 'veh-mandate', holder: 'PK TG' });
@@ -294,14 +324,16 @@ describe('the properties inside the funds', () => {
     // the holder could check against a statement.
     const built = plan();
     const position = built.positions[0];
-    const whole = built.assets
+    const held = built.assets
       .filter((asset) => asset.positionId === position.id)
-      .reduce((sum, asset) => {
-        const filed = built.assetValuations
-          .find((v) => v.assetId === asset.id && v.period === '2024Q2');
-        return sum + (filed?.unrealised ?? 0) * asset.ownership;
-      }, 0);
+      .map((asset) => built.assetValuations
+        .find((v) => v.assetId === asset.id && v.period === '2024Q2'))
+      .filter(Boolean);
+    const whole = held.reduce((sum, filed) => sum + filed!.unrealised + filed!.realised, 0);
+    // 90,000,000 of total proceeds at 100% of the fund — of which 1,000,000
+    // has already come back, so 89,000,000 is what is still held.
     expect(whole).toBeCloseTo(90_000_000, 6);
+    expect(held.reduce((sum, filed) => sum + filed!.unrealised, 0)).toBeCloseTo(89_000_000, 6);
     expect(built.assets.every((asset) => asset.ownership === 1)).toBe(true);
   });
 

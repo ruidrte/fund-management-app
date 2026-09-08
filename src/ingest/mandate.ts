@@ -688,6 +688,9 @@ function countryOf(state: string): string {
 /** Read as a fact, or derived from two that are — not kept twice. */
 const NOT_A_METRIC = [
   /^id$/, /^asset$/, /^fund equity fv/, /^invested capital$/, /^realised proceeds$/,
+  // What is still held. Read as a fact beside the total, and where the sheet
+  // does not carry it, derived from the total less what was realised.
+  /^equity fair value/,
   // Any column headed with a delta is the difference between two that are
   // already kept, whatever it goes on to name.
   /^δ/, /^ties\?$/, /^total$/, /^total cap \+ noi \+ rehab$/,
@@ -804,6 +807,17 @@ interface QuarterRow {
   /** Equity at fair value, at 100% of the fund, prior and current quarter. */
   equityBefore?: number;
   equity?: number;
+  /**
+   * What the fund still holds in the property, with what has already come back
+   * left out.
+   *
+   * Not the same as `equity`, which is what the sheet heads "Fund equity FV"
+   * and what the manager's own report heads "Total Proceeds": that figure is
+   * the fair value *plus* realised proceeds. Reading it as exposure overstates
+   * a portfolio by everything it has ever returned — Fund VI by 5,742,273 on a
+   * fair value of 252,984,392.
+   */
+  fairValue?: number;
   fmvBefore?: number;
   fmv?: number;
   capRate?: number;
@@ -868,6 +882,12 @@ function readQuarterSheets(sheets: TableData[]): Map<string, QuarterSheet> {
         line: i + 1,
         equityBefore: equity.length > 1 ? toNumber(row[equity[0].index]) : undefined,
         equity: equity.length > 0 ? toNumber(row[equity[equity.length - 1].index]) : undefined,
+        // Read where the sheet states it, derived where it does not. The two
+        // agree by construction — total proceeds less what was realised is
+        // what is still held — and a sheet that carries the figure is worth
+        // reading rather than reproducing.
+        fairValue: at.number(row, 'Equity fair value')
+          ?? at.number(row, 'Equity fair value (unrealised)'),
         fmvBefore: fmv.length > 1 ? toNumber(row[fmv[0].index]) : undefined,
         fmv: fmv.length > 0 ? toNumber(row[fmv[fmv.length - 1].index]) : undefined,
         capRate: at.number(row, 'Cap rate'),
@@ -1540,8 +1560,13 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
       const past = history.get(row.id) ?? new Map<PeriodId, Partial<AssetValuation>>();
       const filed = new Map<PeriodId, Partial<AssetValuation>>(past);
       if (quarter.period && row.equity !== undefined) {
+        // What is still held, not what has been made. The sheet's "Fund equity
+        // FV" column — and the manager's own "Total Proceeds" — is the fair
+        // value with realised proceeds added in; filing it as exposure counts
+        // every realisation twice, once as returned and once as still owned.
+        // Fund VI reads 258,726,665 that way against 252,984,392 held.
         filed.set(quarter.period, {
-          unrealised: row.equity,
+          unrealised: row.fairValue ?? row.equity - (row.realised ?? 0),
           invested: row.invested,
           realised: row.realised,
         });

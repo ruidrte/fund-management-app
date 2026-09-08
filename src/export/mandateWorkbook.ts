@@ -357,7 +357,7 @@ function quarter(
   header.push(
     `Fund equity FV\ngesamt-fund · ${formatPeriod(before)}`,
     `Fund equity FV\ngesamt-fund · ${formatPeriod(period)}`,
-    'Invested capital', 'Realised proceeds',
+    'Invested capital', 'Realised proceeds', 'Equity fair value',
   );
 
   const rows: Cell[][] = [
@@ -366,6 +366,10 @@ function quarter(
     [],
     header,
   ];
+
+  const total = (row?: { unrealised: number; realised: number }): Cell => (
+    row === undefined ? null : row.unrealised + row.realised
+  );
 
   const valued = (assetId: string, at: PeriodId) => latest(
     assetValuations.filter((v) => v.assetId === assetId && v.period === at),
@@ -386,10 +390,16 @@ function quarter(
         if (!metric) return null;
         return metric.value ?? metric.text ?? null;
       }),
-      then?.unrealised ?? null,
-      now?.unrealised ?? null,
+      // "Fund equity FV" is what the manager's own report heads "Total
+      // Proceeds": the fair value with what has come back added in. The book
+      // holds the two apart, so the total is put back together here and the
+      // fair value written beside it — the reader prefers the column that
+      // states it and derives it only from a file that does not.
+      total(then),
+      total(now),
       now?.invested ?? null,
       now?.realised ?? null,
+      now?.unrealised ?? null,
     ]);
   }
 
