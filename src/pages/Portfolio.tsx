@@ -57,6 +57,26 @@ export function Portfolio({ view }: { view: QuarterView }) {
     [view.gross.positions],
   );
 
+  /**
+   * Whether the look-through is the underlying fund's own portfolio.
+   *
+   * It changes what the table is: a decomposition of what this vehicle holds,
+   * or a report on somebody else's portfolio that this vehicle owns a sliver
+   * of. Saying which is the difference between a total that should tie to the
+   * holdings below and one that must not.
+   */
+  const whole = view.underlying.length > 0 && view.underlying.every((row) => row.whole);
+  const weakest = view.underlying.some((row) => row.provenance === 'missing') ? 'missing'
+    : view.underlying.some((row) => row.provenance === 'stale') ? 'stale' : 'reported';
+  const underlyingTotals = useMemo(() => view.underlying.reduce(
+    (total, row) => ({
+      invested: total.invested + row.invested,
+      realised: total.realised + row.realised,
+      unrealised: total.unrealised + row.unrealised,
+    }),
+    { invested: 0, realised: 0, unrealised: 0 },
+  ), [view.underlying]);
+
   return (
     <div className="flex flex-col gap-4">
       {levelled.length > 0 && (
@@ -91,6 +111,69 @@ export function Portfolio({ view }: { view: QuarterView }) {
                 render: (row) => (
                   <span style={{ color: house.net }}>{row.position.levels!.net}</span>
                 ),
+              },
+            ]}
+          />
+        </Card>
+      )}
+
+      {view.underlying.length > 0 && (
+        <Card tier="gross"
+          title={whole ? 'The underlying fund’s portfolio' : 'Look-through holdings'}
+          subtitle={`${view.underlying.length} at ${formatPeriod(view.period)}`}
+          provenance={weakest}
+          note={whole
+            ? `At 100% of the fund, which is the level these are reported and analysed at. They
+               do not sum to the holdings below and are not meant to: what they answer is how the
+               fund's own portfolio is doing.`
+            : `The assets inside the holdings below, at the share this vehicle holds of each.`}
+        >
+          <DataTable
+            rows={view.underlying}
+            rowKey={(row) => row.asset.id}
+            dense
+            columns={[
+              {
+                key: 'name', header: 'Company or property',
+                render: (row) => (
+                  <>
+                    <span className="block font-medium" style={{ color: 'var(--text-primary)' }}>
+                      {row.asset.name}
+                    </span>
+                    <span className="block text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                      {row.position.levels?.gross ?? row.position.name}
+                    </span>
+                  </>
+                ),
+              },
+              {
+                key: 'cost', header: 'Equity cost', align: 'right',
+                render: (row) => money(row.invested, view.currency),
+                total: money(underlyingTotals.invested, view.currency),
+              },
+              {
+                key: 'realised', header: 'Realised', align: 'right',
+                render: (row) => (row.realised === 0 ? '—' : money(row.realised, view.currency)),
+                total: money(underlyingTotals.realised, view.currency),
+              },
+              {
+                key: 'fv', header: 'Equity fair value', align: 'right',
+                render: (row) => money(row.unrealised, view.currency),
+                total: money(underlyingTotals.unrealised, view.currency),
+              },
+              {
+                key: 'multiple', header: 'FV + realised / cost', align: 'right',
+                render: (row) => (row.multiple === undefined ? '—' : multiple(row.multiple)),
+                total: underlyingTotals.invested > 0
+                  ? multiple(
+                    (underlyingTotals.unrealised + underlyingTotals.realised)
+                      / underlyingTotals.invested,
+                  )
+                  : '—',
+              },
+              {
+                key: 'as', header: 'Valued', align: 'right',
+                render: (row) => (row.period ? formatPeriod(row.period) : '—'),
               },
             ]}
           />

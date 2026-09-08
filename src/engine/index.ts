@@ -16,13 +16,17 @@ import {
 } from '../domain/period';
 import {
   DEFAULT_CONVENTIONS,
+  type Asset,
+  type AssetValuation,
   type CurrencyCode,
   type DataSet,
+  type Position,
   type Provenance,
   type ReportingConventions,
   type Scope,
   type Vehicle,
 } from '../domain/types';
+import { latestThrough } from './asof';
 import { buildRateLookup, type RateLookup } from './fx';
 import { computeGross, type GrossResult } from './gross';
 import { computeNet, type NetResult } from './net';
@@ -50,6 +54,23 @@ export * from './exposure';
 export * from './checks';
 export * from './inventory';
 
+/** One look-through holding, as at the period. */
+export interface UnderlyingHolding {
+  asset: Asset;
+  /** The holding it sits inside, and whether that holding is its own level. */
+  position: Position;
+  period?: PeriodId;
+  /** What it cost, what has come back, and what is still held. */
+  invested: number;
+  realised: number;
+  unrealised: number;
+  /** Value and proceeds over cost. Undefined where nothing was invested. */
+  multiple?: number;
+  /** True where the figures are the underlying fund's whole portfolio, at 100%. */
+  whole: boolean;
+  provenance: Provenance;
+}
+
 export interface QuarterView {
   scope: Scope;
   vehicles: Vehicle[];
@@ -67,6 +88,16 @@ export interface QuarterView {
   };
   exposure: Record<string, ExposureBreakdown>;
   lookThrough: Record<string, ExposureBreakdown>;
+  /**
+   * The look-through holdings themselves, valued at the period.
+   *
+   * The breakdowns above answer where the money is; this answers what it is
+   * in. For a fund-of-funds the two are close enough that the register of
+   * holdings suffices — but where the assets are the underlying fund's own
+   * portfolio, they are the thing being monitored, and their multiple over
+   * cost is the figure the reader came for.
+   */
+  underlying: UnderlyingHolding[];
   checks: CheckReport;
   /**
    * The rate table as it applied to this view, so a screen can answer "which
@@ -219,6 +250,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     bridges,
     exposure,
     lookThrough,
+    underlying: underlyingHoldings(assets, assetValuations, positions, scope),
     checks,
     rates,
     sourceCurrencies: [...new Set([
@@ -230,6 +262,43 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     isFinal: gross.coverage.complete && checks.ok && qualifications.length === 0,
     qualifications,
   };
+}
+
+/**
+ * Every look-through holding in scope, with its latest valuation at the period.
+ *
+ * Latest at or before, not exactly at: a property valued in March and not since
+ * is still held in June, and dropping it would shrink the portfolio rather than
+ * report it stale. The period it was actually valued at travels with it, so a
+ * screen can say which.
+ */
+function underlyingHoldings(
+  assets: Asset[], valuations: AssetValuation[], positions: Position[], scope: Scope,
+): UnderlyingHolding[] {
+  const positionOf = new Map(positions.map((position) => [position.id, position]));
+  return assets.flatMap((asset) => {
+    const position = positionOf.get(asset.positionId);
+    if (!position) return [];
+    const latest = latestThrough(
+      valuations.filter((row) => row.assetId === asset.id), scope.period, scope.knowledgeDate,
+    );
+    const invested = latest?.invested ?? 0;
+    const realised = latest?.realised ?? 0;
+    const unrealised = latest?.unrealised ?? 0;
+    return [{
+      asset,
+      position,
+      period: latest?.period,
+      invested,
+      realised,
+      unrealised,
+      multiple: invested > 0 ? (unrealised + realised) / invested : undefined,
+      whole: position.lookThrough === 'underlying',
+      provenance: latest === undefined
+        ? 'missing'
+        : (latest.period === scope.period ? 'reported' : 'stale'),
+    }];
+  });
 }
 
 function selectVehicles(dataset: DataSet, scope: Scope): Vehicle[] {

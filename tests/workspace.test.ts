@@ -329,6 +329,48 @@ describe('a reading that states a vehicle’s whole history', () => {
     expect(held!.dataset.cashflows.map((flow) => flow.id)).toEqual(['cf-derived']);
   });
 
+  it('reaches a valuation, which names a holding rather than a product', async () => {
+    // Three of the six kinds of fact do not carry a vehicle: a valuation names
+    // a holding, a company value names a company inside one, and a reported
+    // figure names whichever level it was collected at. Judging only the two
+    // that say so outright left those three exempt without saying so — they
+    // survived on the accident that their identifiers are derived from their
+    // content, and an accident is not a rule.
+    const { vault, slug, vehicles } = await bookWith('client-ebg');
+    const abif = vehicles.find((v) => v.shortName === 'AbIF')!;
+    await replaceReference(vault, slug, {
+      positions: [{
+        id: 'pos-1', vehicleId: abif.id, kind: 'fund', name: 'Held', currency: 'EUR',
+        vintage: 2024, commitmentDate: '2024-01-01', commitment: 1_000_000, ownership: 1,
+        assetClass: 'Infrastructure', region: 'Europe', status: 'Investing',
+      }],
+    });
+    await appendFacts(vault, slug, {
+      positionValuations: [{ ...valuation('val-old', 100), recordedAt: '2026-05-01T00:00:00Z' }],
+    });
+    await recordRestatement(vault, slug, [abif.id], '2026-06-01T00:00:00Z');
+    await appendFacts(vault, slug, {
+      positionValuations: [{ ...valuation('val-new', 120), recordedAt: '2026-06-01T00:00:00Z' }],
+    });
+
+    const seen = await readClient(vault, slug);
+    expect(seen!.dataset.positionValuations.map((row) => row.id)).toEqual(['val-new']);
+  });
+
+  it('keeps a valuation whose holding the book no longer names', async () => {
+    // Unresolvable is not superseded. A fact that cannot be placed with a
+    // product is kept and left to the engine, which drops what points at
+    // nothing — losing it here would be losing it silently.
+    const { vault, slug, vehicles } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, {
+      positionValuations: [{ ...valuation('val-orphan', 100), recordedAt: '2026-05-01T00:00:00Z' }],
+    });
+    await recordRestatement(vault, slug, [vehicles[0].id], '2026-06-01T00:00:00Z');
+
+    const seen = await readClient(vault, slug);
+    expect(seen!.dataset.positionValuations.map((row) => row.id)).toEqual(['val-orphan']);
+  });
+
   it('reads a book that has never had a restatement exactly as before', async () => {
     const { vault, slug } = await bookWith('client-ebg');
     await appendFacts(vault, slug, { cashflows: [call('cf-1', '2026-05-01T00:00:00Z')] });

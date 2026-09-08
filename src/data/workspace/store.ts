@@ -431,10 +431,11 @@ export async function readClient(
   const restatedText = await vault.readText(`${dir}/${RESTATED_FILE}`);
   const restated: Restated = restatedText === undefined ? {} : JSON.parse(restatedText) as Restated;
 
+  const whose = whoseFacts(reference);
   const facts = {} as Record<FactKey, unknown[]>;
   for (const [key, file] of Object.entries(FACT_FILES) as [FactKey, string][]) {
     const read = await vault.readLines(`${dir}/facts/${file}`);
-    facts[key] = collapse(current(read.rows, restated));
+    facts[key] = collapse(current(read.rows, restated, whose[key]));
     problems.push(...read.problems);
   }
 
@@ -476,17 +477,73 @@ export async function readClient(
  * line: both decide which lines are read as current, and a knowledge date
  * before the restatement still reproduces the quarter as it was published.
  */
-function current(rows: unknown[], restated: Restated): unknown[] {
+function current(rows: unknown[], restated: Restated, whose: Whose): unknown[] {
   if (Object.keys(restated).length === 0) return rows;
   return rows.filter((row) => {
-    const { vehicleId, recordedAt } = row as { vehicleId?: unknown; recordedAt?: unknown };
-    if (typeof vehicleId !== 'string') return true;
+    const vehicleId = whose(row);
+    if (vehicleId === undefined) return true;
     const since = restated[vehicleId];
     if (since === undefined) return true;
     // Anything without a recording instant cannot be placed either side of the
     // statement, and is kept: dropping a fact for being undated would lose it.
+    const { recordedAt } = row as { recordedAt?: unknown };
     return typeof recordedAt !== 'string' || recordedAt >= since;
   });
+}
+
+/** Which vehicle a fact belongs to, or undefined where it belongs to none. */
+type Whose = (row: unknown) => string | undefined;
+
+/**
+ * Which vehicle each kind of fact belongs to.
+ *
+ * Only two say so outright. A valuation names a holding, a company value names
+ * a company inside one, and a reported figure names whichever of the four it
+ * was collected at — so the answer has to be looked up through the reference
+ * data, which is read before the facts for exactly this reason.
+ *
+ * Judging only the facts that carry a vehicle outright was the first version of
+ * this, and it left three of the six kinds exempt without saying so. They
+ * survived on the accident that their identifiers happen to be derived from
+ * their content, so `collapse` caught them — and an accident is not a rule.
+ *
+ * A rate belongs to no vehicle and never will: it is a fact about two
+ * currencies on a date, and re-reading one product's workbook says nothing
+ * about it.
+ */
+function whoseFacts(reference: Record<ReferenceKey, unknown[]>): Record<FactKey, Whose> {
+  const named = (rows: unknown[], key: 'id') => new Map(
+    rows.map((row) => [(row as Record<string, string>)[key], row as Record<string, string>]),
+  );
+  const positions = named(reference.positions ?? [], 'id');
+  const assets = named(reference.assets ?? [], 'id');
+  const investors = named(reference.investors ?? [], 'id');
+
+  const ofPosition = (positionId: unknown) => (typeof positionId === 'string'
+    ? positions.get(positionId)?.vehicleId
+    : undefined);
+  const ofAsset = (assetId: unknown) => (typeof assetId === 'string'
+    ? ofPosition(assets.get(assetId)?.positionId)
+    : undefined);
+
+  return {
+    cashflows: (row) => (row as { vehicleId?: string }).vehicleId,
+    balanceSheets: (row) => (row as { vehicleId?: string }).vehicleId,
+    positionValuations: (row) => ofPosition((row as { positionId?: string }).positionId),
+    assetValuations: (row) => ofAsset((row as { assetId?: string }).assetId),
+    metrics: (row) => {
+      const scope = (row as { scope?: { kind?: string; id?: string } }).scope;
+      if (!scope?.id) return undefined;
+      switch (scope.kind) {
+        case 'vehicle': return scope.id;
+        case 'position': return ofPosition(scope.id);
+        case 'asset': return ofAsset(scope.id);
+        case 'investor': return investors.get(scope.id)?.vehicleId;
+        default: return undefined;
+      }
+    },
+    fxRates: () => undefined,
+  };
 }
 
 /**
