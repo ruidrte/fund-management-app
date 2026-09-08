@@ -53,15 +53,39 @@ if errorlevel 1 (
 )
 echo         Ready.
 
+rem Chrome or Edge, opened in application mode: its own window, no tab strip,
+rem no address bar. The application is not a page somebody browses to among
+rem twenty others; it holds a client's book, and a window that looks like a
+rem window is harder to close by accident and easier to find again.
+rem
+rem Found by where they install rather than by asking the shell, because
+rem neither puts itself on PATH. Neither present, the default browser opens it
+rem as an ordinary tab, which works and says nothing about it.
+set "BROWSER="
+for %%b in (
+  "%ProgramFiles%\Google\Chrome\Application\chrome.exe"
+  "%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"
+  "%LocalAppData%\Google\Chrome\Application\chrome.exe"
+  "%ProgramFiles(x86)%\Microsoft\Edge\Application\msedge.exe"
+  "%ProgramFiles%\Microsoft\Edge\Application\msedge.exe"
+) do if not defined BROWSER if exist %%b set "BROWSER=%%~b"
+
 rem The server takes over this window, so the browser is opened from a second
 rem one that waits for it to be listening first.
-start "" cmd /c "timeout /t 6 /nobreak >nul & start "" http://localhost:5173/"
+if defined BROWSER (
+  start "" cmd /c timeout /t 6 /nobreak ^>nul ^& start "" "%BROWSER%" --app=http://localhost:5173/
+) else (
+  start "" cmd /c timeout /t 6 /nobreak ^>nul ^& start "" http://localhost:5173/
+)
 
 echo   [3/3] Starting. The browser opens in a few seconds.
 echo.
 echo   ------------------------------------------------
-echo    Then, in the browser:
+echo    Then, in the window that opens:
 echo      Storage  -^>  Reconnect  -^>  your passphrase
+echo.
+echo    Chrome offers to save the passphrase the first time. Say yes and it
+echo    fills it in from then on; it is kept by Chrome, not by this.
 echo.
 echo    Leave this window open while you work.
 echo    Close it when you are done.

@@ -42,13 +42,16 @@ Everything works in that build except reading PDFs, which needs the pdf.js
 worker as a separate file; it says so rather than failing obscurely.
 
 On Windows, `start.bat` does the daily version of that in one double-click:
-update, install anything new, open the browser, start the server, and say in
-plain words which of those happened. Nothing needs to be typed, and the version
+update, install anything new, open the application in its own Chrome or Edge
+window — application mode, no tab strip, no address bar — start the server, and
+say in plain words which of those happened. Nothing needs to be typed, and the version
 it ended up on is shown inside the application under **Storage** — "am I on the
 latest?" should not be a question only a terminal can answer. It stops at the
 browser on purpose: the folder permission and the passphrase are asked for every
 time, and a script that remembered either would defeat the encryption it is
-protecting.
+protecting. The passphrase prompt is a form a password manager recognises, so
+the browser can fill it — which puts the secret where the operating system
+already guards secrets, rather than in a file beside the book it opens.
 
 ### Getting to your own data, from nothing
 
