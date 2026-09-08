@@ -162,8 +162,19 @@ export function Portfolio({ view }: { view: QuarterView }) {
                 total: money(underlyingTotals.unrealised, view.currency),
               },
               {
-                key: 'multiple', header: 'FV + realised / cost', align: 'right',
-                render: (row) => (row.multiple === undefined ? '—' : multiple(row.multiple)),
+                key: 'gross', header: 'Gross multiple', align: 'right',
+                render: (row) => (
+                  row.grossMultiple === undefined ? '—' : multiple(row.grossMultiple)
+                ),
+                total: underlyingTotals.invested > 0
+                  ? multiple(underlyingTotals.unrealised / underlyingTotals.invested)
+                  : '—',
+              },
+              {
+                key: 'total', header: 'With realised', align: 'right',
+                render: (row) => (
+                  row.totalMultiple === undefined ? '—' : multiple(row.totalMultiple)
+                ),
                 total: underlyingTotals.invested > 0
                   ? multiple(
                     (underlyingTotals.unrealised + underlyingTotals.realised)

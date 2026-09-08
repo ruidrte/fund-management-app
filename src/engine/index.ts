@@ -64,8 +64,21 @@ export interface UnderlyingHolding {
   invested: number;
   realised: number;
   unrealised: number;
-  /** Value and proceeds over cost. Undefined where nothing was invested. */
-  multiple?: number;
+  /**
+   * Equity at fair value over equity cost — the gross multiple, as the manager
+   * publishes it and as the workbook's own column computes it. Realised
+   * proceeds are not in it.
+   */
+  grossMultiple?: number;
+  /**
+   * The same with what has already come back added in.
+   *
+   * Both are shown because neither answers the other's question. Fund V's
+   * properties are worth 0.99 of what they cost and have returned 33.6m
+   * besides, which is 1.06 — and a single column would have to drop one of
+   * those two facts.
+   */
+  totalMultiple?: number;
   /** True where the figures are the underlying fund's whole portfolio, at 100%. */
   whole: boolean;
   provenance: Provenance;
@@ -292,7 +305,8 @@ function underlyingHoldings(
       invested,
       realised,
       unrealised,
-      multiple: invested > 0 ? (unrealised + realised) / invested : undefined,
+      grossMultiple: invested > 0 ? unrealised / invested : undefined,
+      totalMultiple: invested > 0 ? (unrealised + realised) / invested : undefined,
       whole: position.lookThrough === 'underlying',
       provenance: latest === undefined
         ? 'missing'
