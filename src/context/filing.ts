@@ -120,6 +120,13 @@ export function useImport() {
     ).values()];
 
     await book.commit(clientId, {
+      // A workbook carries a ledger since inception, so reading one states a
+      // vehicle's whole history rather than adding to it. Saying so is what
+      // stops the same movement, filed under a new identifier by a reader that
+      // changed how it names things, from sitting beside the old one for ever.
+      restates: [...new Set(
+        plans.filter((plan) => plan.restatesHistory).map((plan) => plan.vehicleId),
+      )].filter(Boolean),
       reference: {
         positions: positionsKept,
         assets: assetsKept,

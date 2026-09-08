@@ -1622,5 +1622,8 @@ export function planMandateImport(sheets: TableData[], options: MandateOptions):
     problems,
     periods: [...periods].sort(),
     notes,
+    // The file carries the ledger since inception, so what this produces
+    // replaces what a previous reading of it produced.
+    restatesHistory: true,
   };
 }

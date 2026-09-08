@@ -10,14 +10,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   appendFacts, clientsIn, createClient, initialiseBook, readClient, readDocuments,
-  readManifest, replaceReference, slugFor, storeDocument, summarise, vaultFor, writeManifest,
+  readManifest, recordRestatement, replaceReference, slugFor, storeDocument, summarise,
+  vaultFor, writeManifest,
 } from '../src/data/workspace/store';
 import { unlock, WrongPassphrase } from '../src/data/workspace/crypto';
 import { openBook } from '../src/data/workspace/repository';
 import { buildClientStructure } from '../src/data/structure';
 import { factsFrom } from '../src/ingest';
 import type { Candidate, SourceDocument } from '../src/ingest/types';
-import type { DataSet, PositionValuation } from '../src/domain/types';
+import type { Cashflow, DataSet, PositionValuation } from '../src/domain/types';
 
 /* ------------------------------------------------------------------ *
  * An in-memory directory that behaves like the browser's
@@ -247,6 +248,79 @@ describe('facts are appended, never rewritten', () => {
     const read = await readClient(vault, slug);
     expect(read!.problems).toEqual([]);
     expect(read!.dataset.positionValuations).toHaveLength(3);
+  });
+});
+
+describe('a reading that states a vehicle’s whole history', () => {
+  const call = (id: string, recordedAt: string): Cashflow => ({
+    id, vehicleId: 'veh-abif', positionId: 'pos-1', type: 'Capital Call', amount: -1_000_000,
+    currency: 'EUR', date: '2026-02-10', period: '2026Q1', recordedAt,
+    affectsCommitment: true, status: 'Settled',
+  });
+
+  it('supersedes the same movement filed under an older name', async () => {
+    // The bug this exists for. A reader that changed how it identifies things
+    // filed one call as "cf-1" and, on the next import, as "cf-<what it says>".
+    // Nothing collides, both are read, and the fund reports twice the capital
+    // it drew — PK TG showed forty million paid in against a commitment of
+    // twenty.
+    const { vault, slug } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, { cashflows: [call('cf-1', '2026-05-01T00:00:00Z')] });
+
+    await recordRestatement(vault, slug, ['veh-abif'], '2026-06-01T00:00:00Z');
+    await appendFacts(vault, slug, { cashflows: [call('cf-derived', '2026-06-01T00:00:00Z')] });
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.cashflows.map((flow) => flow.id)).toEqual(['cf-derived']);
+  });
+
+  it('leaves every other vehicle exactly as it was', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    const other: Cashflow = { ...call('cf-phf', '2026-05-01T00:00:00Z'), vehicleId: 'veh-phf-i' };
+    await appendFacts(vault, slug, { cashflows: [call('cf-1', '2026-05-01T00:00:00Z'), other] });
+    await recordRestatement(vault, slug, ['veh-abif'], '2026-06-01T00:00:00Z');
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.cashflows.map((flow) => flow.id)).toEqual(['cf-phf']);
+  });
+
+  it('keeps a fact that names no vehicle, because a rate is nobody’s history', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, {
+      fxRates: [{
+        id: 'fx-1', base: 'EUR', quote: 'CHF', rate: 0.94, date: '2026-03-31',
+        period: '2026Q1', recordedAt: '2026-05-01T00:00:00Z', kind: 'closing',
+        source: 'ECB', authority: 'market',
+      }],
+    });
+    await recordRestatement(vault, slug, ['veh-abif'], '2026-06-01T00:00:00Z');
+
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.fxRates).toHaveLength(1);
+  });
+
+  it('is remembered per vehicle rather than replacing what came before', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    await recordRestatement(vault, slug, ['veh-abif'], '2026-06-01T00:00:00Z');
+    await recordRestatement(vault, slug, ['veh-phf-i'], '2026-07-01T00:00:00Z');
+    await appendFacts(vault, slug, {
+      cashflows: [
+        call('cf-old-abif', '2026-05-01T00:00:00Z'),
+        { ...call('cf-old-phf', '2026-06-15T00:00:00Z'), vehicleId: 'veh-phf-i' },
+      ],
+    });
+
+    // Each vehicle judged against its own statement: the PHF flow is before
+    // PHF's, the AbIF one before AbIF's, and both are superseded.
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.cashflows).toEqual([]);
+  });
+
+  it('reads a book that has never had a restatement exactly as before', async () => {
+    const { vault, slug } = await bookWith('client-ebg');
+    await appendFacts(vault, slug, { cashflows: [call('cf-1', '2026-05-01T00:00:00Z')] });
+    const read = await readClient(vault, slug);
+    expect(read!.dataset.cashflows).toHaveLength(1);
   });
 });
 

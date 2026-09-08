@@ -18,7 +18,8 @@ import type { ClientSummary, Repository } from '../repository';
 import type { Cipher } from './crypto';
 import { brandFor } from './brand';
 import {
-  appendFacts, clientsIn, readClient, readManifest, replaceReference, storeDocument,
+  appendFacts, clientsIn, readClient, readManifest, recordRestatement, replaceReference,
+  storeDocument,
   vaultFor, type BookManifest, type ClientEntry, type FactBatch, type ReferenceUpdate, type Vault,
 } from './store';
 
@@ -39,6 +40,14 @@ export interface BookChange {
   document?: SourceDocument;
   /** The document's own bytes, kept so the figures can be traced to the file. */
   bytes?: Uint8Array;
+  /**
+   * Vehicles whose whole history these facts state, rather than add to.
+   *
+   * Recorded as of now, so that everything filed for them before this instant
+   * stops being read as current. The lines stay: a knowledge date before it
+   * still reproduces the quarter as it was published.
+   */
+  restates?: string[];
 }
 
 /**
@@ -110,6 +119,14 @@ export async function openBook(
       // leave figures whose source is not there.
       if (change.document) {
         await storeDocument(vault, slug, change.document, change.bytes);
+      }
+      if (change.restates?.length) {
+        // Before the facts, so a write that fails part way leaves the older
+        // reading superseded and the newer one incomplete — a book missing
+        // movements, which every coverage check reports. The other order
+        // leaves both readings current, which is a book that silently
+        // double-counts.
+        await recordRestatement(vault, slug, change.restates, new Date().toISOString());
       }
       if (change.reference) {
         await replaceReference(vault, slug, change.reference);

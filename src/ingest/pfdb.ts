@@ -111,6 +111,21 @@ export interface ImportPlan {
   periods: PeriodId[];
   /** What the reader had to assume, stated rather than buried. */
   notes: string[];
+  /**
+   * True where this plan is the whole of the vehicle's history, not an
+   * addition to it.
+   *
+   * Every workbook reader is: the file carries the ledger since inception, so
+   * what it produces replaces what a previous reading of the same file
+   * produced. Saying so is what lets a book survive a reader that changes how
+   * it names things — the same movement under a new identifier is otherwise
+   * filed beside the old one, and a fund reports twice the capital it drew.
+   *
+   * False, or absent, for a reader that speaks about part of a book: an
+   * allocation workbook files companies inside holdings it never read, and a
+   * rate table is nobody's history.
+   */
+  restatesHistory?: boolean;
 }
 
 /* ------------------------------------------------------------------ *
@@ -662,5 +677,8 @@ export function planImport(sheets: TableData[], options: PfdbOptions): ImportPla
     problems,
     periods: [...periods].sort(),
     notes,
+    // The file carries the ledger since inception, so what this produces
+    // replaces what a previous reading of it produced.
+    restatesHistory: true,
   };
 }

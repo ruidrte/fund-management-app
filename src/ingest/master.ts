@@ -1114,6 +1114,9 @@ export function planMasterImport(sheets: TableData[], options: MasterOptions): I
     problems,
     periods: [...periods].sort(),
     notes,
+    // The file carries the ledger since inception, so what this produces
+    // replaces what a previous reading of it produced.
+    restatesHistory: true,
   };
 }
 

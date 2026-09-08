@@ -97,6 +97,28 @@ const REFERENCE_FILES = {
 
 type ReferenceKey = keyof typeof REFERENCE_FILES;
 
+/**
+ * When each vehicle's history was last stated whole, and by which import.
+ *
+ * A workbook carries a ledger since inception, so reading one is a statement
+ * about all of a vehicle's movements and not an addition to them. Filing that
+ * instant is what lets the book survive a reader that changes how it names
+ * things: the same call under a new identifier would otherwise sit beside the
+ * old one for ever, and the fund reports twice the capital it drew — which is
+ * how PK TG came to show a paid-in of forty million against a commitment of
+ * twenty.
+ *
+ * The old lines are not removed. They are the record of what was believed and
+ * when, the chain over them still verifies, and a knowledge date before this
+ * instant still reproduces the quarter as it was published. They simply stop
+ * being read as current, which is the same thing `collapse` does for a fact
+ * restated under its own name.
+ */
+const RESTATED_FILE = 'restated.json';
+
+/** `vehicleId -> the instant its history was last stated whole`. */
+type Restated = Record<string, string>;
+
 /** Facts that can be appended to a book, in one call. */
 export type FactBatch = Partial<{
   positionValuations: PositionValuation[];
@@ -406,10 +428,13 @@ export async function readClient(
 
   const reportingText = await vault.readText(`${dir}/${REPORTING_FILE}`);
 
+  const restatedText = await vault.readText(`${dir}/${RESTATED_FILE}`);
+  const restated: Restated = restatedText === undefined ? {} : JSON.parse(restatedText) as Restated;
+
   const facts = {} as Record<FactKey, unknown[]>;
   for (const [key, file] of Object.entries(FACT_FILES) as [FactKey, string][]) {
     const read = await vault.readLines(`${dir}/facts/${file}`);
-    facts[key] = collapse(read.rows);
+    facts[key] = collapse(current(read.rows, restated));
     problems.push(...read.problems);
   }
 
@@ -432,6 +457,36 @@ export async function readClient(
     },
     problems,
   };
+}
+
+/**
+ * The facts still current, given what has since been stated whole.
+ *
+ * A row belongs to a vehicle and was recorded at an instant. Where that
+ * vehicle's history has been stated whole since, the row is what an earlier
+ * reading believed and the later statement is what the book says now.
+ *
+ * Only rows that name a vehicle are judged. A rate is nobody's history — it is
+ * a fact about two currencies on a date, and re-reading one product's workbook
+ * says nothing about it.
+ *
+ * This is `collapse` over a longer arm. Collapse settles a fact restated under
+ * its own name; this settles one restated under a different name, which is what
+ * happens whenever a reader changes how it identifies things. Neither removes a
+ * line: both decide which lines are read as current, and a knowledge date
+ * before the restatement still reproduces the quarter as it was published.
+ */
+function current(rows: unknown[], restated: Restated): unknown[] {
+  if (Object.keys(restated).length === 0) return rows;
+  return rows.filter((row) => {
+    const { vehicleId, recordedAt } = row as { vehicleId?: unknown; recordedAt?: unknown };
+    if (typeof vehicleId !== 'string') return true;
+    const since = restated[vehicleId];
+    if (since === undefined) return true;
+    // Anything without a recording instant cannot be placed either side of the
+    // statement, and is kept: dropping a fact for being undated would lose it.
+    return typeof recordedAt !== 'string' || recordedAt >= since;
+  });
 }
 
 /**
@@ -542,6 +597,23 @@ export async function replaceReference(
     if (!rows) continue;
     await vault.writeText(`${dir}/${file}`, JSON.stringify(rows, null, 2));
   }
+}
+
+/**
+ * Records that a vehicle's history has been stated whole, as of now.
+ *
+ * Merged rather than replaced: a book holds several products, and re-reading
+ * one of their workbooks says nothing about the others.
+ */
+export async function recordRestatement(
+  vault: Vault, slug: string, vehicleIds: string[], at: string,
+): Promise<void> {
+  if (vehicleIds.length === 0) return;
+  const dir = clientDir(slug);
+  const text = await vault.readText(`${dir}/${RESTATED_FILE}`);
+  const held: Restated = text === undefined ? {} : JSON.parse(text) as Restated;
+  for (const vehicleId of vehicleIds) held[vehicleId] = at;
+  await vault.writeText(`${dir}/${RESTATED_FILE}`, JSON.stringify(held, null, 2));
 }
 
 /** Appends facts. Returns how many lines were written, per file. */

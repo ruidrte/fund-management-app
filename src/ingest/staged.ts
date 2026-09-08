@@ -1431,6 +1431,9 @@ export function planStagedImport(sheets: TableData[], options: StagedOptions): I
     problems,
     periods: [...periods].sort(),
     notes,
+    // The file carries the ledger since inception, so what this produces
+    // replaces what a previous reading of it produced.
+    restatesHistory: true,
   };
 }
 
