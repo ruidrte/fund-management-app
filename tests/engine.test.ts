@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { PeriodId } from '../src/domain/period';
 import { analyse, availableKnowledgeDates, availablePeriods } from '../src/engine';
+import { describeQuarter } from '../src/engine/bridge';
 import { buildRateLookup, attributeFx } from '../src/engine/fx';
 import { latestThrough, visibleAt } from '../src/engine/asof';
 import { buildClientStructure } from '../src/data/structure';
@@ -1065,5 +1066,35 @@ describe('what a commitment is drawn through, and what a multiple is measured on
   it('closes every identity it is checked against', () => {
     const report = held().checks;
     expect(report.results.filter((c) => c.status === 'fail')).toEqual([]);
+  });
+});
+
+describe('the quarter in one sentence', () => {
+  const bridge = {
+    label: 'Portfolio NAV bridge', currency: 'USD' as const, residual: 0, closes: true,
+    provenance: 'reported' as const,
+    steps: [
+      { key: 'opening', label: 'Opening', value: 24_743_066, type: 'anchor' as const },
+      { key: 'net_cashflow', label: 'Net cashflow', value: 0, type: 'delta' as const },
+      { key: 'delta_value', label: 'Value change', value: 376_366, type: 'delta' as const },
+      { key: 'delta_fx', label: 'FX', value: 0, type: 'delta' as const },
+      { key: 'closing', label: 'Closing', value: 25_119_432, type: 'anchor' as const },
+    ],
+  };
+
+  it('states the movement in the unit the product’s books are kept in', () => {
+    // PK TG keeps its books in whole dollars and moved 376,366 in the quarter.
+    // Read as thousands — which is what the sentence assumed — that is 376.4m,
+    // fifteen times the fund.
+    expect(describeQuarter(bridge, '2026Q2', 1)).toContain('USD 0.4m');
+    expect(describeQuarter(bridge, '2026Q2', 1)).not.toContain('376.4m');
+  });
+
+  it('still reads a book kept in thousands the way it always did', () => {
+    expect(describeQuarter(bridge, '2026Q2', 1000)).toContain('USD 376.4m');
+  });
+
+  it('assumes thousands when nobody says, which is what every older book is', () => {
+    expect(describeQuarter(bridge, '2026Q2')).toContain('USD 376.4m');
   });
 });

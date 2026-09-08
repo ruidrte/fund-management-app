@@ -37,3 +37,25 @@ export function supersede<T extends { id: string }>(
     ...incoming,
   ];
 }
+
+/**
+ * The instant a reading happened, from the facts it produced.
+ *
+ * A workbook is read, reviewed, and then imported. The facts carry the instant
+ * they were read at; the clock at the moment of confirming is later, by however
+ * long somebody spent looking at the review screen. A restatement stamped with
+ * the second instant is later than the facts arriving with it and supersedes
+ * them — the import meant to replace a doubled ledger deletes itself instead,
+ * and what is left is whichever facts the rule does not judge.
+ *
+ * The earliest, so nothing this reading produced falls before its own
+ * statement. Undefined where the reading produced nothing, which is not a
+ * statement about anything and must not be recorded as one.
+ */
+export function statedAt(facts: Array<{ recordedAt: string }>): string | undefined {
+  if (facts.length === 0) return undefined;
+  return facts.reduce(
+    (earliest, fact) => (fact.recordedAt < earliest ? fact.recordedAt : earliest),
+    facts[0].recordedAt,
+  );
+}

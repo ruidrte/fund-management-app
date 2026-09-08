@@ -48,6 +48,17 @@ export interface BookChange {
    * still reproduces the quarter as it was published.
    */
   restates?: string[];
+  /**
+   * The instant those vehicles' histories were stated at.
+   *
+   * The reading's own instant, not the moment it was confirmed. A workbook is
+   * read, reviewed and then imported, and the facts carry the instant they
+   * were read at — so a restatement stamped with the clock at commit time is
+   * later than the facts it arrives with, and supersedes them. It did: the
+   * import that was meant to replace PK TG's doubled ledger deleted itself,
+   * and left the valuations, which carry no vehicle and are never judged.
+   */
+  restatedAt?: string;
 }
 
 /**
@@ -120,13 +131,13 @@ export async function openBook(
       if (change.document) {
         await storeDocument(vault, slug, change.document, change.bytes);
       }
-      if (change.restates?.length) {
+      if (change.restates?.length && change.restatedAt) {
         // Before the facts, so a write that fails part way leaves the older
         // reading superseded and the newer one incomplete — a book missing
         // movements, which every coverage check reports. The other order
         // leaves both readings current, which is a book that silently
         // double-counts.
-        await recordRestatement(vault, slug, change.restates, new Date().toISOString());
+        await recordRestatement(vault, slug, change.restates, change.restatedAt);
       }
       if (change.reference) {
         await replaceReference(vault, slug, change.reference);

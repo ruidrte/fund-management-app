@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { supersede } from '../src/ingest/reference';
+import { statedAt, supersede } from '../src/ingest/reference';
 
 const investor = (id: string, vehicleId: string, name = 'Pensionskasse Thurgau') =>
   ({ id, vehicleId, name });
@@ -75,5 +75,35 @@ describe('what an import supersedes', () => {
       (row) => row.vehicleId,
     );
     expect(kept).toEqual([investor('inv-a', 'veh-1', 'New name')]);
+  });
+});
+
+describe('when a reading happened', () => {
+  const at = (recordedAt: string) => ({ recordedAt });
+
+  it('is the reading’s own instant, not the moment somebody confirmed it', () => {
+    // The bug this exists for. A workbook is read, reviewed, and then
+    // imported; the facts carry the instant they were read at, and the clock
+    // at the moment of confirming is later by however long the review took.
+    // Stamping the restatement with the second one made the import supersede
+    // itself: PK TG lost every movement it had just filed, and kept only the
+    // valuations, which carry no vehicle and are never judged.
+    const read = '2026-09-08T01:00:00.000Z';
+    const confirmed = '2026-09-08T01:04:37.000Z';
+    expect(statedAt([at(read), at(read)])).toBe(read);
+    expect(statedAt([at(read)])! < confirmed).toBe(true);
+  });
+
+  it('takes the earliest, so no fact of the reading falls before its own statement', () => {
+    const earliest = '2026-09-08T01:00:00.000Z';
+    expect(statedAt([
+      at('2026-09-08T01:00:02.000Z'), at(earliest), at('2026-09-08T01:00:01.000Z'),
+    ])).toBe(earliest);
+  });
+
+  it('is undefined for a reading that produced nothing', () => {
+    // Nothing read is not a statement about anything, and recording it as one
+    // would supersede a book with an empty file.
+    expect(statedAt([])).toBeUndefined();
   });
 });

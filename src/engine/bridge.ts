@@ -150,7 +150,7 @@ function finalise(
  * The sentence a reader wants first: how much of the quarter's gain was real
  * value creation rather than money paid in or a currency move.
  */
-export function describeQuarter(bridge: Bridge, period: PeriodId): string {
+export function describeQuarter(bridge: Bridge, period: PeriodId, unitScale = 1000): string {
   const value = (key: string) => bridge.steps.find((s) => s.key === key)?.value ?? 0;
   const opening = value('opening');
   const closing = value('closing');
@@ -165,10 +165,11 @@ export function describeQuarter(bridge: Bridge, period: PeriodId): string {
   const fx = value('delta_fx');
   const cash = value('net_cashflow');
 
+  const say = (value: number) => fmt(value, unitScale);
   const parts = [
-    `${bridge.currency} ${fmt(Math.abs(move))} — of which ${fmt(valueChange)} value change`,
-    `${fmt(fx)} FX`,
-    `${fmt(cash)} net cashflow`,
+    `${bridge.currency} ${say(Math.abs(move))} — of which ${say(valueChange)} value change`,
+    `${say(fx)} FX`,
+    `${say(cash)} net cashflow`,
   ];
 
   const share = Math.abs(move) > 0 ? Math.abs(valueChange / move) : 0;
@@ -179,9 +180,17 @@ export function describeQuarter(bridge: Bridge, period: PeriodId): string {
   return `Net asset value ${direction} by ${parts.join(', ')}.${emphasis}`;
 }
 
-/** Same denomination as every other figure on screen: thousands in, millions out. */
-function fmt(value: number): string {
-  return `${(value / 1000).toLocaleString('en-GB', {
+/**
+ * Millions, from a figure in whatever unit the product's books are kept in.
+ *
+ * `unitScale` is how many currency units one stored number is worth: 1000 for a
+ * book written in thousands, 1 for one written in full. It used to be assumed
+ * to be a thousand, which read a PK TG quarter that moved 376,400 dollars as
+ * "376.4m" — the same mistake the tiles made until they were told the unit, in
+ * the one place on the screen that spells the quarter out in words.
+ */
+function fmt(value: number, unitScale: number): string {
+  return `${(value * unitScale / 1_000_000).toLocaleString('en-GB', {
     maximumFractionDigits: 1,
     minimumFractionDigits: 1,
   })}m`;

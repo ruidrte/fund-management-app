@@ -27,6 +27,7 @@ import { buildRateLookup, type RateLookup } from './fx';
 import { computeGross, type GrossResult } from './gross';
 import { computeNet, type NetResult } from './net';
 import { commitmentsBridge, describeQuarter, navBridge, productNavBridge, type Bridge } from './bridge';
+import { unitScaleOf } from '../domain/types';
 import {
   currencyExposure,
   lookThroughExposure,
@@ -224,7 +225,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
       ...vehicles.map((v) => v.currency),
       ...positions.map((p) => p.currency),
     ])].filter((code) => code !== currency).sort(),
-    summary: describeQuarter(bridges.portfolioNav, scope.period),
+    summary: describeQuarter(bridges.portfolioNav, scope.period, unitScaleOf(vehicles) ?? 1000),
     provenance: gross.provenance,
     isFinal: gross.coverage.complete && checks.ok && qualifications.length === 0,
     qualifications,

@@ -316,6 +316,19 @@ describe('a reading that states a vehicle’s whole history', () => {
     expect(read!.dataset.cashflows).toEqual([]);
   });
 
+  it('keeps the facts of the reading that made the statement', async () => {
+    // The restatement is stamped with the reading's own instant, so its own
+    // facts sit at the boundary rather than before it. Filing them out was the
+    // bug: the import meant to replace a doubled ledger deleted itself.
+    const { vault, slug } = await bookWith('client-ebg');
+    const read = '2026-06-01T00:00:00Z';
+    await recordRestatement(vault, slug, ['veh-abif'], read);
+    await appendFacts(vault, slug, { cashflows: [call('cf-derived', read)] });
+
+    const held = await readClient(vault, slug);
+    expect(held!.dataset.cashflows.map((flow) => flow.id)).toEqual(['cf-derived']);
+  });
+
   it('reads a book that has never had a restatement exactly as before', async () => {
     const { vault, slug } = await bookWith('client-ebg');
     await appendFacts(vault, slug, { cashflows: [call('cf-1', '2026-05-01T00:00:00Z')] });

@@ -11,7 +11,7 @@ import { useCallback } from 'react';
 import { useDataSource } from './DataSourceContext';
 import { useScope } from './ScopeContext';
 import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from '../ingest';
-import { supersede } from '../ingest/reference';
+import { statedAt, supersede } from '../ingest/reference';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
 import {
   DEFAULT_CONVENTIONS, type CurrencyCode, type ReportingConventions,
@@ -110,6 +110,13 @@ export function useImport() {
       dataset.assets, all((plan) => plan.assets), (row) => row.positionId,
     );
 
+    const restatingFacts = plans
+      .filter((plan) => plan.restatesHistory)
+      .flatMap((plan) => [
+        ...plan.cashflows, ...plan.valuations, ...plan.assetValuations,
+        ...plan.balanceSheets, ...plan.metrics,
+      ]);
+
     // Every programme in a workbook reads the same rate table, so the same
     // rate arrives once per programme. Filing it two or three times over is not
     // wrong — the lookup would still pick one — but it triples the log and
@@ -127,6 +134,12 @@ export function useImport() {
       restates: [...new Set(
         plans.filter((plan) => plan.restatesHistory).map((plan) => plan.vehicleId),
       )].filter(Boolean),
+      // Stamped with the reading's own instant, taken from the facts it
+      // produced. The workbook is read, reviewed and then imported, so the
+      // clock at the moment of confirming is later than the facts arriving
+      // with it — and a restatement stamped that way supersedes its own
+      // import. The earliest, so no fact of this reading falls before it.
+      restatedAt: statedAt(restatingFacts),
       reference: {
         positions: positionsKept,
         assets: assetsKept,
