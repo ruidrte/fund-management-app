@@ -340,12 +340,7 @@ function computeProductNet(inputs: NetInputs, narrowed: Narrowing): ProductNetRe
 
   const flows: DatedFlow[] = toDate
     .filter((c) => isInvestorCall(c) || isInvestorDistribution(c))
-    .map((c) => ({
-      date: new Date(c.date),
-      amount: isInvestorCall(c)
-        ? -convert(Math.abs(c.amount), c.currency, c.period)
-        : convert(Math.abs(c.amount), c.currency, c.period),
-    }));
+    .map((c) => fromInvestorSide(c, convert));
 
   // A vehicle with no balance sheet for the period still reports, but the
   // provenance drops so the omission is visible rather than assumed to be zero.
@@ -528,12 +523,7 @@ function computeInvestorNet(
       netContributedPrior: calledPrior - distributedPrior,
       flows: toDate
         .filter((c) => isInvestorCall(c) || isInvestorDistribution(c))
-        .map((c) => ({
-          date: new Date(c.date),
-          amount: isInvestorCall(c)
-            ? -convert(Math.abs(c.amount), c.currency, c.period)
-            : convert(Math.abs(c.amount), c.currency, c.period),
-        })),
+        .map((c) => fromInvestorSide(c, convert)),
     };
   });
 
@@ -621,6 +611,23 @@ function computeInvestorNet(
       allocated,
     };
   });
+}
+
+/**
+ * A flow as the investor experienced it, for their rate of return.
+ *
+ * Stored from the vehicle's side, so turned round whole — sign and all. Not by
+ * type: a negative call is capital handed back to the investor, and taking its
+ * absolute value made every equalisation an earlier closer was refunded into
+ * money they paid, which put a fund returning 1.17x at minus twelve per cent.
+ * The signed sums above already treat it as what it is; the return has to
+ * agree with them.
+ */
+function fromInvestorSide(
+  c: Cashflow,
+  convert: (amount: number, currency: CurrencyCode, period: PeriodId) => number,
+): DatedFlow {
+  return { date: new Date(c.date), amount: -convert(c.amount, c.currency, c.period) };
 }
 
 function isInvestorCall(c: Cashflow): boolean {

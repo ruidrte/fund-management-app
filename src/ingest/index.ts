@@ -23,6 +23,7 @@ import { isMasterWorkbook, summariseMaster, type MasterSummary } from './master'
 import { isSupportModel, summariseModel, type ModelSummary } from './model';
 import { isStagedSupport, summariseStaged, type StagedSummary } from './staged';
 import { isRateSeries, summariseRates, type RateSeriesSummary } from './rates';
+import { isAccountsWorkbook, summariseAccounts, type AccountsSummary } from './accounts';
 import { validateAll } from './validate';
 import type {
   Candidate, DocumentKind, ExtractionResult, MatchContext, SourceDocument, TableData,
@@ -61,6 +62,10 @@ export {
   isRateSeries, planRatesImport, summariseRates,
   type RateOptions, type RateSeriesSummary,
 } from './rates';
+export {
+  isAccountsWorkbook, planAccountsImport, summariseAccounts,
+  type AccountsOptions, type AccountsSummary,
+} from './accounts';
 export { slug } from './ids';
 export { matchEntity, similarity, normalise } from './match';
 export { EXTRACTORS, extractorFor, mapColumns, parseDate } from './extractors';
@@ -139,8 +144,12 @@ export async function openDatabase(
   const rates = isRateSeries(workbook.sheets)
     ? summariseRates(workbook.sheets)
     : undefined;
+  const accounts = isAccountsWorkbook(workbook.sheets)
+    ? summariseAccounts(workbook.sheets)
+    : undefined;
   if (!isPortfolioDatabase(workbook.sheets)
-    && !support && !allocation && !mandate && !master && !model && !staged && !rates) {
+    && !support && !allocation && !mandate && !master && !model && !staged && !rates
+    && !accounts) {
     return undefined;
   }
 
@@ -167,6 +176,7 @@ export async function openDatabase(
     model,
     staged,
     rates,
+    accounts,
   };
 }
 
@@ -191,6 +201,8 @@ export interface DatabaseOutcome {
   staged?: StagedSummary;
   /** The published fixings, when it is a table of exchange rates. */
   rates?: RateSeriesSummary;
+  /** The ledger, the statements and the register feed, when it is an investment accounts workbook. */
+  accounts?: AccountsSummary;
 }
 
 export async function ingest(

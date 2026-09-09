@@ -410,8 +410,17 @@ function isPaidIn(c: Cashflow): boolean {
   return PAID_IN.includes(c.type);
 }
 
+/**
+ * Money that came back, whatever the notice called it.
+ *
+ * Income a fund pays out beside its distributions — interest on a bridge, a
+ * dividend outside the commitment — is money returned, and the desk that
+ * reports the fund counts it in what was distributed. `basis.ts` already does:
+ * anything not paid in is distributed there, so leaving it out here would be
+ * the second definition of one figure.
+ */
 function isDistribution(c: Cashflow): boolean {
-  return c.type === 'Distribution' || c.type === 'Return of Capital';
+  return c.type === 'Distribution' || c.type === 'Return of Capital' || c.type === 'Income';
 }
 
 function sum(values: number[]): number {

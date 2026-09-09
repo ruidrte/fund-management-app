@@ -137,8 +137,24 @@ every quarter. In the report editor they are one.
 
 ## Products with no data
 
-PCIOF I, PCIOF II, and the Una Terra Early Growth Fund. Each needs whatever its
-own quarter arrives in, and the reader that reads that shape.
+PCIOF II and the Una Terra Early Growth Fund. Each needs whatever its own
+quarter arrives in, and the reader that reads that shape. PCIOF I's shape — the
+investment accounts workbook — now has a reader (`src/ingest/accounts.ts`), and
+Q1 2026 ties to the file's own figures on every line; PCIOF II arrives in the
+same shape once it has a quarter to report.
+
+What the investment accounts workbook still needs:
+
+- **The basis in force at the fund.** The desk reports calls net of recallable
+  distributions and leaves the off-commitment column out; the application
+  reports the agreed basis with both in. The first is one more row in
+  `returnBases`, so the workbook can show the two side by side as PAS Infra's
+  does.
+- **A writer, and the round trip.** The reader restates the whole book; nothing
+  yet writes it back.
+- **A file saved by Excel.** A workbook saved by a script carries its formulas
+  without their values, and every derived column reads as empty. The Q2 2026
+  file is one of those; opening and saving it in Excel is all it needs.
 
 ## Longer-standing
 

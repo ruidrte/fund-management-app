@@ -940,6 +940,33 @@ describe('scoping', () => {
   });
 });
 
+describe('an investor’s rate of return', () => {
+  /**
+   * A negative call is capital handed back — an equalisation refunded to an
+   * earlier closer, a transfer away. The called total already treats it that
+   * way; the return has to, or every such refund becomes money the investor
+   * paid and a fund returning well prints a loss.
+   */
+  it('reads a negative call as money back, the way the called total does', () => {
+    const investor = meridian.investors.find((i) => i.vehicleId === 'veh-abif')!;
+    const refund = {
+      id: 'cf-refund', vehicleId: 'veh-abif', investorId: investor.id,
+      type: 'Capital Call' as const, amount: -400_000, currency: 'EUR' as const,
+      date: '2025-06-30', period: '2025Q2', recordedAt: '2025-07-01T00:00:00Z',
+      affectsCommitment: true, status: 'Confirmed' as const, description: 'Equalisation distributed',
+    };
+    const before = analyse(meridian, scope());
+    const after = analyse({ ...meridian, cashflows: [...meridian.cashflows, refund] }, scope());
+
+    expect(after.net.product.called).toBeCloseTo(before.net.product.called - 400_000, 6);
+    // Less paid for the same value at the end is a better return, not a worse one.
+    expect(after.net.product.irr!).toBeGreaterThan(before.net.product.irr!);
+    const own = after.net.investors.find((a) => a.investor.id === investor.id)!;
+    const was = before.net.investors.find((a) => a.investor.id === investor.id)!;
+    expect(own.irr!).toBeGreaterThan(was.irr!);
+  });
+});
+
 describe('where a book gets its conventions', () => {
   // The conventions screen saves to the client. A vehicle's own conventions
   // override its client's, so a new book that stamped the defaults onto every

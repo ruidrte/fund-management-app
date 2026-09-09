@@ -20,7 +20,7 @@ import { formatPeriod } from '../../domain/period';
 import {
   planAllocationImport, planImport, planMandateImport, planMasterImport, planModelImport,
   planRatesImport, planStagedImport,
-  planSupportImport, similarity,
+  planSupportImport, planAccountsImport, similarity,
   type DatabaseOutcome, type ImportPlan, type ProgramSummary,
 } from '../../ingest';
 import { useImport } from '../../context/filing';
@@ -92,11 +92,12 @@ export function DatabaseImport({
   const master = outcome.master;
   const model = outcome.model;
   const staged = outcome.staged;
+  const accounts = outcome.accounts;
   // A table of published fixings is the one shape with no product to point at:
   // a rate belongs to the book. It gets a screen of its own rather than a
   // picker whose answer would change nothing.
   const rates = outcome.rates;
-  const single = support ?? mandate ?? master ?? model ?? staged;
+  const single = support ?? mandate ?? master ?? model ?? staged ?? accounts;
 
   // Portfolios first; a limited partner's own book is picked as the investor
   // beside one, not imported as a portfolio of its own.
@@ -189,6 +190,8 @@ export function DatabaseImport({
       }
       return chosen.map((target) => (staged
         ? planStagedImport(outcome.sheets, { vehicleId: target.vehicleId })
+        : accounts
+        ? planAccountsImport(outcome.sheets, { vehicleId: target.vehicleId })
         : model
         ? planModelImport(outcome.sheets, { vehicleId: target.vehicleId })
         : mandate
@@ -218,7 +221,7 @@ export function DatabaseImport({
     // `chosen` is derived from targets; depending on it directly would replan
     // on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [outcome.sheets, support, mandate, master, model, staged, rates, allocation, vehicleId, dataset,
+  }, [outcome.sheets, support, mandate, master, model, staged, accounts, rates, allocation, vehicleId, dataset,
     JSON.stringify(chosen)]);
 
   // A product can only hold one portfolio, and two programmes filed into the
@@ -309,6 +312,8 @@ export function DatabaseImport({
               ? 'This is an LP capital master, not a document'
               : staged
                 ? 'This is a staged reporting support file, not a document'
+              : accounts
+                ? 'This is an investment accounts workbook, not a document'
               : model
                 ? 'This is a report support model, not a document'
                 : support
@@ -324,6 +329,8 @@ export function DatabaseImport({
               : staged
                 ? `${staged.fund} — ${staged.quarters} quarter(s) to `
                   + `${formatPeriod(staged.last ?? '')}`
+              : accounts
+                ? `${accounts.fund}${accounts.reportingDate ? ` — as at ${accounts.reportingDate}` : ''}`
               : model
                 ? `${model.fund} — ${model.quarters} quarter(s) to `
                   + `${formatPeriod(model.last ?? '')}`
@@ -343,6 +350,9 @@ export function DatabaseImport({
                     : staged
                       ? `${staged.holdings} fund(s), ${staged.companies} compan(ies), `
                         + `${staged.findings} open check(s)`
+                    : accounts
+                      ? `${accounts.holdings} holding(s), ${accounts.investors} investor(s), `
+                        + `${accounts.balanceSheets} quarter(s) of accounts`
                     : model
                       ? `${model.lines} published line(s), ${model.holdings} fund(s)`
                       : support
@@ -371,6 +381,13 @@ export function DatabaseImport({
             + `taking them as given would make the check of them circular. The checks that did `
             + `not pass are read too, as findings: somebody has already established which two `
             + `numbers disagree and why, and that is not derivable from the figures.`
+          : accounts
+            ? `The supporting file a desk keeps for a fund somebody else administers: one ledger `
+            + `of every movement with every holding, the administrator's statements quarter by `
+            + `quarter, and the register feed the capital accounts are written from. The `
+            + `snapshot the desk publishes is kept as what was published and read for no figure, `
+            + `so what this application computes can be checked against it rather than copied `
+            + `from it.`
           : model
             ? `The layer a desk builds over its records to produce a quarter's report: one `
             + `figure per line per quarter, each with a note saying which file it came from. It `
@@ -416,7 +433,7 @@ export function DatabaseImport({
               },
               { key: 'funds', header: 'Funds', align: 'right', render: (row) => row.funds },
               { key: 'tx', header: 'Movements', align: 'right', render: (row) => row.transactions },
-              ...(support ? [] : [{
+              ...(support || accounts ? [] : [{
                 key: 'companies', header: 'Companies', align: 'right' as const,
                 render: (row: ProgramSummary) => row.companies,
               }]),
@@ -549,7 +566,7 @@ export function DatabaseImport({
               ? 'The holder’s capital account comes from the workbook itself, so the return net of '
               + 'the advisory fee fills alongside the funds — and the properties inside them fill '
               + 'the look-through.'
-              : support
+              : support || accounts
                 ? 'The investors come from the workbook itself, with their commitments and their calls, '
                 + 'so the net tier and the capital accounts fill alongside the portfolio.'
                 : 'The limited partner’s programme is that vehicle seen from the investor’s side: its rows '
@@ -570,10 +587,10 @@ export function DatabaseImport({
               {!allocation && <Count label="Cashflows" value={total((p) => p.cashflows)} />}
               {!allocation && (
                 <>
-                  <Count label={mandate ? 'Properties' : support ? 'Investors' : 'Companies'}
-                    value={support ? total((p) => p.investors) : total((p) => p.assets)} />
-                  <Count label={support ? 'Balance sheets' : 'Company values'}
-                    value={support ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
+                  <Count label={mandate ? 'Properties' : support || accounts ? 'Investors' : 'Companies'}
+                    value={support || accounts ? total((p) => p.investors) : total((p) => p.assets)} />
+                  <Count label={support || accounts ? 'Balance sheets' : 'Company values'}
+                    value={support || accounts ? total((p) => p.balanceSheets) : total((p) => p.assetValuations)} />
                   {total((p) => p.metrics) > 0
                     ? <Count label="Reported figures" value={total((p) => p.metrics)} />
                     : <Count label="Rates" value={plans[0].fxRates.length} />}
