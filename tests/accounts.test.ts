@@ -214,7 +214,7 @@ describe('the register feed', () => {
     ]);
   });
 
-  it('files the capital account statements as what the administrator confirmed', () => {
+  it('files the capital account statements as what the administrator confirmed, under either name', () => {
     const accounts = plan().metrics.filter((m) => m.metric === 'capitalAccount');
     expect(accounts.map((m) => [m.scope.id, m.period, m.value])).toEqual([
       ['inv-compartment-one-1', '2024Q1', 3_020_000],

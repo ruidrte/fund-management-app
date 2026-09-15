@@ -149,9 +149,9 @@ export function buildSupportWorkbook(options: SupportWorkbookOptions): SupportWo
  * a second answer: it is the arithmetic of why last quarter's published figure
  * and this quarter's do not sit on the same line.
  *
- * It is written only where the two differ. A book with no basis adjustments in
- * it and no flows outside the commitment has one basis, and a sheet showing it
- * twice would say the change happened when it did not.
+ * It is written only where the two differ. A book with nothing recallable, no
+ * acquisition costs and no flows outside the commitment has one basis, and a
+ * sheet showing it twice would say the change happened when it did not.
  */
 function twoBases(
   positions: Position[], valuations: PositionValuation[], cashflows: Cashflow[],
@@ -166,7 +166,7 @@ function twoBases(
     period,
     stateIn: currency,
     includeRestatements: previous,
-  }).find((basis: ReturnBasis) => basis.key === (previous ? 'on-commitment' : 'with-off-commitment'));
+  }).find((basis: ReturnBasis) => basis.key === (previous ? 'capital-drawn' : 'with-off-commitment'));
 
   const lines = positions
     .map((position) => ({
@@ -187,9 +187,11 @@ function twoBases(
     [
       'The reported basis is every unit the fund paid: capital calls, capitalised '
       + 'acquisition costs and other expenses, with the rows that restate an earlier basis not '
-      + 'applied. The previous method applies those rows and leaves the expenses outside the '
-      + 'commitment out of the denominator. The net asset value is the same under both, and '
-      + 'every flow converts at the rate of its own day under both.',
+      + 'applied; everything that came back is distributed. The previous method is capital '
+      + 'drawn: the calls that used the commitment up, net of the distributions the fund may '
+      + 'call back, with acquisition costs and every other flow outside the commitment left '
+      + 'out — and only the permanent distributions counted as returned. The net asset value '
+      + 'is the same under both, and every flow converts at the rate of its own day under both.',
     ],
     [],
     ['', '', 'REPORTED BASIS', '', '', '', '', '', 'PREVIOUS METHOD'],

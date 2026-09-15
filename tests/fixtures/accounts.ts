@@ -122,7 +122,8 @@ export const REGISTER: TableData = {
     // event still says which way it went.
     event('Coastal Foundation', 2, '2024-06-15', 'Dividend (Cash Distribution)', -30_000),
     event('Northern Pension', 1, '2024-06-30', 'Capital Account Statement', 3_540_000, 'Admin prep file & CAS'),
-    event('Coastal Foundation', 2, '2024-06-30', 'Capital Account Statement', 1_524_200, 'Admin prep file & CAS'),
+    // One compartment's feed calls the same statement "NAV".
+    event('Coastal Foundation', 2, '2024-06-30', 'NAV', 1_524_200, 'Admin prep file & CAS'),
     // An event the reader has no rule for.
     event('Coastal Foundation', 2, '2024-06-30', 'Transfer of interest', 1),
   ],

@@ -927,10 +927,12 @@ export function planAccountsImport(sheets: TableData[], options: AccountsOptions
       emit('Equalisation', -size, 'Equalisation premium received');
     } else if (/^dividend/.test(event)) {
       emit('Distribution', -size, 'Distribution');
-    } else if (event === 'capital account statement') {
+    } else if (event === 'capital account statement' || event === 'nav') {
       // What the administrator confirmed the account was worth at the quarter
       // end — a statement, filed as one, rather than an allocation of the
-      // fund's value by contributed capital.
+      // fund's value by contributed capital. One compartment's feed calls the
+      // same thing "NAV"; it is the investor's, dated the quarter end, and
+      // means the same.
       const at = `${investor.id}/${row.period}`;
       const held = statements.get(at);
       if (!held || held.date <= row.date) statements.set(at, row);

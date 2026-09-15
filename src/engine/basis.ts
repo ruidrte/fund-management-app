@@ -5,6 +5,13 @@
  * flows the question admits. An advisory mandate reports all of them side by
  * side, because each answers something different:
  *
+ *   Capital drawn      what the commitment has been used up by: the calls that
+ *                      drew it, net of the distributions the fund may call back.
+ *                      A recallable distribution restores the commitment rather
+ *                      than returning capital, so it comes off the denominator
+ *                      and never enters the numerator. This is the basis a
+ *                      fund's own statements and its open commitment are on,
+ *                      and the one a desk that reports "capital drawn" publishes.
  *   On commitment      what the capital committed to the fund earned. Calls out,
  *                      distributions back, the holding's value at the end. It is
  *                      the number the manager's own report is comparable with.
@@ -21,9 +28,13 @@
  *                      francs earned the franc number, whatever the dollar
  *                      number says.
  *
- * They are cumulative, so the gap between any two is exactly what the wider one
- * admits. That is the point of showing them together: the fee drag and the
- * currency drag are read off the differences rather than argued about.
+ * From the second on they are cumulative, so the gap between any two is
+ * exactly what the wider one admits. That is the point of showing them
+ * together: the fee drag and the currency drag are read off the differences
+ * rather than argued about. The first is not a narrower set of the same flows
+ * but the same flows read differently — a recallable distribution is money
+ * back in every basis but this one, where it is commitment restored — which
+ * is why a fund of funds shows it beside the second rather than instead of it.
  *
  * Nothing here is stored. A return is a function of the flows and the valuation,
  * and a stored return is one restatement away from disagreeing with them.
@@ -33,7 +44,8 @@ import { periodEndDate, type PeriodId } from '../domain/period';
 import type { Cashflow, CashflowType, CurrencyCode, FxRate, PositionValuation } from '../domain/types';
 import { irrWithTerminalValue, multiples, type DatedFlow } from './metrics';
 
-export type BasisKey = 'on-commitment' | 'with-off-commitment' | 'after-fees' | 'restated';
+export type BasisKey =
+  | 'capital-drawn' | 'on-commitment' | 'with-off-commitment' | 'after-fees' | 'restated';
 
 export interface ReturnBasis {
   key: BasisKey;
@@ -156,6 +168,18 @@ export function returnBases(request: BasisRequest): ReturnBasis[] {
 
   const admits: Array<{ key: BasisKey; label: string; takes: (flow: Cashflow) => boolean }> = [
     {
+      key: 'capital-drawn',
+      label: 'On capital drawn',
+      // The calls that used the commitment up, and the distributions — the
+      // recallable ones net the calls rather than count as returned, which
+      // `measure` reads off the flag below. Nothing paid or received outside
+      // the commitment: not an equalisation, not an acquisition cost, not the
+      // interest a fund pays beside a call.
+      takes: (flow) => flow.positionId === positionId
+        && ((flow.type === 'Capital Call' && flow.affectsCommitment !== false)
+          || flow.type === 'Distribution' || flow.type === 'Return of Capital'),
+    },
+    {
       key: 'on-commitment',
       label: 'On commitment',
       takes: (flow) => flow.positionId === positionId && ON_COMMITMENT.includes(flow.type),
@@ -191,13 +215,18 @@ export function returnBases(request: BasisRequest): ReturnBasis[] {
 
 function measure(
   key: BasisKey, label: string, currency: CurrencyCode,
-  flows: Array<{ date: string; amount: number; type: CashflowType; description?: string }>,
+  flows: Array<{ date: string; amount: number; type: CashflowType; description?: string; recallable?: boolean }>,
   residual: number, end: string, missing: string[] = [],
 ): ReturnBasis {
   const dated: DatedFlow[] = flows.map((flow) => ({ date: new Date(flow.date), amount: flow.amount }));
-  const paidIn = -flows.filter((flow) => PAID_IN.includes(flow.type))
-    .reduce((sum, flow) => sum + flow.amount, 0);
-  const distributed = flows.filter((flow) => !PAID_IN.includes(flow.type))
+  // On capital drawn a recallable distribution is commitment restored, not
+  // capital returned: it nets what was drawn and is not distributed. The cash
+  // still moved on its date, so it is in the rate of return either way.
+  const netsRecallable = key === 'capital-drawn';
+  const paysIn = (flow: { type: CashflowType; recallable?: boolean }) =>
+    PAID_IN.includes(flow.type) || (netsRecallable && flow.recallable === true);
+  const paidIn = -flows.filter(paysIn).reduce((sum, flow) => sum + flow.amount, 0);
+  const distributed = flows.filter((flow) => !paysIn(flow))
     .reduce((sum, flow) => sum + flow.amount, 0);
 
   const first = dated.reduce<number | undefined>(
@@ -240,7 +269,10 @@ function measure(
  * rather than converted at whatever rate is nearest.
  */
 interface Converted {
-  flows: Array<{ date: string; amount: number; type: CashflowType; description?: string; of: Cashflow }>;
+  flows: Array<{
+    date: string; amount: number; type: CashflowType; description?: string;
+    recallable?: boolean; of: Cashflow;
+  }>;
   residual: number;
   missing: string[];
 }
@@ -261,7 +293,7 @@ function convert(
     }
     converted.push({
       date: flow.date, amount: flow.amount * rate, type: flow.type,
-      description: flow.description, of: flow,
+      description: flow.description, recallable: flow.recallable, of: flow,
     });
   }
 

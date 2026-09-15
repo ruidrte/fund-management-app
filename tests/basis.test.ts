@@ -81,6 +81,41 @@ const bases = (restateIn?: string) => returnBases({
 
 const of = (key: BasisKey, restateIn?: string) => bases(restateIn).find((b) => b.key === key)!;
 
+describe('the basis in force at a fund of funds', () => {
+  const recallable: Cashflow = {
+    ...flow('2025-09-30', 200_000, 'Distribution', 'position', 'Distribution #2 (recallable)'),
+    recallable: true,
+  };
+  const bases = () => returnBases({
+    cashflows: [...CASHFLOWS, recallable], valuations: VALUATIONS, fxRates: [],
+    positionId: POSITION, currency: 'USD', period: '2026Q2',
+  });
+  const of = (key: BasisKey) => bases().find((basis) => basis.key === key)!;
+
+  it('nets a recallable distribution off what was drawn instead of counting it returned', () => {
+    // Calls 1,500,000 less the 200,000 the fund may call back; only the
+    // permanent 100,000 has come back. The equalisation is outside the
+    // commitment and stays out.
+    expect(of('capital-drawn').paidIn).toBe(1_300_000);
+    expect(of('capital-drawn').distributed).toBe(100_000);
+    // On commitment the same distribution is money back like any other.
+    expect(of('on-commitment').paidIn).toBe(1_500_000);
+    expect(of('on-commitment').distributed).toBe(300_000);
+  });
+
+  it('keeps the recallable flow in the rate of return, because the cash moved', () => {
+    expect(of('capital-drawn').flows).toBe(of('on-commitment').flows);
+    expect(of('capital-drawn').irr).toBeCloseTo(of('on-commitment').irr!, 12);
+  });
+
+  it('comes first, and is the one basis that is not a wider set of the others', () => {
+    expect(bases().map((basis) => basis.key)).toEqual(
+      ['capital-drawn', 'on-commitment', 'with-off-commitment', 'after-fees'],
+    );
+    expect(of('capital-drawn').tvpi).toBeCloseTo((1_600_000 + 100_000) / 1_300_000, 12);
+  });
+});
+
 describe('what each basis admits', () => {
   it('measures the commitment being drawn and returned, and nothing else', () => {
     const basis = of('on-commitment');
@@ -121,8 +156,8 @@ describe('what each basis admits', () => {
 
   it('offers no restatement when there is nothing to restate into', () => {
     expect(bases().map((b) => b.key))
-      .toEqual(['on-commitment', 'with-off-commitment', 'after-fees']);
-    expect(bases('USD')).toHaveLength(3);
+      .toEqual(['capital-drawn', 'on-commitment', 'with-off-commitment', 'after-fees']);
+    expect(bases('USD')).toHaveLength(4);
   });
 });
 
@@ -244,7 +279,7 @@ describe('the basis a book reports on, and the one it replaced', () => {
       .toBeCloseTo(1_000_000 * 0.90 + 500_000 * 0.88, 6);
     // Four holdings in three currencies have to be in one before they add up,
     // and that is a different question from adding a fourth basis.
-    expect(inFrancs).toHaveLength(3);
+    expect(inFrancs).toHaveLength(4);
   });
 });
 

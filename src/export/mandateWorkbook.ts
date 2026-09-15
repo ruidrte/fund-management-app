@@ -542,6 +542,10 @@ function returns(
   ];
 
   for (const fund of funds) {
+    // Four bases, as the sheet this imitates has four. A mandate's holder is
+    // never handed a distribution the fund may call back, so the basis that
+    // nets one is the on-commitment basis under another name here — and a
+    // fifth column saying so would be a column of repeated figures.
     const bases = returnBases({
       cashflows,
       valuations,
@@ -550,7 +554,7 @@ function returns(
       currency: fund.position.currency,
       period,
       restateIn,
-    });
+    }).filter((basis) => basis.key !== 'capital-drawn');
 
     rows.push([fund.position.name]);
     rows.push([null, 'Basis', 'Currency', 'IRR', 'Paid in', 'Distributed', 'Residual value',

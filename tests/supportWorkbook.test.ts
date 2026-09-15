@@ -67,8 +67,10 @@ const second = planSupportImport(written.sheets, { vehicleId: VEHICLE, recordedA
 
 describe('what is written', () => {
   it('is the sheets a person types into, and not the ones a spreadsheet works out', () => {
+    // And the one comparison a person cannot type: the two bases, side by
+    // side, which the fixture's acquisition cost and recallable put apart.
     expect(written.sheets.map((sheet) => sheet.sheetName))
-      .toEqual(['Cover', 'Investments', 'BS', 'P&L', 'Investors CF']);
+      .toEqual(['Cover', 'Investments', 'BS', 'P&L', 'Investors CF', 'Two bases']);
     expect(written.filename).toBe('balt-infra_reporting_2026Q2');
   });
 
@@ -188,9 +190,29 @@ describe('the file itself', () => {
 
 describe('the two bases the workbook carries', () => {
   it('writes no such sheet where the book has one basis', () => {
-    // Nothing restated and nothing outside the commitment: the two methods are
-    // the same method, and a sheet showing it twice would say a change happened.
-    expect(written.sheets.find((sheet) => sheet.sheetName === 'Two bases')).toBeUndefined();
+    // Nothing recallable, no acquisition cost and nothing outside the
+    // commitment: the two methods are the same method, and a sheet showing it
+    // twice would say a change happened.
+    const rows = INVESTMENTS.rows
+      .filter((row) => row[5] !== 'Stamp duty')
+      .map((row) => (row[5] === 'Net receipt' ? [...row.slice(0, 10), null, ...row.slice(11)] : row));
+    const plain = sheets().map((sheet) => (sheet.sheetName === 'Investments'
+      ? { ...sheet, rows } as TableData
+      : sheet));
+    const plan = planSupportImport(plain, { vehicleId: VEHICLE, recordedAt: at });
+    const built = buildSupportWorkbook({ dataset: book(plan), vehicleId: VEHICLE, period: PERIOD });
+    expect(built.sheets.find((sheet) => sheet.sheetName === 'Two bases')).toBeUndefined();
+  });
+
+  it('writes one where an acquisition cost or a recallable distribution puts the two apart', () => {
+    // Capital drawn leaves the 20,000 of cost out and nets the 5,000 the fund
+    // may call back off the calls; the reported basis counts the cost as paid
+    // and the 5,000 as returned.
+    const sheet = written.sheets.find((s) => s.sheetName === 'Two bases')!;
+    expect(sheet).toBeDefined();
+    const wind = sheet.rows.find((row) => row[0] === 'Baltic Wind')!;
+    expect((wind[2] as number) - (wind[9] as number)).toBeCloseTo(20_000 + 5_000, 6);
+    expect((wind[3] as number) - (wind[10] as number)).toBeCloseTo(5_000, 6);
   });
 
   it('writes one where a basis adjustment makes them differ', () => {
@@ -210,9 +232,10 @@ describe('the two bases the workbook carries', () => {
 
     expect(sheet).toBeDefined();
     const wind = sheet.rows.find((row) => row[0] === 'Baltic Wind')!;
-    // Reported leaves the restatement out; the previous method applies it, and
-    // the twenty thousand of capitalised cost comes back off the denominator.
-    expect((wind[2] as number) - (wind[9] as number)).toBeCloseTo(20_000, 6);
+    // Reported leaves the restatement out and counts the capitalised cost as
+    // paid; capital drawn never admitted the cost, restated or not, and nets
+    // the 5,000 recallable besides.
+    expect((wind[2] as number) - (wind[9] as number)).toBeCloseTo(20_000 + 5_000, 6);
     // The valuation is the same figure under both, which is the whole point of
     // putting them side by side.
     expect(sheet.rows[sheet.rows.length - 1][0]).toBe('TOTAL');

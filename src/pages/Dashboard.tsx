@@ -31,10 +31,12 @@ export function Dashboard({ view }: { view: QuarterView }) {
   /**
    * The holder's return on each basis, per holding.
    *
-   * One holding, four answers, and all four are correct — they differ in which
-   * flows the question admits. Where the answers do not differ there is nothing
-   * to show, so the section only appears for a book that has flows outside the
-   * commitment, a fee charged for a holding, or a currency to restate into.
+   * One holding, several answers, and all of them correct — they differ in
+   * which flows the question admits, and in one case in what a flow is taken
+   * to be. Where the answers do not differ there is nothing to show, so the
+   * section only appears for a book that has flows outside the commitment, a
+   * distribution the fund may call back, a fee charged for a holding, or a
+   * currency to restate into.
    */
   const bases = useMemo<Array<{ name: string; rows: ReturnBasis[] }>>(() => {
     if (!dataset) return [];
@@ -58,7 +60,7 @@ export function Dashboard({ view }: { view: QuarterView }) {
           restateIn: into.length === 1 ? into[0] : undefined,
         }),
       }))
-      // Where every basis gives the same answer, the four are one and the table
+      // Where every basis gives the same answer, they are one and the table
       // says nothing the tiles above have not.
       .filter(({ rows }) => rows.length > 1
         && new Set(rows.map((row) => row.irr?.toFixed(6) ?? '—')).size > 1);
@@ -212,8 +214,10 @@ export function Dashboard({ view }: { view: QuarterView }) {
         <Card
           title="What the holder earned, on each basis"
           subtitle={
-            'The four differ in which flows the question admits, and they are cumulative — '
-            + 'the gap between any two is exactly what the wider one takes in.'
+            'Capital drawn is the basis in force at the fund: calls net of what may be called '
+            + 'back, nothing outside the commitment. The rest differ in which flows the question '
+            + 'admits and are cumulative — the gap between any two is exactly what the wider one '
+            + 'takes in.'
           }
         >
           <div className="flex flex-col gap-4">
