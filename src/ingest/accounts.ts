@@ -342,17 +342,27 @@ function statements(sheets: TableData[]): {
   };
 }
 
-/** The caption a line carries: the first text cell that is not the outline number. */
-function captionOf(row: Cell[]): string {
-  return row.map(text).find((value, i) => i > 0 && value && !/^\d+(\.\d+)*$/.test(value)) ?? '';
+/**
+ * The caption a line carries.
+ *
+ * The cell just before the first quarter's column: the outline number sits to
+ * the left of it and, on some lines, the accounts the figure was built from —
+ * `91058 + 91095` — which is text and is not what the line is called. Where
+ * that cell is empty the first text that is not an outline number stands in.
+ */
+function captionOf(row: Cell[], before: number): string {
+  const named = before > 0 ? text(row[before]) : '';
+  if (named) return named;
+  return row.map(text).find((value, i) => i > 0 && i < before && value && !/^\d+(\.\d+)*$/.test(value)) ?? '';
 }
 
 function readBalanceRows(sheets: TableData[]): BalanceRow[] {
   const parts = statements(sheets);
   if (!parts) return [];
 
+  const before = parts.dates[0].index - 1;
   const line = (pattern: RegExp, index: number): number => {
-    const row = parts.balance.find((r) => pattern.test(captionOf(r)));
+    const row = parts.balance.find((r) => pattern.test(captionOf(r, before)));
     return row ? toNumber(row[index]) ?? 0 : 0;
   };
 
@@ -385,8 +395,9 @@ function readIncomeRows(sheets: TableData[]): IncomeRow[] {
   if (!parts) return [];
 
   const rows: IncomeRow[] = [];
+  const before = parts.dates[0].index - 1;
   for (const row of parts.income) {
-    const caption = captionOf(row);
+    const caption = captionOf(row, before);
     if (!caption) continue;
     for (const { index, date } of parts.dates) {
       const value = toNumber(row[index]);
@@ -503,8 +514,15 @@ const KIND: Record<string, PositionKind> = {
   gp: 'direct-investment',
 };
 
+/**
+ * A caption as a metric name: `Management Fees (check Mgt Fee tab from TB)`
+ * becomes `managementFeesCheckMgtFeeTabFromTb`. Not through `slug`, which
+ * shortens a long name and signs it with a digest — a name that changes when
+ * it is written out in words and read back is a figure the round trip loses.
+ */
 function camel(value: string): string {
-  return slug(value).split('-').map((part, i) => (i === 0 ? part : part[0].toUpperCase() + part.slice(1))).join('');
+  const words = value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  return words.map((word, i) => (i === 0 ? word : word[0].toUpperCase() + word.slice(1))).join('') || 'x';
 }
 
 export function planAccountsImport(sheets: TableData[], options: AccountsOptions): ImportPlan {
@@ -805,7 +823,7 @@ export function planAccountsImport(sheets: TableData[], options: AccountsOptions
   for (const row of readIncomeRows(sheets)) {
     periods.add(row.period);
     metrics.push({
-      id: `met-${vehicleId}-${row.period}-pl.${slug(row.caption)}`,
+      id: `met-${vehicleId}-${row.period}-pl.${camel(row.caption)}`,
       scope: { kind: 'vehicle', id: vehicleId },
       period: row.period,
       recordedAt,

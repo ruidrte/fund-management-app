@@ -17,8 +17,10 @@ import type { TableData } from '../ingest/types';
 import type { ImportPlan } from '../ingest/pfdb';
 import { planMandateImport } from '../ingest/mandate';
 import { planSupportImport } from '../ingest/support';
+import { planAccountsImport } from '../ingest/accounts';
 import { buildMandateWorkbook } from './mandateWorkbook';
 import { buildSupportWorkbook } from './supportWorkbook';
+import { buildAccountsWorkbook } from './accountsWorkbook';
 
 export interface WrittenWorkbook {
   sheets: TableData[];
@@ -27,7 +29,7 @@ export interface WrittenWorkbook {
 }
 
 export interface WorkbookShape {
-  id: 'mandate' | 'support';
+  id: 'mandate' | 'support' | 'accounts';
   /** What the file is called, on the screen that offers it. */
   label: string;
   /** One line on what it is for, and what it deliberately leaves out. */
@@ -62,6 +64,17 @@ export const WORKBOOK_SHAPES: WorkbookShape[] = [
     write: buildSupportWorkbook,
     read: (sheets, vehicleId) => planSupportImport(sheets, { vehicleId }),
   },
+  {
+    id: 'accounts',
+    label: 'Investment accounts workbook',
+    note:
+      'The ledger of every movement with every holding, the administrator’s statements quarter '
+      + 'by quarter, and the register feed the capital accounts are written from — with the '
+      + 'snapshot as the desk published it and the two bases side by side. The multiples, the '
+      + 'rates of return and the charts are not written: this application computes them.',
+    write: buildAccountsWorkbook,
+    read: (sheets, vehicleId) => planAccountsImport(sheets, { vehicleId }),
+  },
 ];
 
 /**
@@ -72,10 +85,16 @@ export const WORKBOOK_SHAPES: WorkbookShape[] = [
  * workbook would produce a file that opens, reads back, and is not the fund's
  * record.
  */
-export function shapeFor(vehicle: Vehicle | undefined): WorkbookShape | undefined {
+export function shapeFor(vehicle: Vehicle | undefined, dataset?: DataSet): WorkbookShape | undefined {
   if (!vehicle) return undefined;
+  // Two funds of funds arrive in two shapes, and the book says which: only the
+  // investment accounts workbook files the administrator's statements as
+  // `fs.` figures, so a product whose book carries them arrived that way.
+  const fromAccounts = dataset?.metrics.some(
+    (m) => m.scope.kind === 'vehicle' && m.scope.id === vehicle.id && m.metric.startsWith('fs.'),
+  ) ?? false;
   const id = vehicle.kind === 'mandate' ? 'mandate'
-    : vehicle.kind === 'fund-of-funds' ? 'support'
+    : vehicle.kind === 'fund-of-funds' ? (fromAccounts ? 'accounts' : 'support')
       : undefined;
   return id ? WORKBOOK_SHAPES.find((shape) => shape.id === id) : undefined;
 }

@@ -72,7 +72,7 @@ export function Export({ view }: { view: QuarterView }) {
   // as the file this product's quarter arrives in, so whatever reads that — a
   // person, or the deck — needs no change once the book produces it instead.
   const product = view.vehicles.length === 1 ? view.vehicles[0] : undefined;
-  const shape = shapeFor(product);
+  const shape = shapeFor(product, dataset ?? undefined);
   const support = useMemo(() => {
     if (!dataset || !product || !shape) return undefined;
     try {

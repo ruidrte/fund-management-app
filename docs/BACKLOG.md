@@ -144,12 +144,15 @@ and Q2 2026 of the second tie to the files' own figures on every line, and to
 the desk's Method A against Method B history on both bases, per asset and at
 fund level — as does PAS Infra.
 
-What the investment accounts workbook still needs:
+The investment accounts workbook has its writer (`src/export/accountsWorkbook.ts`)
+and the round trip closes on both real files — every fact of PCIOF I's book and
+of PCIOF II's written and read back unchanged. Two things the shape cannot
+carry are said rather than hidden: the register feed has no event for a fee
+charged to an investor, and a rate the ledger stated twice on one date comes
+back on that date's rows in whichever order they fall.
 
-- **A writer, and the round trip.** The reader restates the whole book; nothing
-  yet writes it back. The two bases the desk publishes are already what
-  `returnBases` computes — capital drawn and the reported basis — so the sheet
-  is the quarterly reporting workbook's, written for this shape.
+What it still needs:
+
 - **A file saved by Excel.** A workbook saved by a script carries its formulas
   without their values, and every derived column reads as empty. The Q2 2026
   file is one of those; opening and saving it in Excel is all it needs.

@@ -153,7 +153,7 @@ export function buildSupportWorkbook(options: SupportWorkbookOptions): SupportWo
  * acquisition costs and no flows outside the commitment has one basis, and a
  * sheet showing it twice would say the change happened when it did not.
  */
-function twoBases(
+export function twoBases(
   positions: Position[], valuations: PositionValuation[], cashflows: Cashflow[],
   fxRates: DataSet['fxRates'], currency: CurrencyCode, period: PeriodId,
 ): TableData[] {
