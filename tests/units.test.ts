@@ -48,7 +48,7 @@ describe('the unit a book is written in', () => {
       .filter((vehicle) => vehicle.unitScale === 1)
       .map((vehicle) => vehicle.shortName)
       .sort();
-    expect(inFull).toEqual(['PAS Infra', 'PK TG', 'UT EGF']);
+    expect(inFull).toEqual(['PAS Infra', 'PCIOF I', 'PCIOF II', 'PK TG', 'UT EGF']);
   });
 
   it('keeps the currency symbol in front of the amount, whatever the unit', () => {
