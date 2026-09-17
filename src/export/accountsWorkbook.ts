@@ -455,7 +455,7 @@ function statements(balanceSheets: VehicleBalanceSheet[], metrics: Metric[]): Ta
 const SNAPSHOT_COLUMNS: Cell[] = [
   'Quarter', 'Date', 'Asset', 'CCY', 'Commitment', 'Drawdown', 'Distributed', 'NAV', 'Open', 'TVPI',
   'FX', 'Commitment €', 'Drawdown €', 'Distributed €', 'NAV €', 'Total Value', 'Open €', 'TVPI €',
-  'Paid-In €',
+  'Multiple basis', 'Paid-In €',
 ];
 
 /**
@@ -490,7 +490,7 @@ function snapshot(
 
   const quarter = `Q${published.slice(5)} ${published.slice(0, 4)}`;
   const date = periodEndDate(published);
-  const total = { commitment: 0, drawdown: 0, distributed: 0, nav: 0, open: 0, paidIn: 0 };
+  const total = { commitment: 0, drawdown: 0, distributed: 0, nav: 0, open: 0, paidIn: 0, applied: 0, returned: 0 };
   const rows: Cell[][] = [];
 
   for (const position of positions) {
@@ -514,29 +514,41 @@ function snapshot(
     const commitmentEur = frozen > 0 ? frozen : (closing !== null ? position.commitment * closing : null);
     const openEur = closing !== null ? open * closing : null;
 
+    // The multiple on the basis the holding is agreed to sit on — the
+    // product's, unless the book says this one is the exception.
+    const onDrawn = position.reportingBasis === 'capital-drawn';
+    const shown = onDrawn ? drawn : local.find((b) => b.key === 'with-off-commitment')!;
+    const shownEur = onDrawn ? drawnEur : paidEur;
+
     total.commitment += commitmentEur ?? 0;
     total.drawdown += drawnEur.paidIn;
     total.distributed += drawnEur.distributed;
     total.nav += drawnEur.residual;
     total.open += openEur ?? 0;
     total.paidIn += paidEur.paidIn;
+    total.applied += shownEur.paidIn;
+    total.returned += shownEur.distributed;
 
     rows.push([
       quarter, date, position.name, position.currency,
-      position.commitment, drawn.paidIn, drawn.distributed, drawn.residual, open, drawn.tvpi ?? null,
+      position.commitment, drawn.paidIn, drawn.distributed, drawn.residual, open, shown.tvpi ?? null,
       closing,
       commitmentEur, drawnEur.paidIn, drawnEur.distributed, drawnEur.residual,
-      drawnEur.residual + drawnEur.distributed, openEur, drawnEur.tvpi ?? null,
+      drawnEur.residual + drawnEur.distributed, openEur, shownEur.tvpi ?? null,
+      onDrawn ? 'Drawdown' : 'Paid-In',
       paidEur.paidIn,
     ]);
   }
 
-  const or = (name: keyof typeof total) => stated(name === 'open' ? 'openCommitment' : name) ?? total[name];
+  const or = (name: 'commitment' | 'drawdown' | 'distributed' | 'nav' | 'open' | 'paidIn') =>
+    stated(name === 'open' ? 'openCommitment' : name) ?? total[name];
   rows.push([
     'Total', null, null, null, null, null, null, null, null, null, null,
     or('commitment'), or('drawdown'), or('distributed'), or('nav'),
     or('nav') + or('distributed'), or('open'),
-    or('drawdown') > 0 ? (or('nav') + or('distributed')) / or('drawdown') : null,
+    // Over the denominators applied, as the desk publishes it.
+    total.applied > 0 ? (total.nav + total.returned) / total.applied : null,
+    null,
     or('paidIn'),
   ]);
 
@@ -546,7 +558,9 @@ function snapshot(
       ['Portfolio — Snapshot by Quarter', null, null, 'Quarter:', quarter],
       ['The lines are computed from the ledger: drawdown is capital drawn, calls net of what may '
         + 'be called back; paid-in is the calls with everything paid outside the commitment. The '
-        + 'total is the figure the desk published, kept so the two can be compared.'],
+        + 'total is the figure the desk published, kept so the two can be compared. TVPI and DPI '
+        + 'are taken on paid-in; a holding the column beside it puts on drawdown is the agreed '
+        + 'exception, and the total\u2019s multiple is over the denominators applied.'],
       [],
       [],
       SNAPSHOT_COLUMNS,

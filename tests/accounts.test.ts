@@ -235,6 +235,15 @@ describe('the register feed', () => {
 });
 
 describe('the snapshot', () => {
+  it('takes the basis each holding’s multiple is agreed to sit on from the column beside it', () => {
+    const bases = Object.fromEntries(plan().positions.map((p) => [p.name, p.reportingBasis]));
+    expect(bases).toEqual({
+      'Harbour Fund IV': 'paid-in', 'Solar Park Beta': 'capital-drawn', 'Beta GP SA': undefined,
+    });
+    expect(plan().notes.some((n) => n.startsWith('Solar Park Beta: the snapshot says the multiple sits on capital drawn')))
+      .toBe(true);
+  });
+
   it('keeps the desk’s published totals for the check, and reads no figure from them', () => {
     const stated = Object.fromEntries(
       plan().metrics.filter((m) => m.metric.startsWith('snapshot.')).map((m) => [m.metric, [m.period, m.value]]),
@@ -286,6 +295,26 @@ describe('through the engine', () => {
     expect(totals.recallable).toBe(200_000);
     // What consumed the commitment is the calls alone.
     expect(totals.drawn).toBeCloseTo(2_000_000 * 1.16 + 3_000_000 - 50_000 + 20_000 + 10_000, 2);
+  });
+
+  it('measures the agreed exception on capital drawn, and the product over the denominators applied', () => {
+    const view = analyse(dataset(), { clientId: 'c', vehicleId: 'veh-one', period: '2024Q2' });
+    const beta = view.gross.positions.find((p) => p.position.name === 'Solar Park Beta')!;
+    const harbour = view.gross.positions.find((p) => p.position.name === 'Harbour Fund IV')!;
+    // Beta: calls 2,970,000 net of the 200,000 recallable; only the 100,000
+    // permanent distribution returned. The cash figures say what moved.
+    expect(beta.measuredOn).toEqual({ basis: 'capital-drawn', paidIn: 2_770_000, distributed: 100_000 });
+    expect(beta.paidIn).toBe(2_970_000);
+    expect(beta.distributed).toBe(300_000);
+    expect(beta.multiples.tvpi).toBeCloseTo((2_900_000 + 100_000) / 2_770_000, 12);
+    // Harbour stays on paid-in: the equalisation in, the income back.
+    expect(harbour.measuredOn.basis).toBe('paid-in');
+    expect(harbour.measuredOn.paidIn).toBeCloseTo(2_000_000 * 1.16 + 30_000 * 1.18, 2);
+    // And the product is over the sum of what was applied, holding by holding.
+    const applied = 2_770_000 + harbour.measuredOn.paidIn + 10_000;
+    const returned = 100_000 + 4_000 * 1.18;
+    expect(view.gross.totals.multiples.tvpi).toBeCloseTo((view.gross.totals.nav + returned) / applied, 10);
+    expect(view.qualifications.some((q) => q.startsWith('Solar Park Beta: multiple on capital drawn'))).toBe(true);
   });
 
   it('sums the confirmed capital accounts to the net asset value less the carry', () => {

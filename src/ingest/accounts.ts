@@ -478,6 +478,8 @@ interface Snapshot {
   nav?: number;
   open?: number;
   paidIn?: number;
+  /** The basis each holding's multiple is agreed to sit on, where the sheet says. */
+  bases: Map<string, Position['reportingBasis']>;
 }
 
 function readSnapshot(sheets: TableData[]): Snapshot | undefined {
@@ -490,6 +492,18 @@ function readSnapshot(sheets: TableData[]): Snapshot | undefined {
   if (!total) return undefined;
   const dated = table.rows.slice(header + 1).map((row) => col.date(row, 'Date')).find(Boolean);
   if (!dated) return undefined;
+
+  // "TVPI and DPI are taken on Paid-In. ICG2 is the agreed exception and sits
+  // on Drawdown." The column beside each line is where the sheet says which.
+  const bases = new Map<string, Position['reportingBasis']>();
+  for (const row of table.rows.slice(header + 1)) {
+    const asset = col.text(row, 'Asset');
+    const basis = col.text(row, 'Multiple basis').toLowerCase();
+    if (!asset || /^total$/i.test(asset) || !basis) continue;
+    if (/drawdown|capital drawn/.test(basis)) bases.set(asset, 'capital-drawn');
+    else if (/paid/.test(basis)) bases.set(asset, 'paid-in');
+  }
+
   return {
     period: periodForDate(dated),
     commitment: col.number(total, 'Commitment €'),
@@ -498,6 +512,7 @@ function readSnapshot(sheets: TableData[]): Snapshot | undefined {
     nav: col.number(total, 'NAV €'),
     open: col.number(total, 'Open €'),
     paidIn: col.number(total, 'Paid-In €'),
+    bases,
   };
 }
 
@@ -866,6 +881,24 @@ export function planAccountsImport(sheets: TableData[], options: AccountsOptions
       + 'is calls net of recallable distributions, which is the basis in force at the fund; its '
       + 'paid-in is the calls alone.',
     );
+
+    // The basis each holding's multiple is agreed to sit on. Only where the
+    // sheet names one: a holding it says nothing about is on the product's.
+    const exceptions: string[] = [];
+    for (const position of positions) {
+      const basis = snapshot.bases.get(position.name);
+      if (!basis) continue;
+      position.reportingBasis = basis;
+      if (basis === 'capital-drawn') exceptions.push(position.name);
+    }
+    if (exceptions.length > 0) {
+      notes.push(
+        `${exceptions.join(', ')}: the snapshot says the multiple sits on capital drawn, as `
+        + 'agreed, and it is carried that way — the calls net of what may be called back, with '
+        + 'only the permanent distributions returned. The product\u2019s multiple is over the sum of '
+        + 'the denominators applied, which is the figure the desk publishes.',
+      );
+    }
   }
 
   /* --- the investors ---------------------------------------------- */

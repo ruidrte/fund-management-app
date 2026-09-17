@@ -50,6 +50,16 @@ export interface PositionResult {
   valueChange: number;
   fxEffect: number;
   multiples: Multiples;
+  /**
+   * What the multiples above are measured on.
+   *
+   * Usually what was paid and what came back, as the two fields above. A
+   * holding the desk has agreed to carry on capital drawn is measured on the
+   * calls net of what may be called back, with only the permanent
+   * distributions returned — and says so here, so a product's multiple can be
+   * over the sum of the denominators actually applied.
+   */
+  measuredOn: { basis: 'paid-in' | 'capital-drawn'; paidIn: number; distributed: number };
   irr?: number;
   provenance: Provenance;
   /**
@@ -245,6 +255,16 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       amount: convertFlow(c),
     }));
 
+    // The basis the multiple is agreed to sit on. On capital drawn, a
+    // recallable distribution is commitment restored rather than money back,
+    // and nothing outside the commitment counts either way — the same reading
+    // `basis.ts` gives the first of its bases. The cash figures above are
+    // untouched: what moved, moved.
+    const income = sum(toDate.filter((c) => c.type === 'Income').map(convertFlow));
+    const measuredOn = position.reportingBasis === 'capital-drawn'
+      ? { basis: 'capital-drawn' as const, paidIn: drawn - recallable, distributed: distributed - recallable - income }
+      : { basis: 'paid-in' as const, paidIn, distributed };
+
     return {
       position,
       state,
@@ -262,7 +282,8 @@ export function computeGross(inputs: GrossInputs): GrossResult {
       fxEffect,
       paidIn,
       commitmentCallsInPeriod,
-      multiples: multiples({ paidIn, distributed, nav }),
+      multiples: multiples({ paidIn: measuredOn.paidIn, distributed: measuredOn.distributed, nav }),
+      measuredOn,
       ledger: { drawn: ledgerDrawn, distributed: ledgerDistributed },
       stated: state.reported
         ? { drawn: statedDrawn, distributed: statedDistributed }
@@ -367,7 +388,13 @@ function aggregate(
     valueChange: sum(results.map((r) => r.valueChange)),
     fxEffect: sum(results.map((r) => r.fxEffect)),
     percentInvested: commitments > 0 ? drawn / commitments : 0,
-    multiples: multiples({ paidIn: sum(results.map((r) => r.paidIn)), distributed, nav }),
+    // Over the denominators applied, holding by holding — which is the
+    // product's paid-in unless a holding is agreed to sit on capital drawn.
+    multiples: multiples({
+      paidIn: sum(results.map((r) => r.measuredOn.paidIn)),
+      distributed: sum(results.map((r) => r.measuredOn.distributed)),
+      nav,
+    }),
     irr: irrWithTerminalValue(allFlows, nav, new Date(periodEndDate(period))),
   };
 }

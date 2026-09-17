@@ -158,6 +158,20 @@ export interface Position {
    * one figure that matters, the fund's own multiple on its properties.
    */
   lookThrough?: 'vehicle' | 'underlying';
+  /**
+   * The basis this holding's multiples are agreed to be reported on, where it
+   * departs from the product's.
+   *
+   * A product reports on paid-in — every unit the holding was paid, and every
+   * unit that came back. A holding whose equalisations have made that figure
+   * say something nobody agrees it means is carried on capital drawn instead:
+   * the calls that used the commitment up, net of what may be called back,
+   * with only the permanent distributions returned. The desk's snapshot names
+   * the exception beside the holding, and the product's multiple is then over
+   * the sum of the denominators applied — which is what the desk publishes.
+   * Absent, the holding is on the product's basis.
+   */
+  reportingBasis?: 'capital-drawn' | 'paid-in';
   assetClass: string;
   subAssetClass?: string;
   region: string;

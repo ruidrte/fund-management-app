@@ -240,8 +240,14 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
 
   const checks = runChecks(gross, net, Object.values(bridges), Object.values(exposure));
 
+  const onCapitalDrawn = gross.positions
+    .filter((p) => p.measuredOn.basis === 'capital-drawn')
+    .map((p) => p.position.name);
   const qualifications = [
     ...gross.qualifications,
+    ...(onCapitalDrawn.length > 0
+      ? [`${onCapitalDrawn.join(', ')}: multiple on capital drawn, as agreed — the product\u2019s is over the denominators applied`]
+      : []),
     ...(net.about === 'unattributed'
       ? ['Narrowed to one holding — the net figures remain the vehicle\u2019s, which its book cannot attribute to a holding']
       : []),

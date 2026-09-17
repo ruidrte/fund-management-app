@@ -217,7 +217,7 @@ describe('the snapshot', () => {
   it('carries the desk’s published total, not the sum of its own lines', () => {
     expect(total[14]).toBe(5_494_200);
     expect(total[12]).toBe(5_100_000);
-    expect(total[18]).toBe(5_300_000);
+    expect(total[19]).toBe(5_300_000);
     expect(second.metrics.find((m) => m.metric === 'snapshot.nav')!.value).toBe(5_494_200);
   });
 
@@ -227,6 +227,19 @@ describe('the snapshot', () => {
     // recallable; only the 100,000 permanent distribution returned.
     expect(beta[5]).toBeCloseTo(2_770_000, 6);
     expect(beta[6]).toBeCloseTo(100_000, 6);
-    expect(beta[18]).toBeCloseTo(2_970_000, 6);
+    expect(beta[19]).toBeCloseTo(2_970_000, 6);
+  });
+
+  it('names the basis each holding’s multiple sits on, and it comes back as the same exception', () => {
+    const beta = rows.find((row) => row[2] === 'Solar Park Beta')!;
+    const harbour = rows.find((row) => row[2] === 'Harbour Fund IV')!;
+    expect(beta[18]).toBe('Drawdown');
+    expect(harbour[18]).toBe('Paid-In');
+    // The multiple on each line is on its own basis, and the total's is over
+    // the denominators applied.
+    expect(beta[17]).toBeCloseTo((2_900_000 + 100_000) / 2_770_000, 10);
+    expect(harbour[17]).toBeCloseTo((2_180_000 * 1.19 + 4_000 * 1.18) / (2_000_000 * 1.16 + 30_000 * 1.18), 10);
+    expect(second.positions.find((p) => p.name === 'Solar Park Beta')!.reportingBasis).toBe('capital-drawn');
+    expect(second.positions.find((p) => p.name === 'Harbour Fund IV')!.reportingBasis).toBe('paid-in');
   });
 });
