@@ -66,8 +66,11 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         shortName: 'PCIOF I',
         kind: 'fund-of-funds',
         currency: 'EUR',
+        // Its ledger, its statements and its register feed are in whole euros:
+        // the investment accounts workbook states 10,000,000, not 10,000.
+        unitScale: 1,
         inception: '2021-06-30',
-        investorCommitment: 180_000,
+        investorCommitment: 121_500_000,
         status: 'Investing',
         domicile: 'Luxembourg',
         administrator: 'Northgate Fund Services',
@@ -78,8 +81,9 @@ export const CLIENT_DEFINITIONS: ClientDefinition[] = [
         shortName: 'PCIOF II',
         kind: 'fund-of-funds',
         currency: 'EUR',
+        unitScale: 1,
         inception: '2024-09-30',
-        investorCommitment: 120_000,
+        investorCommitment: 15_000_000,
         status: 'Fundraising',
         domicile: 'Luxembourg',
         administrator: 'Northgate Fund Services',
