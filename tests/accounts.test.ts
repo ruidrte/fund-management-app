@@ -317,6 +317,27 @@ describe('through the engine', () => {
     expect(view.qualifications.some((q) => q.startsWith('Solar Park Beta: multiple on capital drawn'))).toBe(true);
   });
 
+  it('shows every holding on one basis when asked to look, and says it is a look', () => {
+    const agreed = analyse(dataset(), { clientId: 'c', vehicleId: 'veh-one', period: '2024Q2' });
+    const allPaidIn = analyse(dataset(), { clientId: 'c', vehicleId: 'veh-one', period: '2024Q2', multiplesOn: 'paid-in' });
+    const allDrawn = analyse(dataset(), { clientId: 'c', vehicleId: 'veh-one', period: '2024Q2', multiplesOn: 'capital-drawn' });
+
+    // On paid-in with no exception, Beta's denominator is every unit paid.
+    const beta = (view: typeof agreed) => view.gross.positions.find((p) => p.position.name === 'Solar Park Beta')!;
+    expect(beta(allPaidIn).measuredOn).toEqual({ basis: 'paid-in', paidIn: 2_970_000, distributed: 300_000 });
+    expect(beta(allDrawn).measuredOn).toEqual(beta(agreed).measuredOn);
+    // On capital drawn for everybody, Harbour loses its equalisation and its income.
+    const harbour = allDrawn.gross.positions.find((p) => p.position.name === 'Harbour Fund IV')!;
+    expect(harbour.measuredOn).toEqual({ basis: 'capital-drawn', paidIn: 2_000_000 * 1.16, distributed: 0 });
+    expect(allDrawn.gross.totals.multiples.tvpi).not.toBeCloseTo(agreed.gross.totals.multiples.tvpi!, 6);
+
+    // The look is named as one, in place of the exception's note; and the
+    // book is untouched, which the agreed view still reading the same shows.
+    expect(allDrawn.qualifications.some((q) => q.startsWith('Multiples shown on capital drawn for every holding'))).toBe(true);
+    expect(allDrawn.qualifications.some((q) => q.includes('as agreed'))).toBe(false);
+    expect(agreed.qualifications.some((q) => q.startsWith('Solar Park Beta: multiple on capital drawn'))).toBe(true);
+  });
+
   it('sums the confirmed capital accounts to the net asset value less the carry', () => {
     const view = analyse(dataset(), { clientId: 'c', vehicleId: 'veh-one', period: '2024Q2' });
     expect(view.net.product.components.vehicleNav)

@@ -14,7 +14,7 @@ import { factsFrom, type Candidate, type ImportPlan, type SourceDocument } from 
 import { statedAt, supersede } from '../ingest/reference';
 import { NO_PROFILE, type ReportingProfile } from '../domain/report';
 import {
-  DEFAULT_CONVENTIONS, type CurrencyCode, type ReportingConventions,
+  DEFAULT_CONVENTIONS, type CurrencyCode, type Position, type ReportingConventions,
 } from '../domain/types';
 
 export interface FilingResult {
@@ -230,6 +230,62 @@ export function useProductTerms() {
   }, [book, kind, clientId, dataset, refresh]);
 
   return {
+    vehicles: dataset?.vehicles ?? [],
+    save,
+    canSave,
+    destination: folderName,
+    reason: canSave ? undefined : kind === 'supabase'
+      ? 'Writing to the database is not built yet.'
+      : 'No book is connected — connect a folder under Storage.',
+  };
+}
+
+/**
+ * Each holding's own terms — for now, the basis its multiple is agreed to sit
+ * on.
+ *
+ * Kept with the holding in the book rather than as a setting on a screen,
+ * because it is a fact about the holding the desk agreed and the workbook
+ * records: the exported file carries it in the snapshot's own column, and a
+ * file imported with that column sets it. A toggle that lived only on the
+ * page would have the dashboard, the exported workbook and the desk's own
+ * history giving three answers to one multiple.
+ */
+export function useHoldingTerms() {
+  const { kind, book, folderName } = useDataSource();
+  const { clientId, dataset, vehicleId, refresh } = useScope();
+
+  const canSave = kind === 'folder' && Boolean(book);
+
+  const save = useCallback(async (positionId: string, basis: Position['reportingBasis']) => {
+    if (!dataset) throw new Error('No client is loaded.');
+    if (!dataset.positions.some((p) => p.id === positionId)) {
+      throw new Error('That holding is not in this book.');
+    }
+    if (!book || kind !== 'folder') {
+      throw new Error(
+        kind === 'supabase'
+          ? 'Writing to the database is not built yet, so this cannot be saved.'
+          : 'No book is connected, so there is nowhere to keep it. Connect a folder under Storage.',
+      );
+    }
+    await book.commit(clientId, {
+      reference: {
+        positions: dataset.positions.map((p) => {
+          if (p.id !== positionId) return p;
+          // The product's own basis is the absence of an exception, so it is
+          // not written as one.
+          const next: Position = { ...p };
+          delete next.reportingBasis;
+          return basis === 'capital-drawn' ? { ...next, reportingBasis: basis } : next;
+        }),
+      },
+    });
+    refresh();
+  }, [book, kind, clientId, dataset, refresh]);
+
+  return {
+    holdings: (dataset?.positions ?? []).filter((p) => !vehicleId || p.vehicleId === vehicleId),
     vehicles: dataset?.vehicles ?? [],
     save,
     canSave,

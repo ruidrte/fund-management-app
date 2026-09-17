@@ -198,6 +198,7 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
     rates,
     conventions,
     knowledgeDate: scope.knowledgeDate,
+    multiplesOn: scope.multiplesOn,
   });
 
   const net = computeNet({
@@ -243,11 +244,16 @@ export function analyse(dataset: DataSet, scope: Scope): QuarterView {
   const onCapitalDrawn = gross.positions
     .filter((p) => p.measuredOn.basis === 'capital-drawn')
     .map((p) => p.position.name);
+  const viewed = scope.multiplesOn && scope.multiplesOn !== 'agreed';
   const qualifications = [
     ...gross.qualifications,
-    ...(onCapitalDrawn.length > 0
-      ? [`${onCapitalDrawn.join(', ')}: multiple on capital drawn, as agreed — the product\u2019s is over the denominators applied`]
-      : []),
+    // A look at every holding on one basis is said to be one, because the
+    // figure it produces is not the one the product reports.
+    ...(viewed
+      ? [`Multiples shown on ${scope.multiplesOn === 'capital-drawn' ? 'capital drawn' : 'paid-in'} for every holding — a view, not the agreed basis`]
+      : onCapitalDrawn.length > 0
+        ? [`${onCapitalDrawn.join(', ')}: multiple on capital drawn, as agreed — the product\u2019s is over the denominators applied`]
+        : []),
     ...(net.about === 'unattributed'
       ? ['Narrowed to one holding — the net figures remain the vehicle\u2019s, which its book cannot attribute to a holding']
       : []),

@@ -17,6 +17,7 @@ import { percent, PROVENANCE_DESCRIPTION, PROVENANCE_LABEL } from '../components
 import { formatPeriod } from '../domain/period';
 import { Conventions } from '../components/quality/Conventions';
 import { ProductTerms } from '../components/quality/ProductTerms';
+import { HoldingTerms } from '../components/quality/HoldingTerms';
 import type { CurrencyCode, Provenance } from '../domain/types';
 import { useMoney } from '../context/ScopeContext';
 
@@ -144,6 +145,8 @@ export function DataQuality({ view }: { view: QuarterView }) {
       <FxCard view={view} />
 
       <ProductTerms />
+
+      <HoldingTerms />
 
       <Conventions />
 

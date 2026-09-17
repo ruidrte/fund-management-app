@@ -19,7 +19,8 @@ import { useAuth } from './AuthContext';
 import { boundInvestorId, visibleClientIds } from '../auth/permissions';
 import { restrictToInvestor } from '../auth/restrict';
 import {
-  unitScaleOf, type CurrencyCode, type DataSet, type PositionKind, type Scope, type Vehicle,
+  unitScaleOf, type CurrencyCode, type DataSet, type MultiplesView, type PositionKind, type Scope,
+  type Vehicle,
 } from '../domain/types';
 import { periodForDate, type PeriodId } from '../domain/period';
 import { money, signedMoney } from '../components/common/format';
@@ -60,6 +61,13 @@ interface ScopeValue {
   setCurrency: (value: CurrencyCode | undefined) => void;
   currencies: CurrencyCode[];
 
+  /**
+   * The basis every multiple is shown on. `agreed` is what the product
+   * reports; the other two are a look, kept nowhere.
+   */
+  multiplesOn: MultiplesView;
+  setMultiplesOn: (value: MultiplesView) => void;
+
   view?: QuarterView;
   /**
    * The unit the product in scope keeps its books in. Undefined for a client
@@ -91,6 +99,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
   const [period, setPeriod] = useState<PeriodId>();
   const [knowledgeDate, setKnowledgeDate] = useState<string>();
   const [currency, setCurrency] = useState<CurrencyCode>();
+  const [multiplesOn, setMultiplesOn] = useState<MultiplesView>('agreed');
 
   useEffect(() => {
     let cancelled = false;
@@ -193,6 +202,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       period,
       knowledgeDate,
       presentationCurrency: currency,
+      multiplesOn,
     };
     try {
       return analyse(dataset, scope);
@@ -201,7 +211,7 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
       setError(describe(cause));
       return undefined;
     }
-  }, [dataset, clientId, vehicleId, positionId, period, knowledgeDate, currency]);
+  }, [dataset, clientId, vehicleId, positionId, period, knowledgeDate, currency, multiplesOn]);
 
   // The unit the books in scope are kept in. A book written before the unit was
   // recorded is in thousands, which is what every one of them was.
@@ -235,6 +245,8 @@ export function ScopeProvider({ children }: { children: ReactNode }) {
     currency,
     setCurrency,
     currencies,
+    multiplesOn,
+    setMultiplesOn,
     view,
     unitScale,
     refresh: useCallback(() => setReloadToken((n) => n + 1), []),

@@ -552,7 +552,19 @@ export interface Scope {
   knowledgeDate?: string; // ISO timestamp
   /** Currency the results are presented in. Defaults to the vehicle currency. */
   presentationCurrency?: CurrencyCode;
+  /**
+   * Which basis to show every holding's multiple on.
+   *
+   * `agreed`, the default and the only one a report is issued on: the
+   * product's basis, paid-in, except for a holding the book says is carried
+   * on capital drawn. The other two put every holding on one basis for the
+   * length of a look — what the whole portfolio would read on capital drawn,
+   * or on paid-in with no exceptions — and change nothing in the book.
+   */
+  multiplesOn?: MultiplesView;
 }
+
+export type MultiplesView = 'agreed' | 'paid-in' | 'capital-drawn';
 
 /** Everything the engine needs, already narrowed to one client. */
 export interface DataSet {

@@ -12,12 +12,13 @@ import { ProvenanceBadge } from '../components/common/Badges';
 import { multiple, percent } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
 import { useMoney, useScope, useHouse } from '../context/ScopeContext';
+import type { MultiplesView } from '../domain/types';
 
 type SortKey = 'name' | 'nav' | 'valueChange' | 'tvpi' | 'commitment';
 
 export function Portfolio({ view }: { view: QuarterView }) {
   const { money, signedMoney } = useMoney();
-  const { setPositionId } = useScope();
+  const { setPositionId, multiplesOn, setMultiplesOn } = useScope();
   const house = useHouse();
   const [sort, setSort] = useState<SortKey>('nav');
   const [onlyDrafted, setOnlyDrafted] = useState(false);
@@ -207,6 +208,23 @@ export function Portfolio({ view }: { view: QuarterView }) {
               />
               Only unreported
             </label>
+            {/*
+              A look, not a setting: every holding on one basis for as long as
+              the selector says so, and nothing written anywhere. The agreed
+              basis — the product's, with the exceptions the book records — is
+              what the product reports, and is set per holding under Data
+              quality.
+            */}
+            <select
+              className="field" value={multiplesOn}
+              onChange={(event) => setMultiplesOn(event.target.value as MultiplesView)}
+              aria-label="Basis the multiples are shown on"
+              style={multiplesOn === 'agreed' ? undefined : { borderColor: 'var(--status-warning)' }}
+            >
+              <option value="agreed">Multiples as agreed</option>
+              <option value="paid-in">All on paid-in</option>
+              <option value="capital-drawn">All on drawdown</option>
+            </select>
             <select
               className="field" value={sort}
               onChange={(event) => setSort(event.target.value as SortKey)}
@@ -285,7 +303,20 @@ export function Portfolio({ view }: { view: QuarterView }) {
             },
             {
               key: 'tvpi', header: 'TVPI', align: 'right',
-              render: (row) => multiple(row.multiples.tvpi),
+              // The agreed exception is marked on its row, so a multiple on
+              // drawdown is never read as one on paid-in.
+              render: (row) => (
+                <span title={row.measuredOn.basis === 'capital-drawn'
+                  ? 'On drawdown: calls net of recallable distributions, permanent distributions only'
+                  : 'On paid-in: every unit paid, every unit returned'}>
+                  {multiple(row.multiples.tvpi)}
+                  {multiplesOn === 'agreed' && row.measuredOn.basis === 'capital-drawn' && (
+                    <span className="ml-1 text-[10px]" style={{ color: 'var(--status-warning)' }}>
+                      on drawdown
+                    </span>
+                  )}
+                </span>
+              ),
               total: multiple(t.multiples.tvpi),
             },
             {

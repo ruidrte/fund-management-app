@@ -13,6 +13,7 @@ import type {
   Cashflow,
   CurrencyCode,
   DraftPolicy,
+  MultiplesView,
   Position,
   PositionValuation,
   Provenance,
@@ -112,12 +113,14 @@ export interface GrossInputs {
   rates: RateLookup;
   conventions: ReportingConventions;
   knowledgeDate?: string;
+  /** The basis to measure every multiple on; absent or `agreed`, each holding's own. */
+  multiplesOn?: MultiplesView;
 }
 
 export function computeGross(inputs: GrossInputs): GrossResult {
   const {
     positions, valuations, cashflows, period,
-    presentationCurrency, rates, conventions, knowledgeDate,
+    presentationCurrency, rates, conventions, knowledgeDate, multiplesOn,
   } = inputs;
 
   const policy: DraftPolicy = conventions.draftPolicy;
@@ -261,7 +264,10 @@ export function computeGross(inputs: GrossInputs): GrossResult {
     // `basis.ts` gives the first of its bases. The cash figures above are
     // untouched: what moved, moved.
     const income = sum(toDate.filter((c) => c.type === 'Income').map(convertFlow));
-    const measuredOn = position.reportingBasis === 'capital-drawn'
+    const basis = multiplesOn && multiplesOn !== 'agreed'
+      ? multiplesOn
+      : position.reportingBasis ?? 'paid-in';
+    const measuredOn = basis === 'capital-drawn'
       ? { basis: 'capital-drawn' as const, paidIn: drawn - recallable, distributed: distributed - recallable - income }
       : { basis: 'paid-in' as const, paidIn, distributed };
 
