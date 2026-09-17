@@ -12,16 +12,36 @@ import { ProvenanceBadge } from '../components/common/Badges';
 import { multiple, percent } from '../components/common/format';
 import { formatPeriod } from '../domain/period';
 import { useMoney, useScope, useHouse } from '../context/ScopeContext';
-import type { MultiplesView } from '../domain/types';
+import { useHoldingTerms } from '../context/filing';
+import type { MultiplesView, Position } from '../domain/types';
 
 type SortKey = 'name' | 'nav' | 'valueChange' | 'tvpi' | 'commitment';
 
 export function Portfolio({ view }: { view: QuarterView }) {
   const { money, signedMoney } = useMoney();
   const { setPositionId, multiplesOn, setMultiplesOn } = useScope();
+  const { save: saveBasis, canSave, reason } = useHoldingTerms();
   const house = useHouse();
   const [sort, setSort] = useState<SortKey>('nav');
   const [onlyDrafted, setOnlyDrafted] = useState(false);
+  const [saving, setSaving] = useState<string>();
+  const [failure, setFailure] = useState<string>();
+
+  // The basis a holding's multiple is agreed to sit on, set on its own row.
+  // Kept with the holding in the book — the same fact the Data quality page
+  // sets, reachable from where the multiple is read — so it survives the
+  // reload, goes into the exported workbook, and is what the product reports.
+  const setBasis = async (position: Position, basis: Position['reportingBasis']) => {
+    setSaving(position.id);
+    setFailure(undefined);
+    try {
+      await saveBasis(position.id, basis);
+    } catch (cause) {
+      setFailure(`${position.name}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    } finally {
+      setSaving(undefined);
+    }
+  };
 
   const rows = useMemo(() => {
     const filtered = onlyDrafted
@@ -209,11 +229,10 @@ export function Portfolio({ view }: { view: QuarterView }) {
               Only unreported
             </label>
             {/*
-              A look, not a setting: every holding on one basis for as long as
-              the selector says so, and nothing written anywhere. The agreed
-              basis — the product's, with the exceptions the book records — is
-              what the product reports, and is set per holding under Data
-              quality.
+              Custom is the agreed basis: each holding on its own, set on its
+              row and kept in the book. The other two are a look — every
+              holding on one basis for as long as the selector says so, and
+              nothing written anywhere.
             */}
             <select
               className="field" value={multiplesOn}
@@ -221,9 +240,9 @@ export function Portfolio({ view }: { view: QuarterView }) {
               aria-label="Basis the multiples are shown on"
               style={multiplesOn === 'agreed' ? undefined : { borderColor: 'var(--status-warning)' }}
             >
-              <option value="agreed">Multiples as agreed</option>
-              <option value="paid-in">All on paid-in</option>
-              <option value="capital-drawn">All on drawdown</option>
+              <option value="agreed">Multiples: custom, per holding</option>
+              <option value="paid-in">Multiples: all on paid-in</option>
+              <option value="capital-drawn">Multiples: all on drawdown</option>
             </select>
             <select
               className="field" value={sort}
@@ -303,21 +322,46 @@ export function Portfolio({ view }: { view: QuarterView }) {
             },
             {
               key: 'tvpi', header: 'TVPI', align: 'right',
-              // The agreed exception is marked on its row, so a multiple on
-              // drawdown is never read as one on paid-in.
               render: (row) => (
                 <span title={row.measuredOn.basis === 'capital-drawn'
                   ? 'On drawdown: calls net of recallable distributions, permanent distributions only'
                   : 'On paid-in: every unit paid, every unit returned'}>
                   {multiple(row.multiples.tvpi)}
-                  {multiplesOn === 'agreed' && row.measuredOn.basis === 'capital-drawn' && (
-                    <span className="ml-1 text-[10px]" style={{ color: 'var(--status-warning)' }}>
-                      on drawdown
-                    </span>
-                  )}
                 </span>
               ),
               total: multiple(t.multiples.tvpi),
+            },
+            {
+              key: 'multipleOn', header: 'Multiple on',
+              // Each holding's own basis, on its own row. Live only under the
+              // custom view: under a look at everything on one basis the row's
+              // choice is not what is shown, and a selector that changed a
+              // figure other than the one beside it would mislead.
+              render: (row) => (
+                <select
+                  className="field"
+                  value={multiplesOn === 'agreed'
+                    ? (row.position.reportingBasis === 'capital-drawn' ? 'capital-drawn' : 'paid-in')
+                    : multiplesOn}
+                  disabled={multiplesOn !== 'agreed' || !canSave || saving === row.position.id}
+                  title={multiplesOn !== 'agreed'
+                    ? 'Every holding is being looked at on one basis; set the view to custom to change a holding\u2019s own'
+                    : canSave
+                      ? 'Kept with the holding: the product reports on it, and the exported workbook carries it'
+                      : reason}
+                  aria-label={`Basis ${row.position.name}\u2019s multiple sits on`}
+                  style={multiplesOn === 'agreed' && row.position.reportingBasis === 'capital-drawn'
+                    ? { borderColor: 'var(--status-warning)' }
+                    : undefined}
+                  onChange={(event) => void setBasis(
+                    row.position, event.target.value === 'capital-drawn' ? 'capital-drawn' : 'paid-in',
+                  )}
+                >
+                  <option value="paid-in">Paid-in</option>
+                  <option value="capital-drawn">Drawdown</option>
+                </select>
+              ),
+              total: multiplesOn === 'agreed' ? 'Denominators applied' : multiplesOn === 'paid-in' ? 'All paid-in' : 'All drawdown',
             },
             {
               key: 'irr', header: 'IRR', align: 'right',
@@ -334,6 +378,9 @@ export function Portfolio({ view }: { view: QuarterView }) {
             },
           ]}
         />
+        {failure && (
+          <p className="mt-2 mb-0 text-xs" style={{ color: 'var(--status-critical)' }}>{failure}</p>
+        )}
       </Card>
 
       <Card tier="gross"
